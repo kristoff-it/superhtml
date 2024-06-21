@@ -1,0 +1,23 @@
+.{
+    .name = "super",
+    .version = "0.0.0",
+    .dependencies = .{
+        .@"tree-sitter" = .{
+            .url = "https://github.com/neurocyte/tree-sitter/releases/download/zig-0.13-1101c655d7634bf67e2ff09c60041cf7ae69608f/source.tar.gz",
+            .hash = "1220b4350e6913255a3adf45e6f2754c0c5ee6669652316624a098b388d9c6344d01",
+        },
+        .@"zig-lsp-kit" = .{
+            .url = "git+https://github.com/kristoff-it/zig-lsp-kit.git#9bfcc041a9b60808c0888fb7df2ddbcd0b0b3aee",
+            .hash = "12200bd8ae2cad85905872888a4dc7a63b2baa5140a7f7540c46fd9233a4942f9242",
+        },
+        .@"known-folders" = .{
+            .url = "git+https://github.com/ziglibs/known-folders.git#0ad514dcfb7525e32ae349b9acc0a53976f3a9fa",
+            .hash = "12209cde192558f8b3dc098ac2330fc2a14fdd211c5433afd33085af75caa9183147",
+        },
+        .scripty = .{
+            .url = "git+https://github.com/kristoff-it/scripty.git#db4a968d291ad7516dbc63c48b8cead9bc8fe6e6",
+            .hash = "122019fc453bdb449b319bccf71110a6cceb75a4b52fd4d43509c0545b9e9eb1fb2f",
+        },
+    },
+    .paths = .{"."},
+}
