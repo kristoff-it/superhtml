@@ -13,8 +13,6 @@ pub fn loadFile(
     uri: []const u8,
     language: Document.Language,
 ) !void {
-    _ = arena;
-
     var res: lsp.types.PublishDiagnosticsParams = .{
         .uri = uri,
         .diagnostics = &.{},
@@ -40,7 +38,22 @@ pub fn loadFile(
 
     gop.value_ptr.* = doc;
 
-    res.diagnostics = &.{};
+    if (doc.ast.errors.len != 0) {
+        var diag_list = std.ArrayList(lsp.types.Diagnostic).init(arena);
+
+        for (doc.ast.errors) |err| {
+            if (err.span) |loc| {
+                const range = getRange(loc, doc.bytes);
+                try diag_list.append(.{
+                    .range = range,
+                    .severity = .Error,
+                    .message = @tagName(err.tag),
+                });
+            }
+        }
+
+        res.diagnostics = diag_list.items;
+    }
 
     log.debug("sending diags!", .{});
     const msg = try self.server.sendToClientNotification(
@@ -49,4 +62,30 @@ pub fn loadFile(
     );
 
     defer self.gpa.free(msg);
+}
+
+pub fn getRange(
+    self: super.html.Tokenizer.Span,
+    code: []const u8,
+) lsp.types.Range {
+    var selection: lsp.types.Range = .{
+        .start = .{ .line = 0, .character = 0 },
+        .end = undefined,
+    };
+
+    for (code[0..self.start]) |c| {
+        if (c == '\n') {
+            selection.start.line += 1;
+            selection.start.character = 1;
+        } else selection.start.character += 1;
+    }
+
+    selection.end = selection.start;
+    for (code[self.start..self.end]) |c| {
+        if (c == '\n') {
+            selection.end.line += 1;
+            selection.end.character = 1;
+        } else selection.end.character += 1;
+    }
+    return selection;
 }

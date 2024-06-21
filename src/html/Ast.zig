@@ -62,12 +62,16 @@ const Node = struct {
 const Error = struct {
     tag: enum {
         missing_end_tag,
-        spurious_end_tag,
+        erroneous_end_tag,
         eof_in_tag,
         missing_attribute_value,
         unexpected_character_in_attribute_name,
     },
-    range: Tokenizer.Span,
+    // TODO: this is optonal only temporarily because
+    //       the tokenizer doesn't return error locations
+    //       as we actually implement good error reporting
+    //       this type should stop being optional
+    span: ?Tokenizer.Span = null,
 };
 
 nodes: []const Node,
@@ -169,8 +173,8 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
             .end_tag => |et| {
                 if (current.tag == .root) {
                     try errors.append(.{
-                        .tag = .spurious_end_tag,
-                        .range = et.name,
+                        .tag = .erroneous_end_tag,
+                        .span = et.name,
                     });
                     continue;
                 }
@@ -187,8 +191,8 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                         current = original_current;
                         current_idx = original_current_idx;
                         try errors.append(.{
-                            .tag = .spurious_end_tag,
-                            .range = et.name,
+                            .tag = .erroneous_end_tag,
+                            .span = et.name,
                         });
                         break;
                     }
@@ -219,7 +223,7 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
             },
             .end_tag_rbracket => |idx| {
                 log.debug("end_rbracket: {any}", .{current});
-                std.debug.assert(current.close.end == 0);
+                // std.debug.assert(current.close.end == 0);
                 current.close.end = idx;
             },
             .start_tag_self_closed => |stsc| {
@@ -278,20 +282,17 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                     .eof_in_tag => {
                         try errors.append(.{
                             .tag = .eof_in_tag,
-                            .range = undefined,
                         });
                         // TODO: finalize ast
                     },
                     .missing_attribute_value => {
                         try errors.append(.{
                             .tag = .missing_attribute_value,
-                            .range = undefined,
                         });
                     },
                     .unexpected_character_in_attribute_name => {
                         try errors.append(.{
                             .tag = .unexpected_character_in_attribute_name,
-                            .range = undefined,
                         });
                     },
                 }
