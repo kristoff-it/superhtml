@@ -546,7 +546,11 @@ const Formatter = struct {
         _ = fmt;
         _ = options;
 
-        try f.ast.render(f.src, out_stream);
+        if (f.ast.errors.len != 0) {
+            _ = try out_stream.write(f.src);
+        } else {
+            try f.ast.render(f.src, out_stream);
+        }
     }
 };
 
