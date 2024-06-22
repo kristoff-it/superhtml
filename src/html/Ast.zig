@@ -60,18 +60,14 @@ const Node = struct {
 };
 
 const Error = struct {
-    tag: enum {
-        missing_end_tag,
-        erroneous_end_tag,
-        eof_in_tag,
-        missing_attribute_value,
-        unexpected_character_in_attribute_name,
+    tag: union(enum) {
+        token: Tokenizer.TokenError,
+        ast: enum {
+            missing_end_tag,
+            erroneous_end_tag,
+        },
     },
-    // TODO: this is optonal only temporarily because
-    //       the tokenizer doesn't return error locations
-    //       as we actually implement good error reporting
-    //       this type should stop being optional
-    span: ?Tokenizer.Span = null,
+    span: Tokenizer.Span,
 };
 
 nodes: []const Node,
@@ -173,7 +169,9 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
             .end_tag => |et| {
                 if (current.tag == .root) {
                     try errors.append(.{
-                        .tag = .erroneous_end_tag,
+                        .tag = .{
+                            .ast = .erroneous_end_tag,
+                        },
                         .span = et.name,
                     });
                     continue;
@@ -191,7 +189,9 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                         current = original_current;
                         current_idx = original_current_idx;
                         try errors.append(.{
-                            .tag = .erroneous_end_tag,
+                            .tag = .{
+                                .ast = .erroneous_end_tag,
+                            },
                             .span = et.name,
                         });
                         break;
@@ -277,25 +277,13 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
             .parse_error => |pe| {
                 log.debug("parse error: {any}", .{pe});
 
-                switch (pe) {
-                    inline else => |tag| @panic("TODO: implement " ++ @tagName(tag) ++ "Ast.init.parse_error"),
-                    .eof_in_tag => {
-                        try errors.append(.{
-                            .tag = .eof_in_tag,
-                        });
-                        // TODO: finalize ast
+                // TODO: finalize ast when EOF?
+                try errors.append(.{
+                    .tag = .{
+                        .token = pe.tag,
                     },
-                    .missing_attribute_value => {
-                        try errors.append(.{
-                            .tag = .missing_attribute_value,
-                        });
-                    },
-                    .unexpected_character_in_attribute_name => {
-                        try errors.append(.{
-                            .tag = .unexpected_character_in_attribute_name,
-                        });
-                    },
-                }
+                    .span = pe.span,
+                });
             },
         }
     }

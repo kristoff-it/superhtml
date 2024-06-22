@@ -39,20 +39,20 @@ pub fn loadFile(
     gop.value_ptr.* = doc;
 
     if (doc.ast.errors.len != 0) {
-        var diag_list = std.ArrayList(lsp.types.Diagnostic).init(arena);
-
-        for (doc.ast.errors) |err| {
-            if (err.span) |loc| {
-                const range = getRange(loc, doc.bytes);
-                try diag_list.append(.{
-                    .range = range,
-                    .severity = .Error,
-                    .message = @tagName(err.tag),
-                });
-            }
+        const diags = try arena.alloc(lsp.types.Diagnostic, doc.ast.errors.len);
+        for (doc.ast.errors, diags) |err, *d| {
+            const range = getRange(err.span, doc.bytes);
+            d.* = .{
+                .range = range,
+                .severity = .Error,
+                .message = switch (err.tag) {
+                    .token => |t| @tagName(t),
+                    .ast => |t| @tagName(t),
+                },
+            };
         }
 
-        res.diagnostics = diag_list.items;
+        res.diagnostics = diags;
     }
 
     log.debug("sending diags!", .{});

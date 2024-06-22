@@ -26,6 +26,22 @@ pub const Span = struct {
     }
 };
 
+pub const TokenError = enum {
+    unexpected_null_character,
+    invalid_first_character_of_tag_name,
+    incorrectly_opened_comment,
+    missing_end_tag_name,
+    eof_before_tag_name,
+    eof_in_doctype,
+    eof_in_tag,
+    eof_in_comment,
+    missing_whitespace_before_doctype_name,
+    unexpected_character_in_attribute_name,
+    missing_attribute_value,
+    unexpected_solidus_in_tag,
+    abrupt_closing_of_empty_comment,
+};
+
 pub const Token = union(enum) {
     doctype: Doctype,
     doctype_rbracket: u32,
@@ -68,20 +84,9 @@ pub const Token = union(enum) {
     },
     comment: Span,
     text: Span,
-    parse_error: enum {
-        unexpected_null_character,
-        invalid_first_character_of_tag_name,
-        incorrectly_opened_comment,
-        missing_end_tag_name,
-        eof_before_tag_name,
-        eof_in_doctype,
-        eof_in_tag,
-        eof_in_comment,
-        missing_whitespace_before_doctype_name,
-        unexpected_character_in_attribute_name,
-        missing_attribute_value,
-        unexpected_solidus_in_tag,
-        abrupt_closing_of_empty_comment,
+    parse_error: struct {
+        tag: TokenError,
+        span: Span,
     },
 
     pub const Doctype = struct {
@@ -175,7 +180,6 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
 } {
     while (true) {
         log.debug("{any}", .{self.state});
-        std.debug.print("{s} {any}\n", .{ src, self.state });
         switch (self.state) {
             .data => {
                 if (!self.consume(src)) return null;
@@ -184,7 +188,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '<' => self.state = .{ .tag_open = self.idx - 1 },
                     0 => {
                         return .{
-                            .token = .{ .parse_error = .unexpected_null_character },
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .unexpected_null_character,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
                             // .deferred = .{
                             //     .char = .{
                             //         .start = self.idx - 1,
@@ -235,7 +247,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .data;
                         return .{
                             .token = .{
-                                .parse_error = .unexpected_null_character,
+                                .parse_error = .{
+                                    .tag = .unexpected_null_character,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
                             },
                             // .deferred = .{
                             //     .text = .{
@@ -263,7 +281,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     return .{
-                        .token = .{ .parse_error = .eof_before_tag_name },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_before_tag_name,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                         // .deferred = .{
                         //     .char = .{
                         //         .start = tag_open_start,
@@ -291,7 +317,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.idx -= 1;
                         return .{
                             .token = .{
-                                .parse_error = .invalid_first_character_of_tag_name,
+                                .parse_error = .{
+                                    .tag = .invalid_first_character_of_tag_name,
+                                    .span = .{
+                                        .start = self.idx,
+                                        .end = self.idx + 1,
+                                    },
+                                },
                             },
                             // .deferred = .{
                             //     .char = .{
@@ -310,7 +342,16 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     self.state = .data;
                     self.idx -= 1;
                     return .{
-                        .token = .{ .parse_error = .eof_before_tag_name },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_before_tag_name,
+                                .span = .{
+                                    .start = self.idx,
+                                    .end = self.idx + 1,
+                                },
+                            },
+                        },
+
                         // .deferred = .{
                         //     .char = .{
                         //         .start = tag_open_start,
@@ -322,7 +363,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 switch (self.current) {
                     '>' => {
                         self.state = .data;
-                        return .{ .token = .{ .parse_error = .missing_end_tag_name } };
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_end_tag_name,
+                                    .span = .{
+                                        .start = tag_open_start,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
                     },
                     else => |c| if (isAsciiAlpha(c)) {
                         self.state = .{
@@ -335,7 +386,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     } else {
                         self.state = .bogus_comment;
                         return .{
-                            .token = .{ .parse_error = .invalid_first_character_of_tag_name },
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .invalid_first_character_of_tag_name,
+                                    .span = .{
+                                        .start = tag_open_start,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
                         };
                     },
                 }
@@ -343,7 +402,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             .tag_name => |tag_state| {
                 if (!self.consume(src)) {
                     self.state = .eof;
-                    return .{ .token = .{ .parse_error = .eof_in_tag } };
+                    return .{ .token = .{
+                        .parse_error = .{
+                            .tag = .eof_in_tag,
+                            .span = .{
+                                .start = self.idx - 1,
+                                .end = self.idx,
+                            },
+                        },
+                    } };
                 }
                 switch (self.current) {
                     '\t', '\n', form_feed, ' ' => {
@@ -398,7 +465,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         };
                     },
                     0 => return .{
-                        .token = .{ .parse_error = .unexpected_null_character },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .unexpected_null_character,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                     },
                     else => {},
                 }
@@ -406,7 +481,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             .self_closing_start_tag => {
                 if (!self.consume(src)) {
                     self.state = .eof;
-                    return .{ .token = .{ .parse_error = .eof_in_tag } };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
                 } else switch (self.current) {
                     '>' => {
                         self.state = .data;
@@ -424,7 +509,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .before_attribute_name;
                         self.idx -= 1;
                         return .{
-                            .token = .{ .parse_error = .unexpected_solidus_in_tag },
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .unexpected_solidus_in_tag,
+                                    .span = .{
+                                        .start = self.idx,
+                                        .end = self.idx + 1,
+                                    },
+                                },
+                            },
                         };
                     },
                 }
@@ -432,7 +525,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             .before_attribute_name => {
                 if (!self.consume(src)) {
                     self.state = .eof;
-                    return .{ .token = .{ .parse_error = .eof_in_tag } };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
                 } else switch (self.current) {
                     '\t', '\n', form_feed, ' ' => {},
                     '/' => {
@@ -458,7 +561,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             .attribute_name => |start| {
                 if (!self.consume(src)) {
                     self.state = .eof;
-                    return .{ .token = .{ .parse_error = .eof_in_tag } };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
                 } else switch (self.current) {
                     '\t', '\n', form_feed, ' ', '/', '>' => {
                         defer {
@@ -485,7 +598,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                     '"', '\'', '<' => return .{
                         .token = .{
-                            .parse_error = .unexpected_character_in_attribute_name,
+                            .parse_error = .{
+                                .tag = .unexpected_character_in_attribute_name,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
                         },
                     },
                     else => {},
@@ -494,7 +613,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             .before_attribute_value => |name_span| {
                 if (!self.consume(src)) {
                     self.state = .eof;
-                    return .{ .token = .{ .parse_error = .eof_in_tag } };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
                 } else switch (self.current) {
                     '\t', '\n', form_feed, ' ' => {},
                     '"' => self.state = .{
@@ -514,7 +643,16 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         self.state = .data;
                         return .{
-                            .token = .{ .parse_error = .missing_attribute_value },
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_attribute_value,
+                                    .span = .{
+                                        // TODO: point at where the '=' is?
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
                             .deferred = .{
                                 .start_tag_rbracket = self.idx - 1,
                             },
@@ -534,7 +672,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     // NOTE: spec doesn't say to emit the current tag?
-                    return .{ .token = .{ .parse_error = .eof_in_tag } };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
                 } else switch (self.current) {
                     '"' => switch (attr_state.quote) {
                         .double => {
@@ -564,7 +712,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     //       that would require allocation, so, we should probably handle that elsewhere
                     //'&' => return error.NotImpl,
                     0 => return .{
-                        .token = .{ .parse_error = .unexpected_null_character },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .unexpected_null_character,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                     },
                     else => {},
                 }
@@ -573,14 +729,32 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     // NOTE: spec doesn't say to emit the current tag?
-                    return .{ .token = .{ .parse_error = .eof_in_tag } };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
                 } else switch (self.current) {
                     '"', '\'' => @panic("TODO"),
                     // TODO: the spec says the tokenizer should handle "character references" here, but,
                     //       that would require allocation, so, we should probably handle that elsewhere
                     //'&' => return error.NotImpl,
                     0 => return .{
-                        .token = .{ .parse_error = .unexpected_null_character },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .unexpected_null_character,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                     },
                     else => {
                         if (std.ascii.isWhitespace(self.current)) {
@@ -610,7 +784,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     // NOTE: spec doesn't say to emit the current tag?
-                    return .{ .token = .{ .parse_error = .eof_in_tag } };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
                 } else switch (self.current) {
                     '\t', '\n', form_feed, ' ' => self.state = .before_attribute_name,
                     '>' => {
@@ -626,7 +810,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         // TODO: read the spec and return the correct error
                         return .{
                             .token = .{
-                                .parse_error = .unexpected_character_in_attribute_name,
+                                .parse_error = .{
+                                    .tag = .unexpected_character_in_attribute_name,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
                             },
                         };
                     },
@@ -645,7 +835,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     @panic("TODO: implement CDATA");
                 } else {
                     self.state = .bogus_comment;
-                    return .{ .token = .{ .parse_error = .incorrectly_opened_comment } };
+                    return .{ .token = .{
+                        .parse_error = .{
+                            .tag = .incorrectly_opened_comment,
+                            .span = .{
+                                .start = self.idx - 1,
+                                .end = self.idx,
+                            },
+                        },
+                    } };
                 }
             },
             .character_reference => {
@@ -655,7 +853,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     return .{
-                        .token = .{ .parse_error = .eof_in_doctype },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_doctype,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                         .deferred = .{
                             .doctype = .{
                                 .lbracket = lbracket,
@@ -682,7 +888,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         };
                         return .{
                             .token = .{
-                                .parse_error = .missing_whitespace_before_doctype_name,
+                                .parse_error = .{
+                                    .tag = .missing_whitespace_before_doctype_name,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
                             },
                         };
                     },
@@ -692,7 +904,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     return .{
-                        .token = .{ .parse_error = .eof_in_doctype },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_doctype,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                         .deferred = .{
                             .doctype = .{
                                 .lbracket = lbracket,
@@ -712,7 +932,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             },
                         };
                         return .{
-                            .token = .{ .parse_error = .unexpected_null_character },
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .unexpected_null_character,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
                         };
                     },
                     '>' => {
@@ -746,7 +974,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     return .{
-                        .token = .{ .parse_error = .eof_in_doctype },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_doctype,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                         .deferred = .{
                             .doctype = .{
                                 .lbracket = 0, //todo
@@ -785,7 +1021,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         };
                     },
                     0 => return .{
-                        .token = .{ .parse_error = .unexpected_null_character },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .unexpected_null_character,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                     },
                     else => {},
                 }
@@ -803,7 +1047,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .data;
                         return .{
                             .token = .{
-                                .parse_error = .abrupt_closing_of_empty_comment,
+                                .parse_error = .{
+                                    .tag = .abrupt_closing_of_empty_comment,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
                             },
                         };
                     },
@@ -820,7 +1070,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     return .{
-                        .token = .{ .parse_error = .eof_in_comment },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_comment,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                         .deferred = .{
                             .comment = .{
                                 .start = comment_start,
@@ -845,7 +1103,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     return .{
-                        .token = .{ .parse_error = .eof_in_comment },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_comment,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                         .deferred = .{ .comment = comment_span },
                     };
                 }
@@ -861,7 +1127,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 if (!self.consume(src)) {
                     self.state = .eof;
                     return .{
-                        .token = .{ .parse_error = .eof_in_comment },
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_comment,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
                         .deferred = .{ .comment = comment_span },
                     };
                 }
