@@ -29,9 +29,9 @@ const Node = struct {
 
     pub fn isClosed(n: Node) bool {
         return switch (n.tag) {
-            .root, .comment => unreachable,
+            .root => unreachable,
             .element => n.close.start != 0,
-            .doctype, .element_void, .element_self_closing, .text => true,
+            .doctype, .element_void, .element_self_closing, .text, .comment => true,
         };
     }
 
@@ -48,13 +48,7 @@ const Node = struct {
                 }
                 return .after;
             },
-            .comment => {
-                if (n.close.start == 0) {
-                    return .in;
-                }
-                return .after;
-            },
-            .doctype, .element_void, .element_self_closing, .text => return .after,
+            .doctype, .element_void, .element_self_closing, .text, .comment => return .after,
         }
     }
 };
@@ -109,7 +103,6 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
         log.debug("cur_idx: {} tok: {any}", .{ current_idx, t });
         std.debug.print("cur_idx: {} tok: {any}\n", .{ current_idx, t });
         switch (t) {
-            inline else => |_, tag| @panic("TODO: implement " ++ @tagName(tag) ++ " in Ast.init()"),
             .attr => {},
             .doctype => |dt| {
                 var new: Node = .{
@@ -177,21 +170,20 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                     continue;
                 }
 
-                const original_current = current;
-                const original_current_idx = current_idx;
                 if (current.isClosed()) {
                     current_idx = current.parent_idx;
                     current = &nodes.items[current.parent_idx];
                 }
+
+                const original_current = current;
+                const original_current_idx = current_idx;
 
                 while (true) {
                     if (current.tag == .root) {
                         current = original_current;
                         current_idx = original_current_idx;
                         try errors.append(.{
-                            .tag = .{
-                                .ast = .erroneous_end_tag,
-                            },
+                            .tag = .{ .ast = .erroneous_end_tag },
                             .span = et.name,
                         });
                         break;
@@ -209,11 +201,25 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                     });
 
                     std.debug.assert(!current.isClosed());
-                    if (std.ascii.eqlIgnoreCase(current_name, et.name.slice(src))) {
+                    if (std.ascii.eqlIgnoreCase(
+                        current_name,
+                        et.name.slice(src),
+                    )) {
                         current.close = .{
                             .start = et.lbracket,
                             .end = 0,
                         };
+
+                        var cursor = original_current;
+                        while (cursor != current) {
+                            try errors.append(.{
+                                .tag = .{ .ast = .missing_end_tag },
+                                .span = cursor.open,
+                            });
+
+                            cursor = &nodes.items[cursor.parent_idx];
+                        }
+
                         break;
                     }
 
@@ -271,7 +277,29 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                 }
 
                 try nodes.append(new);
-                std.debug.print("AST text node: '{s}'\n", .{new.open.slice(src)});
+                current = &nodes.items[current_idx];
+            },
+            .comment => |c| {
+                var new: Node = .{
+                    .tag = .comment,
+                    .open = c,
+                };
+
+                switch (current.direction()) {
+                    .in => {
+                        new.parent_idx = current_idx;
+                        std.debug.assert(current.first_child_idx == 0);
+                        current_idx = @intCast(nodes.items.len);
+                        current.first_child_idx = current_idx;
+                    },
+                    .after => {
+                        new.parent_idx = current.parent_idx;
+                        current_idx = @intCast(nodes.items.len);
+                        current.next_idx = current_idx;
+                    },
+                }
+
+                try nodes.append(new);
                 current = &nodes.items[current_idx];
             },
             .parse_error => |pe| {
@@ -340,11 +368,6 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     current.open.slice(src),
                     current,
                 });
-                std.debug.print("rendering exit ({}): {s} {any}\n", .{
-                    indentation,
-                    current.open.slice(src),
-                    current,
-                });
 
                 switch (current.tag) {
                     else => {},
@@ -378,6 +401,20 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             },
 
             .text => {
+                std.debug.assert(direction == .enter);
+
+                try w.writeAll(current.open.slice(src));
+                last_rbracket = current.open.end;
+
+                if (current.next_idx != 0) {
+                    current = ast.nodes[current.next_idx];
+                } else {
+                    current = ast.nodes[current.parent_idx];
+                    direction = .exit;
+                }
+            },
+
+            .comment => {
                 std.debug.assert(direction == .enter);
 
                 try w.writeAll(current.open.slice(src));

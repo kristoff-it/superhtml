@@ -148,7 +148,7 @@ const State = union(enum) {
         start: u32,
     },
     after_attribute_value: void,
-    bogus_comment: void,
+    bogus_comment: u32,
     eof: void,
 };
 
@@ -384,7 +384,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             },
                         };
                     } else {
-                        self.state = .bogus_comment;
+                        self.state = .{ .bogus_comment = self.idx - 1 };
                         return .{
                             .token = .{
                                 .parse_error = .{
@@ -539,7 +539,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 } else switch (self.current) {
                     '\t', '\n', form_feed, ' ' => {},
                     '/' => {
-                        @panic("TODO");
+                        self.idx -= 1;
+                        self.state = .{
+                            .before_attribute_value = .{
+                                .start = self.idx - 1,
+                                .end = self.idx - 1,
+                            },
+                        };
                     },
                     '>' => {
                         self.state = .data;
@@ -834,7 +840,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 } else if (self.nextCharsAre("[CDATA[", src)) {
                     @panic("TODO: implement CDATA");
                 } else {
-                    self.state = .bogus_comment;
+                    self.state = .{ .bogus_comment = self.idx - 1 };
                     return .{ .token = .{
                         .parse_error = .{
                             .tag = .incorrectly_opened_comment,
@@ -1149,8 +1155,50 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     else => @panic("TODO"),
                 }
             },
-            .bogus_comment => {
-                @panic("TODO: implement bogus_comment");
+            // 13.2.5.41 Bogus comment state
+            .bogus_comment => |start| {
+                if (!self.consume(src)) {
+                    // EOF
+                    // Emit the comment. Emit an end-of-file token.
+                    self.state = .eof;
+                    return .{
+                        .token = .{
+                            .comment = .{
+                                .start = start,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                }
+                switch (self.current) {
+                    // U+0000 NULL
+                    // This is an unexpected-null-character parse error.
+                    0 => return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .unexpected_null_character,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    },
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Switch to the data state. Emit the current comment token.
+                    '>' => {
+                        self.state = .data;
+                        return .{
+                            .token = .{
+                                .comment = .{
+                                    .start = start,
+                                    .end = self.idx,
+                                },
+                            },
+                        };
+                    },
+                    else => {},
+                }
             },
             .eof => return null,
         }
