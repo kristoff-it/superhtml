@@ -638,7 +638,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     self.state = .{
                         .comment_start = self.idx,
                     };
-                } else if (self.nextCharsAre(DOCTYPE, src)) {
+                } else if (self.nextCharsAreIgnoreCase(DOCTYPE, src)) {
                     self.idx += @intCast(DOCTYPE.len);
                     self.state = .{ .doctype = lbracket };
                 } else if (self.nextCharsAre("[CDATA[", src)) {
@@ -885,6 +885,10 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
 
 fn nextCharsAre(self: Tokenizer, needle: []const u8, src: []const u8) bool {
     return std.mem.startsWith(u8, src[self.idx..], needle);
+}
+
+fn nextCharsAreIgnoreCase(self: Tokenizer, needle: []const u8, src: []const u8) bool {
+    return std.ascii.startsWithIgnoreCase(src[self.idx..], needle);
 }
 
 fn isAsciiAlphaLower(c: u8) bool {
