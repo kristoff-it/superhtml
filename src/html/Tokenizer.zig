@@ -1,4 +1,4 @@
-/// From https://github.com/marler8997/html-css-renderer/blob/master/HtmlTokenizer.zig
+// From https://github.com/marler8997/html-css-renderer/blob/master/HtmlTokenizer.zig
 ///
 /// An html5 tokenizer.
 /// Implements the state machine described here:
@@ -11,10 +11,12 @@ const std = @import("std");
 
 const log = std.log.scoped(.tokenizer);
 
+return_attrs: bool = false,
 idx: u32 = 0,
 current: u8 = undefined,
 state: State = .data,
 deferred_token: ?Token = null,
+
 const DOCTYPE = "DOCTYPE";
 const form_feed = 0xc;
 
@@ -27,50 +29,28 @@ pub const Span = struct {
 };
 
 pub const TokenError = enum {
-    unexpected_null_character,
-    invalid_first_character_of_tag_name,
-    incorrectly_opened_comment,
-    missing_end_tag_name,
+    abrupt_closing_of_empty_comment,
     eof_before_tag_name,
+    eof_in_attribute_value,
+    eof_in_comment,
     eof_in_doctype,
     eof_in_tag,
-    eof_in_comment,
-    missing_whitespace_before_doctype_name,
-    unexpected_character_in_attribute_name,
+    incorrectly_opened_comment,
+    invalid_first_character_of_tag_name,
     missing_attribute_value,
+    missing_end_tag_name,
+    missing_whitespace_before_doctype_name,
+    missing_whitespace_between_attributes,
+    unexpected_character_in_attribute_name,
+    unexpected_character_in_unquoted_attribute_value,
+    unexpected_equals_sign_before_attribute_name,
+    unexpected_null_character,
     unexpected_solidus_in_tag,
-    abrupt_closing_of_empty_comment,
 };
 
 pub const Token = union(enum) {
-    doctype: Doctype,
-    doctype_rbracket: u32,
-    start_tag: struct {
-        lbracket: u32, // index of "<"
-        name: Span,
-        pub fn isVoid(st: @This(), src: []const u8) bool {
-            // TODO find all the void tags
-            const tags: []const []const u8 = &.{
-                "link",
-                "meta",
-                "br",
-            };
-
-            for (tags) |t| {
-                if (std.ascii.eqlIgnoreCase(st.name.slice(src), t)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-    },
-    start_tag_rbracket: u32,
-    end_tag: struct {
-        lbracket: u32, // index of "<"
-        name: Span,
-    },
-    end_tag_rbracket: u32,
-    start_tag_self_closed: Span,
+    // Only returned when return_attrs == true
+    tag_name: Span,
     attr: struct {
         // NOTE: process the name_raw by replacing
         //     - upper-case ascii alpha with lower case (add 0x20)
@@ -82,6 +62,12 @@ pub const Token = union(enum) {
             span: Span,
         },
     },
+
+    // Returned during normal operation
+    doctype: Doctype,
+    tag: Tag,
+    start_tag_self_closed: Span,
+
     comment: Span,
     text: Span,
     parse_error: struct {
@@ -98,6 +84,33 @@ pub const Token = union(enum) {
         force_quirks: bool,
         //public_id: usize,
         //system_id: usize,
+    };
+
+    pub const Tag = struct {
+        span: Span,
+        name: Span,
+        kind: enum {
+            start,
+            start_attrs,
+            end,
+        },
+
+        pub fn isVoid(st: @This(), src: []const u8) bool {
+            const void_tags: []const []const u8 = &.{
+                "area", "base",   "br",
+                "col",  "embed",  "hr",
+                "img",  "input",  "link",
+                "meta", "source", "track",
+                "wbr",
+            };
+
+            for (void_tags) |t| {
+                if (std.ascii.eqlIgnoreCase(st.name.slice(src), t)) {
+                    return true;
+                }
+            }
+            return false;
+        }
     };
 };
 
@@ -129,25 +142,37 @@ const State = union(enum) {
     comment: u32,
     comment_end_dash: Span,
     comment_end: Span,
-    tag_name: struct {
-        is_end: bool,
-        start: u32,
-        lbracket: u32,
-    },
+    tag_name: Token.Tag,
     self_closing_start_tag: void,
-    before_attribute_name: void,
-    attribute_name: u32,
-    before_attribute_value: Span,
+    before_attribute_name: Token.Tag,
+    attribute_name: struct {
+        tag: Token.Tag,
+        name_start: u32,
+    },
+    after_attribute_name: struct {
+        tag: Token.Tag,
+        name_raw: Span,
+    },
+    before_attribute_value: struct {
+        tag: Token.Tag,
+        name_raw: Span,
+        equal_sign: u32,
+    },
     attribute_value: struct {
+        tag: Token.Tag,
         quote: enum { double, single },
         name_raw: Span,
-        start: u32,
+        value_start: u32,
     },
     attribute_value_unquoted: struct {
+        tag: Token.Tag,
         name_raw: Span,
-        start: u32,
+        value_start: u32,
     },
-    after_attribute_value: void,
+    after_attribute_value: struct {
+        tag: Token.Tag,
+        attr_value_end: u32,
+    },
     bogus_comment: u32,
     eof: void,
 };
@@ -277,15 +302,18 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                 }
             },
-            .tag_open => |tag_open_start| {
+            // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
+            .tag_open => |lbracket| {
                 if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-before-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token and an end-of-file token.
                     self.state = .eof;
                     return .{
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_before_tag_name,
                                 .span = .{
-                                    .start = self.idx - 1,
+                                    .start = lbracket,
                                     .end = self.idx,
                                 },
                             },
@@ -299,20 +327,39 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     };
                 }
                 switch (self.current) {
+                    // U+0021 EXCLAMATION MARK (!)
+                    // Switch to the markup declaration open state.
                     '!' => self.state = .{
-                        .markup_declaration_open = tag_open_start,
+                        .markup_declaration_open = lbracket,
                     },
-                    '/' => self.state = .{ .end_tag_open = tag_open_start },
-                    '?' => @panic("TODO: implement '?'"),
+
+                    // U+002F SOLIDUS (/)
+                    // Switch to the end tag open state.
+                    '/' => self.state = .{
+                        .end_tag_open = lbracket,
+                    },
+                    // U+003F QUESTION MARK (?)
+                    // This is an unexpected-question-mark-instead-of-tag-name parse error. Create a comment token whose data is the empty string. Reconsume in the bogus comment state.
+                    '?' => @panic("TODO: implement start_tag.question_mark"),
                     else => |c| if (isAsciiAlpha(c)) {
+                        // ASCII alpha
+                        // Create a new start tag token, set its tag name to the empty string. Reconsume in the tag name state.
                         self.state = .{
                             .tag_name = .{
-                                .is_end = false,
-                                .start = self.idx - 1,
-                                .lbracket = tag_open_start,
+                                .kind = .start,
+                                .name = .{
+                                    .start = self.idx - 1,
+                                    .end = 0,
+                                },
+                                .span = .{
+                                    .start = lbracket,
+                                    .end = 0,
+                                },
                             },
                         };
                     } else {
+                        // Anything else
+                        // This is an invalid-first-character-of-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token. Reconsume in the data state.
                         self.state = .data;
                         self.idx -= 1;
                         return .{
@@ -335,10 +382,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                 }
             },
-            .end_tag_open => |tag_open_start| {
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#end-tag-open-state
+            .end_tag_open => |lbracket| {
                 if (!self.consume(src)) {
-                    // NOTE: this is implemented differently from the spec so we only need to
-                    //       support 1 deferred token, but, should result in the same tokens.
+                    // EOF
+                    // This is an eof-before-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token and an end-of-file token.
                     self.state = .data;
                     self.idx -= 1;
                     return .{
@@ -361,6 +410,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     };
                 }
                 switch (self.current) {
+                    // U+003E GREATER-THAN SIGN (>)
+                    // This is a missing-end-tag-name parse error. Switch to the data state.
                     '>' => {
                         self.state = .data;
                         return .{
@@ -368,7 +419,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 .parse_error = .{
                                     .tag = .missing_end_tag_name,
                                     .span = .{
-                                        .start = tag_open_start,
+                                        .start = lbracket,
                                         .end = self.idx,
                                     },
                                 },
@@ -376,21 +427,32 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         };
                     },
                     else => |c| if (isAsciiAlpha(c)) {
+                        // ASCII alpha
+                        // Create a new end tag token, set its tag name to the empty string. Reconsume in the tag name state.
                         self.state = .{
                             .tag_name = .{
-                                .is_end = true,
-                                .start = self.idx - 1,
-                                .lbracket = tag_open_start,
+                                .kind = .end,
+
+                                .name = .{
+                                    .start = self.idx - 1,
+                                    .end = 0,
+                                },
+                                .span = .{
+                                    .start = lbracket,
+                                    .end = 0,
+                                },
                             },
                         };
                     } else {
+                        // Anything else
+                        // This is an invalid-first-character-of-tag-name parse error. Create a comment token whose data is the empty string. Reconsume in the bogus comment state.
                         self.state = .{ .bogus_comment = self.idx - 1 };
                         return .{
                             .token = .{
                                 .parse_error = .{
                                     .tag = .invalid_first_character_of_tag_name,
                                     .span = .{
-                                        .start = tag_open_start,
+                                        .start = self.idx - 1,
                                         .end = self.idx,
                                     },
                                 },
@@ -399,71 +461,57 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                 }
             },
-            .tag_name => |tag_state| {
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#tag-name-state
+            .tag_name => |state| {
                 if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-tag parse error. Emit an end-of-file token.
                     self.state = .eof;
                     return .{ .token = .{
                         .parse_error = .{
                             .tag = .eof_in_tag,
                             .span = .{
-                                .start = self.idx - 1,
+                                .start = state.span.start,
                                 .end = self.idx,
                             },
                         },
                     } };
                 }
                 switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Switch to the before attribute name state.
                     '\t', '\n', form_feed, ' ' => {
-                        self.state = .before_attribute_name;
-                        const name_span = Span{
-                            .start = tag_state.start,
-                            .end = self.idx - 1,
-                        };
-                        return if (tag_state.is_end) .{
-                            .token = .{
-                                .end_tag = .{
-                                    .name = name_span,
-                                    .lbracket = tag_state.lbracket,
-                                },
-                            },
-                        } else .{
-                            .token = .{
-                                .start_tag = .{
-                                    .name = name_span,
-                                    .lbracket = tag_state.lbracket,
-                                },
-                            },
-                        };
+                        var tag = state;
+                        tag.name.end = self.idx - 1;
+                        self.state = .{ .before_attribute_name = tag };
+
+                        if (self.return_attrs) {
+                            return .{ .token = .{ .tag_name = tag.name } };
+                        }
                     },
+                    // U+002F SOLIDUS (/)
+                    // Switch to the self-closing start tag state.
                     '/' => self.state = .self_closing_start_tag,
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Switch to the data state. Emit the current tag token.
                     '>' => {
+                        var tag = state;
+                        tag.name.end = self.idx;
+                        tag.span.end = self.idx + 1;
+
                         self.state = .data;
-                        const name_span = Span{
-                            .start = tag_state.start,
-                            .end = self.idx - 1,
-                        };
-                        return if (tag_state.is_end) .{
-                            .token = .{
-                                .end_tag = .{
-                                    .name = name_span,
-                                    .lbracket = tag_state.lbracket,
-                                },
-                            },
-                            .deferred = .{
-                                .end_tag_rbracket = self.idx,
-                            },
-                        } else .{
-                            .token = .{
-                                .start_tag = .{
-                                    .name = name_span,
-                                    .lbracket = tag_state.lbracket,
-                                },
-                            },
-                            .deferred = .{
-                                .start_tag_rbracket = self.idx,
-                            },
-                        };
+                        if (self.return_attrs) {
+                            return .{ .token = .{ .tag_name = tag.name } };
+                        } else {
+                            return .{ .token = .{ .tag = tag } };
+                        }
                     },
+                    // U+0000 NULL
+                    // This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current tag token's tag name.
                     0 => return .{
                         .token = .{
                             .parse_error = .{
@@ -475,10 +523,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             },
                         },
                     },
+                    // ASCII upper alpha
+                    // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+                    // Anything else
+                    // Append the current input character to the current tag token's tag name.
                     else => {},
                 }
             },
             .self_closing_start_tag => {
+                if (true) @panic("TODO");
                 if (!self.consume(src)) {
                     self.state = .eof;
                     return .{
@@ -486,6 +539,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .parse_error = .{
                                 .tag = .eof_in_tag,
                                 .span = .{
+                                    // TODO: report starting from the beginning of this tag
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -506,7 +560,9 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         };
                     },
                     else => {
-                        self.state = .before_attribute_name;
+                        self.state = .{
+                            .before_attribute_name = undefined,
+                        };
                         self.idx -= 1;
                         return .{
                             .token = .{
@@ -522,86 +578,144 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                 }
             },
-            .before_attribute_name => {
+            // https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
+            .before_attribute_name => |state| {
+                // See EOF case from below
                 if (!self.consume(src)) {
-                    self.state = .eof;
-                    return .{
-                        .token = .{
-                            .parse_error = .{
-                                .tag = .eof_in_tag,
-                                .span = .{
-                                    .start = self.idx - 1,
-                                    .end = self.idx,
-                                },
+                    self.idx -= 1;
+                    self.state = .{
+                        .after_attribute_name = .{
+                            .tag = state,
+                            .name_raw = .{
+                                .start = self.idx,
+                                .end = self.idx + 1,
                             },
                         },
                     };
                 } else switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Ignore the character.
                     '\t', '\n', form_feed, ' ' => {},
-                    '/' => {
+
+                    // U+002F SOLIDUS (/)
+                    // U+003E GREATER-THAN SIGN (>)
+                    // EOF
+                    // Reconsume in the after attribute name state.
+                    //
+                    // (EOF handled above)
+                    '/', '>' => {
                         self.idx -= 1;
                         self.state = .{
-                            .before_attribute_value = .{
-                                .start = self.idx - 1,
-                                .end = self.idx - 1,
+                            .after_attribute_name = .{
+                                .tag = state,
+                                .name_raw = .{
+                                    .start = self.idx,
+                                    .end = self.idx + 1,
+                                },
                             },
                         };
                     },
-                    '>' => {
-                        self.state = .data;
+
+                    //U+003D EQUALS SIGN (=)
+                    //This is an unexpected-equals-sign-before-attribute-name parse error. Start a new attribute in the current tag token. Set that attribute's name to the current input character, and its value to the empty string. Switch to the attribute name state.
+                    '=' => {
+                        self.state = .{
+                            .attribute_name = .{
+                                .tag = state,
+                                .name_start = self.idx - 1,
+                            },
+                        };
                         return .{
                             .token = .{
-                                .start_tag_rbracket = self.idx,
+                                .parse_error = .{
+                                    .tag = .unexpected_equals_sign_before_attribute_name,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
                             },
                         };
                     },
-                    '=' => {
-                        // unexpected_equals_sign_before_attribute_name
-                        @panic("TODO implement '='");
-                    },
+
+                    // Anything else
+                    // Start a new attribute in the current tag token. Set that attribute name and value to the empty string. Reconsume in the attribute name state.
                     else => self.state = .{
-                        .attribute_name = self.idx - 1,
+                        .attribute_name = .{
+                            .tag = state,
+                            .name_start = self.idx - 1,
+                        },
                     },
                 }
             },
-            .attribute_name => |start| {
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#attribute-name-state
+            .attribute_name => |state| {
                 if (!self.consume(src)) {
-                    self.state = .eof;
-                    return .{
+                    self.idx -= 1;
+                    self.state = .{
+                        .after_attribute_name = .{
+                            .tag = state.tag,
+                            .name_raw = .{
+                                .start = state.name_start,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                } else switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // U+002F SOLIDUS (/)
+                    // U+003E GREATER-THAN SIGN (>)
+                    // EOF
+                    // Reconsume in the after attribute name state.
+                    '\t', '\n', form_feed, ' ', '/', '>' => {
+                        self.idx -= 1;
+                        self.state = .{
+                            .after_attribute_name = .{
+                                .tag = state.tag,
+                                .name_raw = .{
+                                    .start = state.name_start,
+                                    .end = self.idx,
+                                },
+                            },
+                        };
+                    },
+
+                    // U+003D EQUALS SIGN (=)
+                    // Switch to the before attribute value state.
+                    '=' => self.state = .{
+                        .before_attribute_value = .{
+                            .tag = state.tag,
+                            .equal_sign = self.idx - 1,
+                            .name_raw = .{
+                                .start = state.name_start,
+                                .end = self.idx - 1,
+                            },
+                        },
+                    },
+                    // U+0000 NULL
+                    // This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's name.
+                    0 => return .{
                         .token = .{
                             .parse_error = .{
-                                .tag = .eof_in_tag,
+                                .tag = .unexpected_null_character,
                                 .span = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
                             },
                         },
-                    };
-                } else switch (self.current) {
-                    '\t', '\n', form_feed, ' ', '/', '>' => {
-                        defer {
-                            self.idx -= 1;
-                            self.state = .before_attribute_name;
-                        }
-                        return .{
-                            .token = .{
-                                .attr = .{
-                                    .name_raw = .{
-                                        .start = start,
-                                        .end = self.idx - 1,
-                                    },
-                                    .value_raw = null,
-                                },
-                            },
-                        };
                     },
-                    '=' => self.state = .{
-                        .before_attribute_value = .{
-                            .start = start,
-                            .end = self.idx - 1,
-                        },
-                    },
+                    // U+0022 QUOTATION MARK (")
+                    // U+0027 APOSTROPHE (')
+                    // U+003C LESS-THAN SIGN (<)
+                    // This is an unexpected-character-in-attribute-name parse error. Treat it as per the "anything else" entry below.
                     '"', '\'', '<' => return .{
                         .token = .{
                             .parse_error = .{
@@ -613,11 +727,19 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             },
                         },
                     },
+                    // ASCII upper alpha
+                    // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current attribute's name.
+                    // Anything else
+                    // Append the current input character to the current attribute's name.
                     else => {},
                 }
             },
-            .before_attribute_value => |name_span| {
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-name-state
+            .after_attribute_name => |state| {
                 if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-tag parse error. Emit an end-of-file token.
                     self.state = .eof;
                     return .{
                         .token = .{
@@ -631,53 +753,257 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         },
                     };
                 } else switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Ignore the character.
                     '\t', '\n', form_feed, ' ' => {},
+                    // U+002F SOLIDUS (/)
+                    // Switch to the self-closing start tag state.
+                    '/' => self.state = .self_closing_start_tag,
+                    // U+003D EQUALS SIGN (=)
+                    // Switch to the before attribute value state.
+                    '=' => self.state = .{
+                        .before_attribute_value = .{
+                            .tag = state.tag,
+                            .name_raw = state.name_raw,
+                            .equal_sign = self.idx - 1,
+                        },
+                    },
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Switch to the data state. Emit the current tag token.
+                    '>' => {
+                        var tag = state.tag;
+                        tag.span.end = self.idx + 1;
+
+                        self.state = .data;
+                        if (self.return_attrs) {
+                            return .{
+                                .token = .{
+                                    .attr = .{
+                                        .name_raw = state.name_raw,
+                                        .value_raw = null,
+                                    },
+                                },
+                            };
+                        } else {
+                            return .{ .token = .{ .tag = tag } };
+                        }
+                    },
+                    // Anything else
+                    // Start a new attribute in the current tag token. Set that attribute name and value to the empty string. Reconsume in the attribute name state.
+                    else => {
+                        if (self.return_attrs) {
+                            return .{
+                                .token = .{
+                                    .attr = .{
+                                        .name_raw = state.name_raw,
+                                        .value_raw = null,
+                                    },
+                                },
+                            };
+                        }
+
+                        self.idx -= 1;
+                        self.state = .{
+                            .attribute_name = .{
+                                .tag = state.tag,
+                                .name_start = self.idx,
+                            },
+                        };
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-value-state
+            .before_attribute_value => |state| {
+                if (!self.consume(src)) {
+                    self.idx -= 1;
+                    self.state = .{
+                        .attribute_value_unquoted = .{
+                            .tag = state.tag,
+                            .name_raw = state.name_raw,
+                            .value_start = self.idx,
+                        },
+                    };
+                } else switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Ignore the character.
+                    '\t', '\n', form_feed, ' ' => {},
+                    // U+0022 QUOTATION MARK (")
+                    // Switch to the attribute value (double-quoted) state.
                     '"' => self.state = .{
                         .attribute_value = .{
-                            .name_raw = name_span,
+                            .tag = state.tag,
+                            .name_raw = state.name_raw,
                             .quote = .double,
-                            .start = self.idx,
+                            .value_start = self.idx,
                         },
                     },
+                    // U+0027 APOSTROPHE (')
+                    // Switch to the attribute value (single-quoted) state.
                     '\'' => self.state = .{
                         .attribute_value = .{
-                            .name_raw = name_span,
+                            .tag = state.tag,
+                            .name_raw = state.name_raw,
                             .quote = .single,
-                            .start = self.idx,
+                            .value_start = self.idx,
                         },
                     },
+                    // U+003E GREATER-THAN SIGN (>)
+                    // This is a missing-attribute-value parse error. Switch to the data state. Emit the current tag token.
                     '>' => {
+                        var tag = state.tag;
+                        tag.span.end = self.idx;
+
                         self.state = .data;
                         return .{
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_attribute_value,
                                     .span = .{
-                                        // TODO: point at where the '=' is?
-                                        .start = self.idx - 1,
-                                        .end = self.idx,
+                                        .start = state.equal_sign,
+                                        .end = state.equal_sign + 1,
                                     },
                                 },
                             },
-                            .deferred = .{
-                                .start_tag_rbracket = self.idx - 1,
-                            },
+                            .deferred = .{ .tag = tag },
                         };
                     },
+                    // Anything else
+                    // Reconsume in the attribute value (unquoted) state.
+                    //
+                    // (EOF handled above)
                     else => {
+                        self.idx -= 1;
                         self.state = .{
                             .attribute_value_unquoted = .{
-                                .name_raw = name_span,
-                                .start = self.idx,
+                                .tag = state.tag,
+                                .name_raw = state.name_raw,
+                                .value_start = self.idx,
                             },
                         };
                     },
                 }
             },
-            .attribute_value => |attr_state| {
+            // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(double-quoted)-state
+            // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(single-quoted)-state
+            .attribute_value => |state| {
                 if (!self.consume(src)) {
                     self.state = .eof;
-                    // NOTE: spec doesn't say to emit the current tag?
+
+                    // EOF
+                    // This is an eof-in-tag parse error. Emit an end-of-file token.
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_attribute_value,
+                                .span = .{
+                                    .start = state.value_start,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
+                } else switch (self.current) {
+                    // U+0022 QUOTATION MARK (")
+                    // Switch to the after attribute value (quoted) state.
+                    '"' => switch (state.quote) {
+                        .single => {
+                            // Just a normal char in this case
+                        },
+                        .double => {
+                            self.state = .{
+                                .after_attribute_value = .{
+                                    .tag = state.tag,
+                                    .attr_value_end = self.idx,
+                                },
+                            };
+                            if (self.return_attrs) {
+                                return .{
+                                    .token = .{
+                                        .attr = .{
+                                            .name_raw = state.name_raw,
+                                            .value_raw = .{
+                                                .quote = .double,
+                                                .span = .{
+                                                    .start = state.value_start,
+                                                    .end = self.idx - 1,
+                                                },
+                                            },
+                                        },
+                                    },
+                                };
+                            }
+                        },
+                    },
+
+                    // U+0027 APOSTROPHE (')
+                    // Switch to the after attribute value (quoted) state.
+                    '\'' => switch (state.quote) {
+                        .double => {
+                            // Just a normal char in this case
+                        },
+                        .single => {
+                            self.state = .{
+                                .after_attribute_value = .{
+                                    .tag = state.tag,
+                                    .attr_value_end = self.idx,
+                                },
+                            };
+                            if (self.return_attrs) {
+                                return .{
+                                    .token = .{
+                                        .attr = .{
+                                            .name_raw = state.name_raw,
+                                            .value_raw = .{
+                                                .quote = .single,
+                                                .span = .{
+                                                    .start = state.value_start,
+                                                    .end = self.idx - 1,
+                                                },
+                                            },
+                                        },
+                                    },
+                                };
+                            }
+                        },
+                    },
+                    // U+0026 AMPERSAND (&)
+                    // Set the return state to the attribute value (double-quoted) state. Switch to the character reference state.
+                    //
+                    // (handled downstream)
+                    // '&' => {},
+
+                    // U+0000 NULL
+                    // This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
+                    0 => return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .unexpected_null_character,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    },
+                    // Anything else
+                    // Append the current input character to the current attribute's value.
+                    else => {},
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(unquoted)-state
+            .attribute_value_unquoted => |state| {
+                if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-tag parse error. Emit an end-of-file token.
+                    self.state = .eof;
                     return .{
                         .token = .{
                             .parse_error = .{
@@ -690,136 +1016,150 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         },
                     };
                 } else switch (self.current) {
-                    '"' => switch (attr_state.quote) {
-                        .double => {
-                            self.state = .after_attribute_value;
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Switch to the before attribute name state.
+                    '\t', '\n', form_feed, ' ' => {
+                        if (self.return_attrs) {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name_raw = attr_state.name_raw,
+                                        .name_raw = state.name_raw,
                                         .value_raw = .{
-                                            .quote = .double,
+                                            .quote = .single,
                                             .span = .{
-                                                .start = attr_state.start,
+                                                .start = state.value_start,
                                                 .end = self.idx - 1,
                                             },
                                         },
                                     },
                                 },
                             };
-                        },
-                        .single => @panic("TODO"),
+                        }
+                        self.state = .{ .before_attribute_name = state.tag };
                     },
-                    '\'' => switch (attr_state.quote) {
-                        .double => @panic("TODO"),
-                        .single => @panic("TODO"),
-                    },
-                    // TODO: the spec says the tokenizer should handle "character references" here, but,
-                    //       that would require allocation, so, we should probably handle that elsewhere
-                    //'&' => return error.NotImpl,
-                    0 => return .{
-                        .token = .{
-                            .parse_error = .{
-                                .tag = .unexpected_null_character,
-                                .span = .{
-                                    .start = self.idx - 1,
-                                    .end = self.idx,
-                                },
-                            },
-                        },
-                    },
-                    else => {},
-                }
-            },
-            .attribute_value_unquoted => |attr_state| {
-                if (!self.consume(src)) {
-                    self.state = .eof;
-                    // NOTE: spec doesn't say to emit the current tag?
-                    return .{
-                        .token = .{
-                            .parse_error = .{
-                                .tag = .eof_in_tag,
-                                .span = .{
-                                    .start = self.idx - 1,
-                                    .end = self.idx,
-                                },
-                            },
-                        },
-                    };
-                } else switch (self.current) {
-                    '"', '\'' => @panic("TODO"),
-                    // TODO: the spec says the tokenizer should handle "character references" here, but,
-                    //       that would require allocation, so, we should probably handle that elsewhere
-                    //'&' => return error.NotImpl,
-                    0 => return .{
-                        .token = .{
-                            .parse_error = .{
-                                .tag = .unexpected_null_character,
-                                .span = .{
-                                    .start = self.idx - 1,
-                                    .end = self.idx,
-                                },
-                            },
-                        },
-                    },
-                    else => {
-                        if (std.ascii.isWhitespace(self.current)) {
-                            defer {
-                                self.idx -= 1;
-                                self.state = .after_attribute_value;
-                            }
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Switch to the data state. Emit the current tag token.
+                    '>' => {
+                        var tag = state.tag;
+                        tag.span.end = self.idx;
+
+                        self.state = .data;
+
+                        if (self.return_attrs) {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name_raw = attr_state.name_raw,
+                                        .name_raw = state.name_raw,
                                         .value_raw = .{
-                                            .quote = .none,
+                                            .quote = .single,
                                             .span = .{
-                                                .start = attr_state.start,
-                                                .end = self.idx,
+                                                .start = state.value_start,
+                                                .end = self.idx - 1,
                                             },
                                         },
                                     },
                                 },
                             };
+                        } else {
+                            return .{ .token = .{ .tag = tag } };
                         }
                     },
-                }
-            },
-            .after_attribute_value => {
-                if (!self.consume(src)) {
-                    self.state = .eof;
-                    // NOTE: spec doesn't say to emit the current tag?
-                    return .{
+
+                    // U+0026 AMPERSAND (&)
+                    // Set the return state to the attribute value (unquoted) state. Switch to the character reference state.
+                    //
+                    // (handled elsewhere)
+                    //'&' => {},
+
+                    // U+0000 NULL
+                    // This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
+                    0 => return .{
                         .token = .{
                             .parse_error = .{
-                                .tag = .eof_in_tag,
+                                .tag = .unexpected_null_character,
                                 .span = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
                             },
                         },
-                    };
-                } else switch (self.current) {
-                    '\t', '\n', form_feed, ' ' => self.state = .before_attribute_name,
-                    '>' => {
-                        self.state = .data;
-                        return .{
-                            .token = .{
-                                .start_tag_rbracket = self.idx,
-                            },
-                        };
                     },
-                    '/' => self.state = .self_closing_start_tag,
-                    else => {
-                        // TODO: read the spec and return the correct error
+                    // U+0022 QUOTATION MARK (")
+                    // U+0027 APOSTROPHE (')
+                    // U+003C LESS-THAN SIGN (<)
+                    // U+003D EQUALS SIGN (=)
+                    // U+0060 GRAVE ACCENT (`)
+                    // This is an unexpected-character-in-unquoted-attribute-value parse error. Treat it as per the "anything else" entry below.
+                    '"', '\'', '<', '=', '`' => {
                         return .{
                             .token = .{
                                 .parse_error = .{
-                                    .tag = .unexpected_character_in_attribute_name,
+                                    .tag = .unexpected_character_in_unquoted_attribute_value,
                                     .span = .{
                                         .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                    },
+                    // Anything else
+                    // Append the current input character to the current attribute's value.
+                    else => {},
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-(quoted)-state
+
+            .after_attribute_value => |state| {
+                if (!self.consume(src)) {
+                    self.state = .eof;
+                    // EOF
+                    // This is an eof-in-tag parse error. Emit an end-of-file token.
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = state.attr_value_end,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
+                } else switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Switch to the before attribute name state.
+                    '\t', '\n', form_feed, ' ' => self.state = .{
+                        .before_attribute_name = state.tag,
+                    },
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Switch to the data state. Emit the current tag token.
+                    '>' => {
+                        var tag = state.tag;
+                        tag.span.end = self.idx;
+
+                        self.state = .data;
+                        return .{ .token = .{ .tag = tag } };
+                    },
+                    // U+002F SOLIDUS (/)
+                    // Switch to the self-closing start tag state.
+                    '/' => self.state = .self_closing_start_tag,
+                    // Anything else
+                    // This is a missing-whitespace-between-attributes parse error. Reconsume in the before attribute name state.
+                    else => {
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_whitespace_between_attributes,
+                                    .span = .{
+                                        .start = state.attr_value_end,
                                         .end = self.idx,
                                     },
                                 },
@@ -960,9 +1300,6 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .name_raw = null,
                                 },
                             },
-                            .deferred = .{
-                                .doctype_rbracket = self.idx,
-                            },
                         };
                     },
                     else => {
@@ -1020,9 +1357,6 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     },
                                     .force_quirks = false,
                                 },
-                            },
-                            .deferred = .{
-                                .doctype_rbracket = self.idx,
                             },
                         };
                     },

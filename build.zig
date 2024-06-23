@@ -58,4 +58,21 @@ pub fn build(b: *std.Build) !void {
     run_exe_step.dependOn(&run_exe.step);
 
     b.installArtifact(super_cli);
+
+    const super_cli_check = b.addExecutable(.{
+        .name = "super",
+        .root_source_file = b.path("src/cli.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    super_cli_check.root_module.addImport("super", super);
+    super_cli_check.root_module.addImport(
+        "known-folders",
+        folders.module("known-folders"),
+    );
+    super_cli_check.root_module.addImport("lsp", lsp.module("lsp"));
+
+    const check = b.step("check", "Check if Super compiles");
+    check.dependOn(&super_cli_check.step);
 }
