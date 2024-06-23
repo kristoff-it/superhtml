@@ -76,7 +76,7 @@ pub fn getRange(
     for (code[0..self.start]) |c| {
         if (c == '\n') {
             selection.start.line += 1;
-            selection.start.character = 1;
+            selection.start.character = 0;
         } else selection.start.character += 1;
     }
 
@@ -84,7 +84,7 @@ pub fn getRange(
     for (code[self.start..self.end]) |c| {
         if (c == '\n') {
             selection.end.line += 1;
-            selection.end.character = 1;
+            selection.end.character = 0;
         } else selection.end.character += 1;
     }
     return selection;

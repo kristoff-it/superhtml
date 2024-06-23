@@ -468,15 +468,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // EOF
                     // This is an eof-in-tag parse error. Emit an end-of-file token.
                     self.state = .eof;
-                    return .{ .token = .{
-                        .parse_error = .{
-                            .tag = .eof_in_tag,
-                            .span = .{
-                                .start = state.span.start,
-                                .end = self.idx,
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_tag,
+                                .span = .{
+                                    .start = state.span.start,
+                                    .end = self.idx,
+                                },
                             },
                         },
-                    } };
+                    };
                 }
                 switch (self.current) {
                     // U+0009 CHARACTER TABULATION (tab)
@@ -500,8 +502,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Switch to the data state. Emit the current tag token.
                     '>' => {
                         var tag = state;
-                        tag.name.end = self.idx;
-                        tag.span.end = self.idx + 1;
+                        tag.name.end = self.idx - 1;
+                        tag.span.end = self.idx;
 
                         self.state = .data;
                         if (self.return_attrs) {

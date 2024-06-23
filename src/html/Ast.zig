@@ -183,9 +183,11 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                         }
 
                         const current_name = blk: {
-                            var temp_tok: Tokenizer = .{};
+                            var temp_tok: Tokenizer = .{
+                                .return_attrs = true,
+                            };
                             const tag_src = current.open.slice(src);
-                            break :blk temp_tok.next(tag_src).?.tag.name.slice(tag_src);
+                            break :blk temp_tok.next(tag_src).?.tag_name.slice(tag_src);
                         };
 
                         log.debug("matching cn: {s} tag: {s}", .{
@@ -202,9 +204,20 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                             var cursor = original_current;
                             while (cursor != current) {
                                 if (!cursor.isClosed()) {
+                                    const cur_name: Tokenizer.Span = blk: {
+                                        var temp_tok: Tokenizer = .{
+                                            .return_attrs = true,
+                                        };
+                                        const tag_src = cursor.open.slice(src);
+                                        const rel_name = temp_tok.next(tag_src).?.tag_name;
+                                        break :blk .{
+                                            .start = rel_name.start + cursor.open.start,
+                                            .end = rel_name.end + cursor.open.start,
+                                        };
+                                    };
                                     try errors.append(.{
                                         .tag = .{ .ast = .missing_end_tag },
-                                        .span = cursor.open,
+                                        .span = cur_name,
                                     });
                                 }
 
@@ -488,15 +501,14 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                                 }
                             },
                         }
-
-                        if (vertical) {
-                            try w.print("\n", .{});
-                            for (0..indentation - 1) |_| {
-                                try w.print("  ", .{});
-                            }
-                        }
-                        try w.print(">", .{});
                     }
+                    if (vertical) {
+                        try w.print("\n", .{});
+                        for (0..indentation - 1) |_| {
+                            try w.print("  ", .{});
+                        }
+                    }
+                    try w.print(">", .{});
 
                     switch (current.tag) {
                         else => unreachable,
