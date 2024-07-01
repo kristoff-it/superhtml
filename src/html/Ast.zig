@@ -110,7 +110,7 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
             .doctype => |dt| {
                 var new: Node = .{
                     .tag = .doctype,
-                    .open = .{ .start = dt.lbracket, .end = 0 },
+                    .open = dt.span,
                 };
                 switch (current.direction()) {
                     .in => {
@@ -130,7 +130,11 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                 current = &nodes.items[current_idx];
             },
             .tag => |tag| switch (tag.kind) {
-                .start, .start_attrs => {
+                .start,
+                .start_self,
+                .start_attrs,
+                .start_attrs_self,
+                => {
                     var new: Node = .{
                         .tag = if (tag.isVoid(src)) .element_void else .element,
                         .open = tag.span,
@@ -232,30 +236,6 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                     }
                 },
             },
-            .start_tag_self_closed => |stsc| {
-                var new: Node = .{
-                    .tag = .element_self_closing,
-                    .open = stsc,
-                };
-
-                switch (current.direction()) {
-                    .in => {
-                        new.parent_idx = current_idx;
-                        std.debug.assert(current.first_child_idx == 0);
-                        current_idx = @intCast(nodes.items.len);
-                        current.first_child_idx = current_idx;
-                    },
-                    .after => {
-                        new.parent_idx = current.parent_idx;
-                        current_idx = @intCast(nodes.items.len);
-                        current.next_idx = current_idx;
-                    },
-                }
-
-                try nodes.append(new);
-                current = &nodes.items[current_idx];
-            },
-
             .text => |txt| {
                 var new: Node = .{
                     .tag = .text,

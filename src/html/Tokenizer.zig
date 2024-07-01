@@ -36,8 +36,11 @@ pub const TokenError = enum {
     eof_in_doctype,
     eof_in_tag,
     incorrectly_opened_comment,
+    invalid_character_sequence_after_doctype_name,
     invalid_first_character_of_tag_name,
     missing_attribute_value,
+    missing_doctype_name,
+    missing_doctype_public_identifier,
     missing_end_tag_name,
     missing_whitespace_before_doctype_name,
     missing_whitespace_between_attributes,
@@ -66,7 +69,6 @@ pub const Token = union(enum) {
     // Returned during normal operation
     doctype: Doctype,
     tag: Tag,
-    start_tag_self_closed: Span,
 
     comment: Span,
     text: Span,
@@ -76,14 +78,10 @@ pub const Token = union(enum) {
     },
 
     pub const Doctype = struct {
-        // NOTE: process name_raw by replacing
-        //     - upper-case ascii alpha with lower case (add 0x20)
-        //     - 0 with U+FFFD
-        lbracket: u32, // index of "<"
+        span: Span,
         name_raw: ?Span,
+        extra: ?Span,
         force_quirks: bool,
-        //public_id: usize,
-        //system_id: usize,
     };
 
     pub const Tag = struct {
@@ -92,10 +90,13 @@ pub const Token = union(enum) {
         kind: enum {
             start,
             start_attrs,
+            start_self,
+            start_attrs_self,
             end,
         },
 
         pub fn isVoid(st: @This(), src: []const u8) bool {
+            std.debug.assert(st.name.end != 0);
             const void_tags: []const []const u8 = &.{
                 "area", "base",   "br",
                 "col",  "embed",  "hr",
@@ -130,20 +131,22 @@ const State = union(enum) {
     before_doctype_name: u32,
     doctype_name: struct {
         lbracket: u32,
-        name_offset: u32,
+        name_start: u32,
     },
     after_doctype_name: struct {
         lbracket: u32,
-        name_offset: u32,
-        name_limit: u32,
+        name_raw: Span,
     },
+    after_doctype_public_kw: Token.Doctype,
+    after_doctype_system_kw: Token.Doctype,
+    bogus_doctype: Token.Doctype,
     comment_start: u32,
     comment_start_dash: void,
     comment: u32,
     comment_end_dash: Span,
     comment_end: Span,
     tag_name: Token.Tag,
-    self_closing_start_tag: void,
+    self_closing_start_tag: Token.Tag,
     before_attribute_name: Token.Tag,
     attribute_name: struct {
         tag: Token.Tag,
@@ -206,11 +209,22 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
     while (true) {
         log.debug("{any}", .{self.state});
         switch (self.state) {
+            //https://html.spec.whatwg.org/multipage/parsing.html#data-state
+
             .data => {
+                // EOF
+                // Emit an end-of-file token.
                 if (!self.consume(src)) return null;
                 switch (self.current) {
+                    // U+0026 AMPERSAND (&)
+                    // Set the return state to the data state. Switch to the character reference state.
                     //'&' => {} we don't process character references in the tokenizer
+
+                    // U+003C LESS-THAN SIGN (<)
+                    // Switch to the tag open state.
                     '<' => self.state = .{ .tag_open = self.idx - 1 },
+                    // U+0000 NULL
+                    // This is an unexpected-null-character parse error. Emit the current input character as a character token.
                     0 => {
                         return .{
                             .token = .{
@@ -230,6 +244,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             // },
                         };
                     },
+                    // Anything else
+                    // Emit the current input character as a character token.
                     else => self.state = .{
                         .text = .{
                             .start = self.idx - 1,
@@ -497,7 +513,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                     // U+002F SOLIDUS (/)
                     // Switch to the self-closing start tag state.
-                    '/' => self.state = .self_closing_start_tag,
+                    '/' => {
+                        var tag = state;
+                        tag.name.end = self.idx - 1;
+                        self.state = .{
+                            .self_closing_start_tag = tag,
+                        };
+                    },
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the data state. Emit the current tag token.
                     '>' => {
@@ -532,39 +554,42 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     else => {},
                 }
             },
-            .self_closing_start_tag => {
-                if (true) @panic("TODO");
+            // https://html.spec.whatwg.org/multipage/parsing.html#self-closing-start-tag-state
+            .self_closing_start_tag => |state| {
                 if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-tag parse error. Emit an end-of-file token.
                     self.state = .eof;
                     return .{
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_tag,
                                 .span = .{
-                                    // TODO: report starting from the beginning of this tag
-                                    .start = self.idx - 1,
+                                    .start = state.span.start,
                                     .end = self.idx,
                                 },
                             },
                         },
                     };
                 } else switch (self.current) {
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Set the self-closing flag of the current tag token. Switch to the data state. Emit the current tag token.
                     '>' => {
                         self.state = .data;
-                        return .{
-                            .token = .{
-                                // TODO: can we assume the start will be 2 bytes back?
-                                .start_tag_self_closed = .{
-                                    .start = self.idx - 2,
-                                    .end = self.idx,
-                                },
-                            },
+
+                        var tag = state;
+                        tag.kind = switch (tag.kind) {
+                            .start => .start_self,
+                            .start_attrs => .start_attrs_self,
+                            else => unreachable,
                         };
+
+                        return .{ .token = .{ .tag = tag } };
                     },
+                    // Anything else
+                    // This is an unexpected-solidus-in-tag parse error. Reconsume in the before attribute name state.
                     else => {
-                        self.state = .{
-                            .before_attribute_name = undefined,
-                        };
+                        self.state = .{ .before_attribute_name = state };
                         self.idx -= 1;
                         return .{
                             .token = .{
@@ -584,16 +609,20 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             .before_attribute_name => |state| {
                 // See EOF case from below
                 if (!self.consume(src)) {
-                    self.idx -= 1;
-                    self.state = .{
-                        .after_attribute_name = .{
-                            .tag = state,
-                            .name_raw = .{
-                                .start = self.idx,
-                                .end = self.idx + 1,
-                            },
-                        },
-                    };
+                    self.state = .data;
+                    var tag = state;
+                    tag.span.end = self.idx;
+                    return .{ .token = .{ .tag = tag } };
+                    // self.idx -= 1;
+                    // self.state = .{
+                    //     .after_attribute_name = .{
+                    //         .tag = state,
+                    //         .name_raw = .{
+                    //             .start = self.idx,
+                    //             .end = self.idx + 1,
+                    //         },
+                    //     },
+                    // };
                 } else switch (self.current) {
                     // U+0009 CHARACTER TABULATION (tab)
                     // U+000A LINE FEED (LF)
@@ -607,18 +636,22 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // EOF
                     // Reconsume in the after attribute name state.
                     //
-                    // (EOF handled above)
+                    // NOTE: handled differently
                     '/', '>' => {
-                        self.idx -= 1;
-                        self.state = .{
-                            .after_attribute_name = .{
-                                .tag = state,
-                                .name_raw = .{
-                                    .start = self.idx,
-                                    .end = self.idx + 1,
-                                },
-                            },
-                        };
+                        self.state = .data;
+                        var tag = state;
+                        tag.span.end = self.idx;
+                        return .{ .token = .{ .tag = tag } };
+                        // self.idx -= 1;
+                        // self.state = .{
+                        //     .after_attribute_name = .{
+                        //         .tag = state,
+                        //         .name_raw = .{
+                        //             .start = self.idx - 2,
+                        //             .end = self.idx,
+                        //         },
+                        //     },
+                        // };
                     },
 
                     //U+003D EQUALS SIGN (=)
@@ -763,7 +796,22 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '\t', '\n', form_feed, ' ' => {},
                     // U+002F SOLIDUS (/)
                     // Switch to the self-closing start tag state.
-                    '/' => self.state = .self_closing_start_tag,
+                    '/' => {
+                        self.state = .{
+                            .self_closing_start_tag = state.tag,
+                        };
+
+                        if (self.return_attrs) {
+                            return .{
+                                .token = .{
+                                    .attr = .{
+                                        .name_raw = state.name_raw,
+                                        .value_raw = null,
+                                    },
+                                },
+                            };
+                        }
+                    },
                     // U+003D EQUALS SIGN (=)
                     // Switch to the before attribute value state.
                     '=' => self.state = .{
@@ -789,9 +837,9 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     },
                                 },
                             };
-                        } else {
-                            return .{ .token = .{ .tag = tag } };
                         }
+
+                        return .{ .token = .{ .tag = tag } };
                     },
                     // Anything else
                     // Start a new attribute in the current tag token. Set that attribute name and value to the empty string. Reconsume in the attribute name state.
@@ -1152,7 +1200,11 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                     // U+002F SOLIDUS (/)
                     // Switch to the self-closing start tag state.
-                    '/' => self.state = .self_closing_start_tag,
+                    '/' => {
+                        self.state = .{
+                            .self_closing_start_tag = state.tag,
+                        };
+                    },
                     // Anything else
                     // This is a missing-whitespace-between-attributes parse error. Reconsume in the before attribute name state.
                     else => {
@@ -1197,8 +1249,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             .character_reference => {
                 @panic("TODO: implement character reference");
             },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#doctype-state
             .doctype => |lbracket| {
                 if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-doctype parse error. Create a new DOCTYPE token. Set its force-quirks flag to on. Emit the current token. Emit an end-of-file token.
                     self.state = .eof;
                     return .{
                         .token = .{
@@ -1212,23 +1268,36 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         },
                         .deferred = .{
                             .doctype = .{
-                                .lbracket = lbracket,
+                                .extra = null,
                                 .force_quirks = true,
                                 .name_raw = null,
+                                .span = .{
+                                    .start = lbracket,
+                                    .end = self.idx,
+                                },
                             },
                         },
                     };
                 }
                 switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Switch to the before DOCTYPE name state.
                     '\t', '\n', form_feed, ' ' => self.state = .{
                         .before_doctype_name = lbracket,
                     },
+
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Reconsume in the before DOCTYPE name state.
                     '>' => {
                         self.idx -= 1;
-                        self.state = .{
-                            .before_doctype_name = lbracket,
-                        };
+                        self.state = .{ .before_doctype_name = lbracket };
                     },
+
+                    // Anything else
+                    // This is a missing-whitespace-before-doctype-name parse error. Reconsume in the before DOCTYPE name state.
                     else => {
                         self.idx -= 1;
                         self.state = .{
@@ -1248,8 +1317,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                 }
             },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#before-doctype-name-state
             .before_doctype_name => |lbracket| {
                 if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-doctype parse error. Create a new DOCTYPE token. Set its force-quirks flag to on. Emit the current token. Emit an end-of-file token.
                     self.state = .eof;
                     return .{
                         .token = .{
@@ -1263,7 +1336,11 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         },
                         .deferred = .{
                             .doctype = .{
-                                .lbracket = lbracket,
+                                .extra = null,
+                                .span = .{
+                                    .start = lbracket,
+                                    .end = self.idx,
+                                },
                                 .force_quirks = true,
                                 .name_raw = null,
                             },
@@ -1271,12 +1348,19 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     };
                 }
                 switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Ignore the character.
                     '\t', '\n', form_feed, ' ' => {},
+                    // U+0000 NULL
+                    // This is an unexpected-null-character parse error. Create a new DOCTYPE token. Set the token's name to a U+FFFD REPLACEMENT CHARACTER character. Switch to the DOCTYPE name state.
                     0 => {
                         self.state = .{
                             .doctype_name = .{
                                 .lbracket = lbracket,
-                                .name_offset = self.idx - 1,
+                                .name_start = self.idx - 1,
                             },
                         };
                         return .{
@@ -1291,32 +1375,54 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             },
                         };
                     },
+                    // U+003E GREATER-THAN SIGN (>)
+                    // This is a missing-doctype-name parse error. Create a new DOCTYPE token. Set its force-quirks flag to on. Switch to the data state. Emit the current token.
                     '>' => {
                         self.idx -= 1;
                         self.state = .data;
                         return .{
                             .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_doctype_name,
+                                    .span = .{
+                                        .start = lbracket,
+                                        .end = self.idx + 1,
+                                    },
+                                },
+                            },
+                            .deferred = .{
                                 .doctype = .{
-                                    .lbracket = lbracket,
+                                    .extra = null,
+                                    .span = .{
+                                        .start = lbracket,
+                                        .end = self.idx + 1,
+                                    },
                                     .force_quirks = true,
                                     .name_raw = null,
                                 },
                             },
                         };
                     },
+                    // ASCII upper alpha
+                    // Create a new DOCTYPE token. Set the token's name to the lowercase version of the current input character (add 0x0020 to the character's code point). Switch to the DOCTYPE name state.
+                    // Anything else
+                    // Create a new DOCTYPE token. Set the token's name to the current input character. Switch to the DOCTYPE name state.
                     else => {
-                        // NOTE: same thing for isAsciiAlphaUpper since we post-process the name
                         self.state = .{
                             .doctype_name = .{
                                 .lbracket = lbracket,
-                                .name_offset = self.idx - 1,
+                                .name_start = self.idx - 1,
                             },
                         };
                     },
                 }
             },
-            .doctype_name => |doctype_state| {
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#doctype-name-state
+            .doctype_name => |state| {
                 if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     self.state = .eof;
                     return .{
                         .token = .{
@@ -1330,7 +1436,11 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         },
                         .deferred = .{
                             .doctype = .{
-                                .lbracket = 0, //todo
+                                .extra = null,
+                                .span = .{
+                                    .start = state.lbracket,
+                                    .end = self.idx + 1,
+                                },
                                 .force_quirks = true,
                                 .name_raw = null,
                             },
@@ -1338,23 +1448,36 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     };
                 }
                 switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Switch to the after DOCTYPE name state.
                     '\t', '\n', form_feed, ' ' => {
                         self.state = .{
                             .after_doctype_name = .{
-                                .lbracket = doctype_state.lbracket,
-                                .name_offset = doctype_state.name_offset,
-                                .name_limit = self.idx - 1,
+                                .lbracket = state.lbracket,
+                                .name_raw = .{
+                                    .start = state.name_start,
+                                    .end = self.idx - 1,
+                                },
                             },
                         };
                     },
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Switch to the data state. Emit the current DOCTYPE token.
                     '>' => {
                         self.state = .data;
                         return .{
                             .token = .{
                                 .doctype = .{
-                                    .lbracket = doctype_state.lbracket,
+                                    .extra = null,
+                                    .span = .{
+                                        .start = state.lbracket,
+                                        .end = self.idx,
+                                    },
                                     .name_raw = .{
-                                        .start = doctype_state.name_offset,
+                                        .start = state.name_start,
                                         .end = self.idx - 1,
                                     },
                                     .force_quirks = false,
@@ -1362,6 +1485,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             },
                         };
                     },
+                    // U+0000 NULL
+                    // This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current DOCTYPE token's name.
                     0 => return .{
                         .token = .{
                             .parse_error = .{
@@ -1373,11 +1498,228 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             },
                         },
                     },
+                    // ASCII upper alpha
+                    // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current DOCTYPE token's name.
+                    // Anything else
+                    // Append the current input character to the current DOCTYPE token's name.
                     else => {},
                 }
             },
-            .after_doctype_name => {
-                @panic("TODO: implement after_doctype_name");
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-name-state
+            .after_doctype_name => |state| {
+                if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
+                    self.state = .eof;
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_doctype,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                        .deferred = .{
+                            .doctype = .{
+                                .extra = null,
+                                .span = .{
+                                    .start = state.lbracket,
+                                    .end = self.idx,
+                                },
+                                .name_raw = state.name_raw,
+                                .force_quirks = true,
+                            },
+                        },
+                    };
+                }
+                switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Ignore the character.
+                    '\t', '\n', form_feed, ' ' => {},
+                    // U+003E GREATER-THAN SIGN (>)
+                    // Switch to the data state. Emit the current DOCTYPE token.
+                    '>' => {
+                        self.state = .data;
+                        return .{
+                            .token = .{
+                                .doctype = .{
+                                    .extra = null,
+                                    .span = .{
+                                        .start = state.lbracket,
+                                        .end = self.idx,
+                                    },
+                                    .name_raw = state.name_raw,
+                                    .force_quirks = false,
+                                },
+                            },
+                        };
+                    },
+
+                    // Anything else
+                    else => {
+                        if (self.nextCharsAreIgnoreCase("PUBLIC", src)) {
+                            // If the six characters starting from the current input character are an ASCII case-insensitive match for the word "PUBLIC", then consume those characters and switch to the after DOCTYPE public keyword state.
+                            self.state = .{
+                                .after_doctype_public_kw = .{
+                                    .span = .{
+                                        .start = state.lbracket,
+                                        .end = 0,
+                                    },
+                                    .name_raw = state.name_raw,
+                                    .extra = .{
+                                        .start = self.idx,
+                                        .end = 0,
+                                    },
+                                    .force_quirks = false,
+                                },
+                            };
+
+                            self.idx += @intCast("PUBLIC".len);
+                        } else if (self.nextCharsAreIgnoreCase("SYSTEM", src)) {
+                            // Otherwise, if the six characters starting from the current input character are an ASCII case-insensitive match for the word "SYSTEM", then consume those characters and switch to the after DOCTYPE system keyword state.
+                            self.idx += @intCast("SYSTEM".len);
+                            self.state = .{
+                                .after_doctype_system_kw = .{
+                                    .span = .{
+                                        .start = state.lbracket,
+                                        .end = 0,
+                                    },
+                                    .name_raw = state.name_raw,
+                                    .extra = .{
+                                        .start = self.idx,
+                                        .end = 0,
+                                    },
+                                    .force_quirks = false,
+                                },
+                            };
+                        } else {
+                            // Otherwise, this is an invalid-character-sequence-after-doctype-name parse error. Set the current DOCTYPE token's force-quirks flag to on. Reconsume in the bogus DOCTYPE state.
+                            self.idx -= 1;
+                            self.state = .{
+                                .bogus_doctype = .{
+                                    .span = .{
+                                        .start = state.lbracket,
+                                        .end = 0,
+                                    },
+                                    .name_raw = state.name_raw,
+                                    .extra = .{
+                                        .start = self.idx,
+                                        .end = 0,
+                                    },
+                                    .force_quirks = true,
+                                },
+                            };
+                            return .{
+                                .token = .{
+                                    .parse_error = .{
+                                        .tag = .invalid_character_sequence_after_doctype_name,
+                                        .span = .{
+                                            .start = self.idx,
+                                            .end = self.idx + 1,
+                                        },
+                                    },
+                                },
+                            };
+                        }
+                    },
+                }
+            },
+            // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-public-keyword-state
+
+            // U+0027 APOSTROPHE (')
+            // This is a missing-whitespace-after-doctype-public-keyword parse error. Set the current DOCTYPE token's public identifier to the empty string (not missing), then switch to the DOCTYPE public identifier (single-quoted) state.
+            // Anything else
+            // This is a missing-quote-before-doctype-public-identifier parse error. Set the current DOCTYPE token's force-quirks flag to on. Reconsume in the bogus DOCTYPE state.
+
+            .after_doctype_public_kw => |state| {
+                if (!self.consume(src)) {
+                    // EOF
+                    // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
+                    self.state = .eof;
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .eof_in_doctype,
+                                .span = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                        .deferred = .{
+                            .doctype = .{
+                                .extra = null,
+                                .span = state.span,
+                                .name_raw = state.name_raw,
+                                .force_quirks = true,
+                            },
+                        },
+                    };
+                }
+                switch (self.current) {
+                    // U+0009 CHARACTER TABULATION (tab)
+                    // U+000A LINE FEED (LF)
+                    // U+000C FORM FEED (FF)
+                    // U+0020 SPACE
+                    // Switch to the before DOCTYPE public identifier state.
+                    '\t', '\n', form_feed, ' ' => {
+                        // self.state = .{
+                        //     .before_doctype_public_identifier = state,
+                        // };
+                    },
+                    // U+003E GREATER-THAN SIGN (>)
+                    // This is a missing-doctype-public-identifier parse error. Set the current DOCTYPE token's force-quirks flag to on. Switch to the data state. Emit the current DOCTYPE token.
+                    '>' => {
+                        self.state = .data;
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_doctype_public_identifier,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                            .deferred = .{
+                                .doctype = .{
+                                    .extra = null,
+                                    .span = state.span, // todo check
+                                    .name_raw = state.name_raw,
+                                    .force_quirks = true,
+                                },
+                            },
+                        };
+                    },
+                    // U+0022 QUOTATION MARK (")
+                    // This is a missing-whitespace-after-doctype-public-keyword parse error. Set the current DOCTYPE token's public identifier to the empty string (not missing), then switch to the DOCTYPE public identifier (double-quoted) state.
+                    '"' => {
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_doctype_public_identifier,
+                                    .span = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                    },
+                    else => @panic("TODO"),
+                }
+            },
+            .after_doctype_system_kw => |state| {
+                _ = state;
+            },
+            .bogus_doctype => |state| {
+                _ = state;
             },
             .comment_start => |comment_start| {
                 if (!self.consume(src)) {
