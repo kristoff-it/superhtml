@@ -1,10 +1,10 @@
 {
   "name": "super",
-  "displayName": "super",
-  "description": "SuperHTML LSP",
+  "displayName": "SuperHTML",
+  "description": "Actually Functional Language Server for HTML Files",
   "repository": "https://github.com/kristoff-it/super-html",
   "publisher": "LorisCro",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "vscode": "^1.87.0"
   },
