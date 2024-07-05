@@ -1,0 +1,113 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Ziggy Schema",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#operators"
+		},
+		{
+			"include": "#builtins"
+		},
+		{
+			"include": "#tag_names"
+		},
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#variables"
+		}
+	],
+	"repository": {
+		"variables": {
+			"patterns": [
+				{
+					"name": "meta.variable.ziggy_schema",
+					"patterns": [
+						{
+							"match": "\\b[_a-zA-Z][_a-zA-Z0-9]*\\b",
+							"name": "variable.ziggy_schema"
+						},
+						{
+							"begin": "@\"",
+							"end": "\"",
+							"name": "variable.string.ziggy_schema",
+							"patterns": [
+								{
+									"include": "#stringcontent"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		"stringcontent": {
+			"patterns": [
+				{
+					"name": "constant.character.escape.ziggy_schema",
+					"match": "\\\\([nrt'\"\\\\]|(x[0-9a-fA-F]{2})|(u\\{[0-9a-fA-F]+\\}))"
+				},
+				{
+					"name": "invalid.illegal.unrecognized-string-escape.ziggy_schema",
+					"match": "\\\\."
+				}
+			]
+		},
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.ziggy_schema",
+					"match": "\\b(root|struct|map|any)\\b"
+				}
+			]
+		},
+		"builtins": {
+			"patterns": [
+				{
+					"name": "support.type.ziggy_schema",
+					"match": "\\b(bytes|int|bool|float)\\b"
+				}
+			]
+		},
+		"tag_names": {
+			"comment": "Built-in functions",
+			"name": "support.function.builtin.ziggy_schema",
+			"match": "@[_a-zA-Z][_a-zA-Z0-9]*"
+		},
+		"operators": {
+			"patterns": [
+				{
+					"name": "keyword.control.ziggy_schema",
+					"match": "\\?"
+				}
+			]
+		},
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.line.documentation.ziggy_schema",
+					"begin": "//[!/](?=[^/])",
+					"end": "$",
+					"patterns": [
+						{
+							"include": "#commentContents"
+						}
+					]
+				}
+			]
+		},
+		"commentContents": {
+			"patterns": [
+				{
+					"match": "\\b(NOTE)\\b:?",
+					"name": "keyword.todo.ziggy_schema"
+				}
+			]
+		}
+	},
+	"scopeName": "text.ziggy_schema"
+}

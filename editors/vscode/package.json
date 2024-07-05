@@ -1,0 +1,71 @@
+{
+  "name": "super",
+  "displayName": "super",
+  "description": "SuperHTML LSP",
+  "repository": "https://github.com/kristoff-it/super-html",
+  "publisher": "LorisCro",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.87.0"
+  },
+  "categories": [
+    "Formatters"
+  ],
+  "activationEvents": [
+    "onLanguage:html"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "super",
+        "aliases": [
+          "SuperHTML",
+          "Super HTML",
+          "superhtml",
+          "shtml",
+          "super"
+        ],
+        "extensions": [
+          ".shtml",
+          ".super"
+        ],
+        "configuration": "./super.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "super",
+        "scopeName": "text.super",
+        "path": "./syntaxes/super.tmLanguage.json"
+      }
+    ]
+  },
+  "main": "./out/extension",
+  "devDependencies": {
+    "@types/mocha": "^2.2.48",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.68.0",
+    "@types/which": "^2.0.1",
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "@typescript-eslint/parser": "^6.7.0",
+    "eslint": "^8.49.0",
+    "vscode-test": "^1.4.0"
+  },
+  "dependencies": {
+    "@vscode/vsce": "^2.24.0",
+    "camelcase": "^7.0.1",
+    "esbuild": "^0.12.1",
+    "lodash-es": "^4.17.21",
+    "lodash.debounce": "^4.0.8",
+    "mkdirp": "^2.1.3",
+    "vscode-languageclient": "^9.0.1",
+    "which": "^3.0.0"
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "esbuild --bundle --sourcemap=external --minify --external:vscode src/extension.ts --outdir=out --platform=node --format=cjs",
+    "watch": "esbuild --watch --bundle --sourcemap=external --external:vscode src/extension.ts --outdir=out --platform=node --format=cjs",
+    "test": "npm run compile && node ./node_modules/vscode/bin/test",
+    "lint": "eslint . --ext .ts"
+  }
+}

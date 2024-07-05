@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const super = @import("super");
 const logging = @import("cli/logging.zig");
+const fmt_exe = @import("cli/fmt.zig");
 const lsp_exe = @import("cli/lsp.zig");
 
 pub const known_folders_config = .{
@@ -44,7 +45,7 @@ pub fn panic(
     std.process.exit(1);
 }
 
-pub const Command = enum { lsp, help };
+pub const Command = enum { fmt, lsp, help };
 
 pub fn main() !void {
     var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -65,6 +66,7 @@ pub fn main() !void {
     if (cmd == .lsp) lsp_mode = true;
 
     _ = switch (cmd) {
+        .fmt => fmt_exe.run(gpa, args[2..]),
         .lsp => lsp_exe.run(gpa, args[2..]),
         .help => fatalHelp(),
     } catch |err| fatal("unexpected error: {s}\n", .{@errorName(err)});
@@ -84,6 +86,8 @@ fn fatalHelp() noreturn {
         \\Usage: super COMMAND [OPTIONS]
         \\
         \\Commands: 
+        // \\  check        Check HTML documents for syntax errors
+        \\  fmt          Format HTML documents
         \\  lsp          Start the Super LSP
         \\  help         Show this menu and exit
         \\
