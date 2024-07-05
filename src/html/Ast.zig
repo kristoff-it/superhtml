@@ -5,6 +5,25 @@ const Tokenizer = @import("Tokenizer.zig");
 
 const log = std.log.scoped(.ast);
 
+const TagNameMap = std.StaticStringMapWithEql(
+    void,
+    std.static_string_map.eqlAsciiIgnoreCase,
+);
+
+const rcdata_names = TagNameMap.initComptime(.{
+    .{ "title", {} },
+    .{ "textarea", {} },
+});
+
+const rawtext_names = TagNameMap.initComptime(.{
+    .{ "style", {} },
+    .{ "xmp", {} },
+    .{ "iframe", {} },
+    .{ "noembed", {} },
+    .{ "noframes", {} },
+    .{ "noscript", {} },
+});
+
 const Node = struct {
     tag: enum {
         root,
@@ -59,6 +78,7 @@ const Error = struct {
         ast: enum {
             missing_end_tag,
             erroneous_end_tag,
+            duplicate_attribute_name,
         },
     },
     span: Tokenizer.Span,
@@ -78,6 +98,9 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
     var tokenizer: Tokenizer = .{};
     var nodes = std.ArrayList(Node).init(gpa);
     var errors = std.ArrayList(Error).init(gpa);
+
+    var seen_attrs = std.StringHashMap(void).init(gpa);
+    defer seen_attrs.deinit();
 
     try nodes.append(.{
         .tag = .root,
@@ -100,14 +123,17 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
     var current_idx: u32 = 0;
 
     while (tokenizer.next(src)) |t| {
-        log.debug("cur_idx: {} tok: {any}", .{ current_idx, t });
-        std.debug.print("cur_idx: {} tok: {any}\n", .{ current_idx, t });
+        log.debug("cur_idx: {} cur_tag: {s} tok: {any}", .{
+            current_idx,
+            @tagName(current.tag),
+            t,
+        });
         switch (t) {
-            .attr => {},
+            .tag_name, .attr => unreachable,
             .doctype => |dt| {
                 var new: Node = .{
                     .tag = .doctype,
-                    .open = .{ .start = dt.lbracket, .end = 0 },
+                    .open = dt.span,
                 };
                 switch (current.direction()) {
                     .in => {
@@ -126,136 +152,155 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                 try nodes.append(new);
                 current = &nodes.items[current_idx];
             },
-            .doctype_rbracket => |idx| {
-                std.debug.assert(current.open.end == 0);
-                current.open.end = idx;
-            },
-            .start_tag => |st| {
-                var new: Node = .{
-                    .tag = if (st.isVoid(src)) .element_void else .element,
-                    .open = .{
-                        .start = st.lbracket,
-                        .end = 0,
-                    },
-                };
-                switch (current.direction()) {
-                    .in => {
-                        new.parent_idx = current_idx;
-                        std.debug.assert(current.first_child_idx == 0);
-                        current_idx = @intCast(nodes.items.len);
-                        current.first_child_idx = current_idx;
-                    },
-                    .after => {
-                        new.parent_idx = current.parent_idx;
-                        current_idx = @intCast(nodes.items.len);
-                        current.next_idx = current_idx;
-                    },
-                }
-
-                try nodes.append(new);
-                current = &nodes.items[current_idx];
-            },
-            .start_tag_rbracket => |idx| {
-                std.debug.assert(current.open.end == 0);
-                current.open.end = idx;
-            },
-            .end_tag => |et| {
-                if (current.tag == .root) {
-                    try errors.append(.{
-                        .tag = .{
-                            .ast = .erroneous_end_tag,
+            .tag => |tag| switch (tag.kind) {
+                .start,
+                .start_self,
+                .start_attrs,
+                .start_attrs_self,
+                => {
+                    var new: Node = .{
+                        .tag = if (tag.isVoid(src)) .element_void else .element,
+                        .open = tag.span,
+                    };
+                    switch (current.direction()) {
+                        .in => {
+                            new.parent_idx = current_idx;
+                            std.debug.assert(current.first_child_idx == 0);
+                            current_idx = @intCast(nodes.items.len);
+                            current.first_child_idx = current_idx;
                         },
-                        .span = et.name,
-                    });
-                    continue;
-                }
-
-                if (current.isClosed()) {
-                    current_idx = current.parent_idx;
-                    current = &nodes.items[current.parent_idx];
-                }
-
-                const original_current = current;
-                const original_current_idx = current_idx;
-
-                while (true) {
-                    if (current.tag == .root) {
-                        current = original_current;
-                        current_idx = original_current_idx;
-                        try errors.append(.{
-                            .tag = .{ .ast = .erroneous_end_tag },
-                            .span = et.name,
-                        });
-                        break;
+                        .after => {
+                            new.parent_idx = current.parent_idx;
+                            current_idx = @intCast(nodes.items.len);
+                            current.next_idx = current_idx;
+                        },
                     }
 
-                    const current_name = blk: {
-                        var temp_tok: Tokenizer = .{};
-                        const tag = current.open.slice(src);
-                        break :blk temp_tok.next(tag).?.start_tag.name.slice(tag);
-                    };
+                    try nodes.append(new);
+                    current = &nodes.items[current_idx];
 
-                    log.debug("matching cn: {s} tag: {s}", .{
-                        current_name,
-                        et.name.slice(src),
-                    });
+                    const name = tag.name.slice(src);
+                    if (std.ascii.eqlIgnoreCase("script", name)) {
+                        tokenizer.gotoScriptData();
+                    } else if (rcdata_names.has(name)) {
+                        tokenizer.gotoRcData(name);
+                    } else if (rawtext_names.has(name)) {
+                        tokenizer.gotoRawText(name);
+                    } else if (std.ascii.eqlIgnoreCase("plaintext", name)) {
+                        tokenizer.gotoPlainText();
+                    }
 
-                    std.debug.assert(!current.isClosed());
-                    if (std.ascii.eqlIgnoreCase(
-                        current_name,
-                        et.name.slice(src),
-                    )) {
-                        current.close = .{
-                            .start = et.lbracket,
-                            .end = 0,
-                        };
+                    // check for duplicated attrs
+                    {
+                        seen_attrs.clearRetainingCapacity();
+                        var tt: Tokenizer = .{ .return_attrs = true };
+                        const tag_src = tag.span.slice(src);
+                        // discard name token
+                        _ = tt.next(tag_src).?.tag_name.slice(tag_src);
 
-                        var cursor = original_current;
-                        while (cursor != current) {
+                        while (tt.next(tag_src)) |maybe_attr| {
+                            switch (maybe_attr) {
+                                else => unreachable,
+                                .tag => break,
+                                .attr => |attr| {
+                                    const attr_name = attr.name_raw.slice(tag_src);
+                                    const gop = try seen_attrs.getOrPut(attr_name);
+                                    if (gop.found_existing) {
+                                        try errors.append(.{
+                                            .tag = .{
+                                                .ast = .duplicate_attribute_name,
+                                            },
+                                            .span = .{
+                                                .start = attr.name_raw.start + tag.span.start,
+                                                .end = attr.name_raw.end + tag.span.start,
+                                            },
+                                        });
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
+                .end => {
+                    if (current.tag == .root) {
+                        try errors.append(.{
+                            .tag = .{
+                                .ast = .erroneous_end_tag,
+                            },
+                            .span = tag.name,
+                        });
+                        continue;
+                    }
+
+                    const original_current = current;
+                    const original_current_idx = current_idx;
+
+                    if (current.isClosed()) {
+                        current_idx = current.parent_idx;
+                        current = &nodes.items[current.parent_idx];
+                    }
+
+                    while (true) {
+                        if (current.tag == .root) {
+                            current = original_current;
+                            current_idx = original_current_idx;
                             try errors.append(.{
-                                .tag = .{ .ast = .missing_end_tag },
-                                .span = cursor.open,
+                                .tag = .{ .ast = .erroneous_end_tag },
+                                .span = tag.name,
                             });
-
-                            cursor = &nodes.items[cursor.parent_idx];
+                            break;
                         }
 
-                        break;
+                        const current_name = blk: {
+                            var temp_tok: Tokenizer = .{
+                                .return_attrs = true,
+                            };
+                            const tag_src = current.open.slice(src);
+                            break :blk temp_tok.next(tag_src).?.tag_name.slice(tag_src);
+                        };
+
+                        log.debug("matching cn: {s} tag: {s}", .{
+                            current_name,
+                            tag.name.slice(src),
+                        });
+
+                        std.debug.assert(!current.isClosed());
+                        if (std.ascii.eqlIgnoreCase(
+                            current_name,
+                            tag.name.slice(src),
+                        )) {
+                            current.close = tag.span;
+                            var cursor = original_current;
+                            while (cursor != current) {
+                                if (!cursor.isClosed()) {
+                                    const cur_name: Tokenizer.Span = blk: {
+                                        var temp_tok: Tokenizer = .{
+                                            .return_attrs = true,
+                                        };
+                                        const tag_src = cursor.open.slice(src);
+                                        const rel_name = temp_tok.next(tag_src).?.tag_name;
+                                        break :blk .{
+                                            .start = rel_name.start + cursor.open.start,
+                                            .end = rel_name.end + cursor.open.start,
+                                        };
+                                    };
+                                    try errors.append(.{
+                                        .tag = .{ .ast = .missing_end_tag },
+                                        .span = cur_name,
+                                    });
+                                }
+
+                                cursor = &nodes.items[cursor.parent_idx];
+                            }
+
+                            break;
+                        }
+
+                        current_idx = current.parent_idx;
+                        current = &nodes.items[current.parent_idx];
                     }
-
-                    current_idx = current.parent_idx;
-                    current = &nodes.items[current.parent_idx];
-                }
+                },
             },
-            .end_tag_rbracket => |idx| {
-                log.debug("end_rbracket: {any}", .{current});
-                // std.debug.assert(current.close.end == 0);
-                current.close.end = idx;
-            },
-            .start_tag_self_closed => |stsc| {
-                var new: Node = .{
-                    .tag = .element_self_closing,
-                    .open = stsc,
-                };
-
-                switch (current.direction()) {
-                    .in => {
-                        new.parent_idx = current_idx;
-                        std.debug.assert(current.first_child_idx == 0);
-                        current_idx = @intCast(nodes.items.len);
-                        current.first_child_idx = current_idx;
-                    },
-                    .after => {
-                        new.parent_idx = current.parent_idx;
-                        current_idx = @intCast(nodes.items.len);
-                        current.next_idx = current_idx;
-                    },
-                }
-
-                try nodes.append(new);
-                current = &nodes.items[current_idx];
-            },
-
             .text => |txt| {
                 var new: Node = .{
                     .tag = .text,
@@ -284,6 +329,8 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                     .tag = .comment,
                     .open = c,
                 };
+
+                log.debug("comment => current ({any})", .{current.*});
 
                 switch (current.direction()) {
                     .in => {
@@ -316,6 +363,29 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
         }
     }
 
+    // finalize tree
+    while (current != root) {
+        if (!current.isClosed()) {
+            const cur_name: Tokenizer.Span = blk: {
+                var temp_tok: Tokenizer = .{
+                    .return_attrs = true,
+                };
+                const tag_src = current.open.slice(src);
+                const rel_name = temp_tok.next(tag_src).?.tag_name;
+                break :blk .{
+                    .start = rel_name.start + current.open.start,
+                    .end = rel_name.end + current.open.start,
+                };
+            };
+            try errors.append(.{
+                .tag = .{ .ast = .missing_end_tag },
+                .span = cur_name,
+            });
+        }
+
+        current = &nodes.items[current.parent_idx];
+    }
+
     return .{
         .nodes = try nodes.toOwnedSlice(),
         .errors = try errors.toOwnedSlice(),
@@ -336,7 +406,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             .enter => {
                 log.debug("rendering enter ({}): {s} {any}", .{
                     indentation,
-                    current.open.slice(src),
+                    "",
+                    // current.open.slice(src),
                     current,
                 });
                 const maybe_ws = src[last_rbracket..current.open.start];
@@ -430,17 +501,33 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
 
             .doctype => {
                 last_rbracket = current.open.end;
-                const maybe_name_raw: ?[]const u8 = blk: {
+                const maybe_name_raw, const maybe_extra = blk: {
                     var tt: Tokenizer = .{};
                     const tag = current.open.slice(src);
                     log.debug("doctype tag: {s} {any}", .{ tag, current });
-                    break :blk if (tt.next(tag).?.doctype.name_raw) |name| name.slice(tag) else null;
+                    const dt = tt.next(tag).?.doctype;
+                    const maybe_name_raw: ?[]const u8 = if (dt.name_raw) |name|
+                        name.slice(tag)
+                    else
+                        null;
+                    const maybe_extra: ?[]const u8 = if (dt.extra.start > 0)
+                        dt.extra.slice(tag)
+                    else
+                        null;
+
+                    break :blk .{ maybe_name_raw, maybe_extra };
                 };
 
                 if (maybe_name_raw) |n| {
-                    try w.print("<!DOCTYPE {s}>", .{n});
+                    try w.print("<!DOCTYPE {s}", .{n});
                 } else {
-                    try w.print("<!DOCTYPE>", .{});
+                    try w.print("<!DOCTYPE", .{});
+                }
+
+                if (maybe_extra) |e| {
+                    try w.print(" {s}>", .{e});
+                } else {
+                    try w.print(">", .{});
                 }
 
                 if (current.next_idx != 0) {
@@ -454,10 +541,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             .element, .element_void => switch (direction) {
                 .enter => {
                     last_rbracket = current.open.end;
-                    var tt: Tokenizer = .{};
+                    var tt: Tokenizer = .{ .return_attrs = true };
                     const tag_src = current.open.slice(src);
                     log.debug("retokenize: {s}", .{tag_src});
-                    const name = tt.next(tag_src).?.start_tag.name.slice(tag_src);
+                    const name = tt.next(tag_src).?.tag_name.slice(tag_src);
 
                     if (std.ascii.eqlIgnoreCase("pre", name)) {
                         pre += 1;
@@ -468,8 +555,11 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     const vertical = std.ascii.isWhitespace(tag_src[tag_src.len - 2]);
 
                     while (tt.next(tag_src)) |maybe_attr| {
+                        log.debug("tt: {s}", .{@tagName(maybe_attr)});
+                        log.debug("tt: {any}", .{maybe_attr});
                         switch (maybe_attr) {
                             else => unreachable,
+                            .tag => break,
                             .attr => |attr| {
                                 if (vertical) {
                                     try w.print("\n", .{});
@@ -495,18 +585,15 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                                     });
                                 }
                             },
-                            .start_tag_rbracket => {
-                                if (vertical) {
-                                    try w.print("\n", .{});
-                                    for (0..indentation - 1) |_| {
-                                        try w.print("  ", .{});
-                                    }
-                                }
-                                try w.print(">", .{});
-                                break;
-                            },
                         }
                     }
+                    if (vertical) {
+                        try w.print("\n", .{});
+                        for (0..indentation - 1) |_| {
+                            try w.print("  ", .{});
+                        }
+                    }
+                    try w.print(">", .{});
 
                     switch (current.tag) {
                         else => unreachable,
@@ -532,10 +619,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     last_rbracket = current.close.end;
                     if (current.close.start != 0) {
                         const name = blk: {
-                            var tt: Tokenizer = .{};
+                            var tt: Tokenizer = .{ .return_attrs = true };
                             const tag = current.close.slice(src);
                             log.debug("retokenize {s}\n", .{tag});
-                            break :blk tt.next(tag).?.end_tag.name.slice(tag);
+                            break :blk tt.next(tag).?.tag_name.slice(tag);
                         };
 
                         if (std.ascii.eqlIgnoreCase("pre", name)) {
