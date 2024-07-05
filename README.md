@@ -1,7 +1,8 @@
 # SuperHTML
 Actually functional HTML Language Server (and Templating Language Library).
 
-**NOTE: SuperHTML is still incomplete, some features are missing and looking of somebody to implement them :^)**
+**NOTE: SuperHTML is still incomplete, some features are missing and looking of somebody to implement them :^)**  
+*And there's also bugs, waiting for people to report them as Issues :^)*
 
 ![](.github/vscode.png)
 
