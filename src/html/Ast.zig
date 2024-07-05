@@ -5,6 +5,25 @@ const Tokenizer = @import("Tokenizer.zig");
 
 const log = std.log.scoped(.ast);
 
+const TagNameMap = std.StaticStringMapWithEql(
+    void,
+    std.static_string_map.eqlAsciiIgnoreCase,
+);
+
+const rcdata_names = TagNameMap.initComptime(.{
+    .{ "title", {} },
+    .{ "textarea", {} },
+});
+
+const rawtext_names = TagNameMap.initComptime(.{
+    .{ "style", {} },
+    .{ "xmp", {} },
+    .{ "iframe", {} },
+    .{ "noembed", {} },
+    .{ "noframes", {} },
+    .{ "noscript", {} },
+});
+
 const Node = struct {
     tag: enum {
         root,
@@ -59,6 +78,7 @@ const Error = struct {
         ast: enum {
             missing_end_tag,
             erroneous_end_tag,
+            duplicate_attribute_name,
         },
     },
     span: Tokenizer.Span,
@@ -78,6 +98,9 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
     var tokenizer: Tokenizer = .{};
     var nodes = std.ArrayList(Node).init(gpa);
     var errors = std.ArrayList(Error).init(gpa);
+
+    var seen_attrs = std.StringHashMap(void).init(gpa);
+    defer seen_attrs.deinit();
 
     try nodes.append(.{
         .tag = .root,
@@ -155,6 +178,48 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
 
                     try nodes.append(new);
                     current = &nodes.items[current_idx];
+
+                    const name = tag.name.slice(src);
+                    if (std.ascii.eqlIgnoreCase("script", name)) {
+                        tokenizer.gotoScriptData();
+                    } else if (rcdata_names.has(name)) {
+                        tokenizer.gotoRcData(name);
+                    } else if (rawtext_names.has(name)) {
+                        tokenizer.gotoRawText(name);
+                    } else if (std.ascii.eqlIgnoreCase("plaintext", name)) {
+                        tokenizer.gotoPlainText();
+                    }
+
+                    // check for duplicated attrs
+                    {
+                        seen_attrs.clearRetainingCapacity();
+                        var tt: Tokenizer = .{ .return_attrs = true };
+                        const tag_src = tag.span.slice(src);
+                        // discard name token
+                        _ = tt.next(tag_src).?.tag_name.slice(tag_src);
+
+                        while (tt.next(tag_src)) |maybe_attr| {
+                            switch (maybe_attr) {
+                                else => unreachable,
+                                .tag => break,
+                                .attr => |attr| {
+                                    const attr_name = attr.name_raw.slice(tag_src);
+                                    const gop = try seen_attrs.getOrPut(attr_name);
+                                    if (gop.found_existing) {
+                                        try errors.append(.{
+                                            .tag = .{
+                                                .ast = .duplicate_attribute_name,
+                                            },
+                                            .span = .{
+                                                .start = attr.name_raw.start + tag.span.start,
+                                                .end = attr.name_raw.end + tag.span.start,
+                                            },
+                                        });
+                                    }
+                                },
+                            }
+                        }
+                    }
                 },
                 .end => {
                     if (current.tag == .root) {
@@ -298,6 +363,29 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
         }
     }
 
+    // finalize tree
+    while (current != root) {
+        if (!current.isClosed()) {
+            const cur_name: Tokenizer.Span = blk: {
+                var temp_tok: Tokenizer = .{
+                    .return_attrs = true,
+                };
+                const tag_src = current.open.slice(src);
+                const rel_name = temp_tok.next(tag_src).?.tag_name;
+                break :blk .{
+                    .start = rel_name.start + current.open.start,
+                    .end = rel_name.end + current.open.start,
+                };
+            };
+            try errors.append(.{
+                .tag = .{ .ast = .missing_end_tag },
+                .span = cur_name,
+            });
+        }
+
+        current = &nodes.items[current.parent_idx];
+    }
+
     return .{
         .nodes = try nodes.toOwnedSlice(),
         .errors = try errors.toOwnedSlice(),
@@ -318,7 +406,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             .enter => {
                 log.debug("rendering enter ({}): {s} {any}", .{
                     indentation,
-                    current.open.slice(src),
+                    "",
+                    // current.open.slice(src),
                     current,
                 });
                 const maybe_ws = src[last_rbracket..current.open.start];
@@ -412,17 +501,33 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
 
             .doctype => {
                 last_rbracket = current.open.end;
-                const maybe_name_raw: ?[]const u8 = blk: {
+                const maybe_name_raw, const maybe_extra = blk: {
                     var tt: Tokenizer = .{};
                     const tag = current.open.slice(src);
                     log.debug("doctype tag: {s} {any}", .{ tag, current });
-                    break :blk if (tt.next(tag).?.doctype.name_raw) |name| name.slice(tag) else null;
+                    const dt = tt.next(tag).?.doctype;
+                    const maybe_name_raw: ?[]const u8 = if (dt.name_raw) |name|
+                        name.slice(tag)
+                    else
+                        null;
+                    const maybe_extra: ?[]const u8 = if (dt.extra.start > 0)
+                        dt.extra.slice(tag)
+                    else
+                        null;
+
+                    break :blk .{ maybe_name_raw, maybe_extra };
                 };
 
                 if (maybe_name_raw) |n| {
-                    try w.print("<!DOCTYPE {s}>", .{n});
+                    try w.print("<!DOCTYPE {s}", .{n});
                 } else {
-                    try w.print("<!DOCTYPE>", .{});
+                    try w.print("<!DOCTYPE", .{});
+                }
+
+                if (maybe_extra) |e| {
+                    try w.print(" {s}>", .{e});
+                } else {
+                    try w.print(">", .{});
                 }
 
                 if (current.next_idx != 0) {
