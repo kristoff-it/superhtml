@@ -87,12 +87,26 @@ const Error = struct {
 nodes: []const Node,
 errors: []const Error,
 
+pub fn printErrors(ast: Ast, src: []const u8, path: ?[]const u8) void {
+    for (ast.errors) |err| {
+        const range = getRange(err.span, src);
+        std.debug.print("{s}:{}:{}: {s}\n", .{
+            path orelse "<stdin>",
+            range.start.line,
+            range.start.col,
+            switch (err.tag) {
+                inline else => |t| @tagName(t),
+            },
+        });
+    }
+}
+
 pub fn deinit(ast: Ast, gpa: std.mem.Allocator) void {
     gpa.free(ast.nodes);
     gpa.free(ast.errors);
 }
 
-pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
+pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
     if (src.len > std.math.maxInt(u32)) @panic("too long");
 
     var tokenizer: Tokenizer = .{};
@@ -202,8 +216,10 @@ pub fn init(src: []const u8, gpa: std.mem.Allocator) !Ast {
                             switch (maybe_attr) {
                                 else => unreachable,
                                 .tag => break,
+                                .parse_error => {},
                                 .attr => |attr| {
                                     const attr_name = attr.name_raw.slice(tag_src);
+                                    log.debug("attr_name = '{s}'", .{attr_name});
                                     const gop = try seen_attrs.getOrPut(attr_name);
                                     if (gop.found_existing) {
                                         try errors.append(.{
@@ -857,4 +873,40 @@ test "spans" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+}
+
+const Range = struct {
+    start: Pos,
+    end: Pos,
+
+    const Pos = struct {
+        line: u32,
+        col: u32,
+    };
+};
+
+pub fn getRange(
+    self: Tokenizer.Span,
+    code: []const u8,
+) Range {
+    var selection: Range = .{
+        .start = .{ .line = 0, .col = 0 },
+        .end = undefined,
+    };
+
+    for (code[0..self.start]) |c| {
+        if (c == '\n') {
+            selection.start.line += 1;
+            selection.start.col = 0;
+        } else selection.start.col += 1;
+    }
+
+    selection.end = selection.start;
+    for (code[self.start..self.end]) |c| {
+        if (c == '\n') {
+            selection.end.line += 1;
+            selection.end.col = 0;
+        } else selection.end.col += 1;
+    }
+    return selection;
 }

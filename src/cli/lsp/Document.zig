@@ -28,7 +28,7 @@ pub fn init(
         .bytes = bytes,
         .ast = undefined,
     };
-    const ast = try super.html.Ast.init(bytes, doc.arena.allocator());
+    const ast = try super.html.Ast.init(doc.arena.allocator(), bytes);
     doc.ast = ast;
 
     return doc;

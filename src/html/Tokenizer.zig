@@ -2229,6 +2229,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Anything else
                     // Start a new attribute in the current tag token. Set that attribute name and value to the empty string. Reconsume in the attribute name state.
                     else => {
+                        self.idx -= 1;
+                        self.state = .{
+                            .attribute_name = .{
+                                .tag = state.tag,
+                                .name_start = self.idx,
+                            },
+                        };
+
                         if (self.return_attrs) {
                             return .{
                                 .token = .{
@@ -2239,14 +2247,6 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 },
                             };
                         }
-
-                        self.idx -= 1;
-                        self.state = .{
-                            .attribute_name = .{
-                                .tag = state.tag,
-                                .name_start = self.idx,
-                            },
-                        };
                     },
                 }
             },
@@ -2591,6 +2591,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Anything else
                     // This is a missing-whitespace-between-attributes parse error. Reconsume in the before attribute name state.
                     else => {
+                        self.idx -= 1;
+                        self.state = .{ .before_attribute_name = state.tag };
                         return .{
                             .token = .{
                                 .parse_error = .{
