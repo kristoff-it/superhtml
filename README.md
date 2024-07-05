@@ -3,6 +3,8 @@ Actually functional HTML Language Server (and Templating Language Library).
 
 **NOTE: SuperHTML is still incomplete, some features are missing and looking of somebody to implement them :^)**
 
+![](.github/vscode.png)
+
 ## HTML Language Server
 The Super CLI Tool offers syntax checking and autoformatting features for HTML files.
 
