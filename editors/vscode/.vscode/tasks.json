@@ -1,0 +1,26 @@
+// See https://go.microsoft.com/fwlink/?LinkId=733558
+// for the documentation about the tasks.json format
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Extension in Background",
+            "group": "build",
+            "type": "npm",
+            "script": "watch",
+            "problemMatcher": {
+                "base": "$tsc-watch"
+            },
+            "isBackground": true
+        },
+        {
+            "label": "Build Extension",
+            "group": "build",
+            "type": "npm",
+            "script": "build",
+            "problemMatcher": {
+                "base": "$tsc"
+            }
+        }
+    ]
+}
