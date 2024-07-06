@@ -4,8 +4,6 @@ Actually functional HTML Language Server (and Templating Language Library).
 **NOTE: SuperHTML is still incomplete, some features are missing and looking of somebody to implement them :^)**  
 *And there's also bugs, waiting for people to report them as Issues :^)*
 
-![](.github/vscode.png)
-
 ## HTML Language Server
 The Super CLI Tool offers syntax checking and autoformatting features for HTML files.
 
@@ -22,11 +20,112 @@ General Options:
   --help, -h   Print command specific usage  
 ```
 
-### VSCode Support
+### Diagnostics
+
+<img src=".github/vscode.png" width="70%">
+
+This language server is stricter than the HTML spec whenever it would prevent potential human errors from being reported.
+
+
+As an example, HTML allows for closing some tags implicitly. For example the following snipped is correct HTML.
+
+```html
+<ul>
+  <li> One
+  <li> Two
+</ul>
+```
+
+This will still be reported as an error by SuperHTML because otherwise the following snippet would have to be considered correct (while it's much probably a typo):
+
+```html
+<h1>Title<h1>
+```
+
+### Autoformatting
+<img src=".github/vscode-autoformat.gif" width="70%">
+
+The autoformatter has two main ways of interacting with it in order to request for horizontal / vertical alignment.
+
+1. Adding / removing whitespace between the **start tag** of an element and its content.
+2. Adding / removing whitespace between the **last attribute** of a start tag and the closing  `>`.
+
+
+#### Example of rule #1
+Before:
+```html
+<div> <p>Foo</p></div>
+```
+
+After:
+```html
+<div> 
+    <p>Foo</p>
+</div>
+```
+
+##### Reverse
+
+Before:
+```html
+<div><p>Foo</p>
+</div>
+```
+
+After:
+```html
+<div><p>Foo</p></div>
+```
+
+#### Example of rule #2
+Before:
+```html
+<div foo="bar" style="verylongstring" >
+    Foo
+</div>
+```
+
+After:
+```html
+<div 
+   foo="bar" 
+   style="verylongstring" 
+>
+    Foo
+</div>
+```
+
+##### Reverse
+
+Before:
+```html
+<div 
+   foo="bar" 
+   style="verylongstring">
+    Foo
+</div>
+```
+
+After:
+```html
+<div foo="bar" style="verylongstring">
+    Foo
+</div>
+```
+
+### Editor support
+#### VSCode
 1. Download a prebuilt version of `super` from the Releases section (or build it yourself).
 2. Put `super` in your `PATH`.
 3. Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/items?itemName=LorisCro.super). 
 
+#### Flow
+Already defaults to using SuperHTML, just add the executable to your `PATH`.
+
+#### Other editors
+Follow your editor specific intructions on how to define a new Language Server for a given language / file format.
+
+*(Also feel free to contribute more specific intructions to this readme / add files under the `editors/` subdirectory).*
 
 ## Templating Language Library
 SuperHTML is not only an LSP but also an HTML templating language. More on that soon.
