@@ -4,7 +4,7 @@ This extension gives you reasonable diagnostics and autoformatting on HTML files
 
 ![](../../.github/vscode-autoformat.gif)
 
-**NOTE: you will need to get the `super` CLI tool and have it available in your PATH!**
+**NOTE: you will need to get the `super` CLI tool and have it available in your PATH (or set the path manually in your VSCode settings)!**
 
 For prebuilt binaries and more info: https://github.com/kristoff-it/super-html
 
