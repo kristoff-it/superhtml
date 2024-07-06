@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { workspace, ExtensionContext, window, languages } from 'vscode';
-import { SuperFormatProvider, SuperRangeFormatProvider } from './formatter';
+import { SuperFormatProvider } from './formatter';
 
 import {
     LanguageClient,
@@ -13,37 +13,12 @@ let client: LanguageClient;
 const logChannel = window.createOutputChannel("super");
 
 export function activate(context: ExtensionContext) {
-    context.subscriptions.push(
-        languages.registerDocumentFormattingEditProvider(
-            [{ scheme: "file", language: "super" }],
-            new SuperFormatProvider(logChannel),
-        ),
-    );
-    context.subscriptions.push(
-        languages.registerDocumentRangeFormattingEditProvider(
-            [{ scheme: "file", language: "super" }],
-            new SuperRangeFormatProvider(logChannel),
-        ),
-    );
-    context.subscriptions.push(
-        languages.registerDocumentFormattingEditProvider(
-            [{ scheme: "file", language: "html" }],
-            new SuperFormatProvider(logChannel),
-        ),
-    );
-    context.subscriptions.push(
-        languages.registerDocumentRangeFormattingEditProvider(
-            [{ scheme: "file", language: "html" }],
-            new SuperRangeFormatProvider(logChannel),
-        ),
-    );
-
 
     // If the extension is launched in debug mode then the debug server options are used
     // Otherwise the run options are used
     const serverOptions: ServerOptions = {
-        run: { command: "super", args: ["lsp"] },
-        debug: { command: "super", args: ["lsp"] },
+        command: "super",
+        args: ["lsp"],
     };
 
     // Options to control the language client
@@ -69,9 +44,18 @@ export function activate(context: ExtensionContext) {
 
     client.start().catch(reason => {
         window.showWarningMessage(`Failed to run SuperHTML Language Server: ${reason}`);
-    }).then(() => {
-        client.getFeature("textDocument/formatting").clear();
     });
+
+    context.subscriptions.push(
+        languages.registerDocumentFormattingEditProvider(
+            [{ scheme: "file", language: "html" }],
+            new SuperFormatProvider(client),
+        ),
+        languages.registerDocumentRangeFormattingEditProvider(
+            [{ scheme: "file", language: "html" }],
+            new SuperFormatProvider(client),
+        ),
+    );
 }
 
 export function deactivate(): Thenable<void> | undefined {

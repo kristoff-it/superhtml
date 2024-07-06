@@ -1,90 +1,33 @@
 import * as vscode from "vscode";
-import { OutputChannel, TextEdit } from "vscode";
-import { execCmd, getSuperPath } from "./util";
+import { TextEdit } from "vscode";
 
-export class SuperFormatProvider implements vscode.DocumentFormattingEditProvider {
-    private _channel: OutputChannel;
+import {
+    DocumentFormattingRequest,
+    DocumentRangeFormattingRequest,
+    LanguageClient,
+    TextDocumentIdentifier
+} from 'vscode-languageclient/node';
 
-    constructor(logChannel: OutputChannel) {
-        this._channel = logChannel;
+export class SuperFormatProvider implements vscode.DocumentFormattingEditProvider, vscode.DocumentRangeFormattingEditProvider {
+    private _client: LanguageClient;
+
+    constructor(client: LanguageClient) {
+        this._client = client;
     }
 
-    provideDocumentFormattingEdits(
-        document: vscode.TextDocument,
-    ): Thenable<TextEdit[]> {
-        const logger = this._channel;
-        return superFormat(document)
-            .then(({ stdout }) => {
-                logger.clear();
-                const lastLineId = document.lineCount - 1;
-                const wholeDocument = new vscode.Range(
-                    0,
-                    0,
-                    lastLineId,
-                    document.lineAt(lastLineId).text.length,
-                );
-                return [new TextEdit(wholeDocument, stdout),];
-            })
-            .catch((reason) => {
-                const config = vscode.workspace.getConfiguration("zig");
-
-                logger.clear();
-                logger.appendLine(reason.toString().replace("<stdin>", document.fileName));
-                if (config.get<boolean>("revealOutputChannelOnFormattingError")) {
-                    logger.show(true);
-                }
-                return null;
-            });
-    }
-}
-
-// Same as full document formatter for now
-export class SuperRangeFormatProvider implements vscode.DocumentRangeFormattingEditProvider {
-    private _channel: OutputChannel;
-    constructor(logChannel: OutputChannel) {
-        this._channel = logChannel;
+    provideDocumentFormattingEdits(document: vscode.TextDocument, options: vscode.FormattingOptions, token: vscode.CancellationToken): vscode.ProviderResult<vscode.TextEdit[]> {
+        return this._client.sendRequest(
+            DocumentFormattingRequest.type,
+            { textDocument: TextDocumentIdentifier.create(document.uri.toString()), options: options },
+            token,
+        ) as Promise<TextEdit[] | null>;
     }
 
-    provideDocumentRangeFormattingEdits(
-        document: vscode.TextDocument,
-    ): Thenable<TextEdit[]> {
-        const logger = this._channel;
-        return superFormat(document)
-            .then(({ stdout }) => {
-                logger.clear();
-                const lastLineId = document.lineCount - 1;
-                const wholeDocument = new vscode.Range(
-                    0,
-                    0,
-                    lastLineId,
-                    document.lineAt(lastLineId).text.length,
-                );
-                return [new TextEdit(wholeDocument, stdout),];
-            })
-            .catch((reason) => {
-                const config = vscode.workspace.getConfiguration("zig");
-
-                logger.clear();
-                logger.appendLine(reason.toString().replace("<stdin>", document.fileName));
-                if (config.get<boolean>("revealOutputChannelOnFormattingError")) {
-                    logger.show(true);
-                }
-                return null;
-            });
+    provideDocumentRangeFormattingEdits(document: vscode.TextDocument, range: vscode.Range, options: vscode.FormattingOptions, token: vscode.CancellationToken): vscode.ProviderResult<vscode.TextEdit[]> {
+        return this._client.sendRequest(
+            DocumentRangeFormattingRequest.type,
+            { textDocument: TextDocumentIdentifier.create(document.uri.toString()), range: range, options: options },
+            token,
+        ) as Promise<TextEdit[] | null>;
     }
-}
-
-function superFormat(document: vscode.TextDocument) {
-    const superPath = getSuperPath();
-
-    const options = {
-        cmdArguments: ["fmt", "--stdin"],
-        notFoundText: "Could not find super. Please add super to your PATH or specify a custom path to the super binary in your settings.",
-    };
-    const format = execCmd(superPath, options);
-
-    format.stdin.write(document.getText());
-    format.stdin.end();
-
-    return format;
 }

@@ -20,6 +20,11 @@
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "LorisCro.super",
         "files.eol": "\n"
+      },
+      "[super]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "LorisCro.super",
+        "files.eol": "\n"
       }
     },
     "languages": [
