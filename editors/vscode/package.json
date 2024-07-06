@@ -50,7 +50,19 @@
         "scopeName": "text.super",
         "path": "./syntaxes/super.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Super",
+      "properties": {
+        "super.path": {
+          "scope": "machine-overridable",
+          "default": "super",
+          "type": "string",
+          "description": "Set a custom path to the super binary. The string \"super\" means lookup Super in PATH."
+        }
+      }
+    }
   },
   "main": "./out/extension",
   "devDependencies": {
