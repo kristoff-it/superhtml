@@ -10,7 +10,7 @@ import {
 
 let client: LanguageClient;
 
-const logChannel = window.createOutputChannel("super");
+const logChannel = window.createOutputChannel("Super");
 
 export function activate(context: ExtensionContext) {
 
@@ -28,6 +28,7 @@ export function activate(context: ExtensionContext) {
             { scheme: "file", language: 'html' },
             { scheme: "file", language: 'super' },
         ],
+        outputChannel: logChannel,
         // synchronize: {
         // 	// Notify the server about file changes to '.clientrc files contained in the workspace
         // 	fileEvents: workspace.createFileSystemWatcher('**/.zgy')
