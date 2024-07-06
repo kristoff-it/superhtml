@@ -6,6 +6,7 @@
 /// This tokenizer does not perform any processing/allocation, it simply
 /// splits the input text into higher-level tokens.
 const Tokenizer = @This();
+const named_character_references = @import("named_character_references.zig");
 
 const std = @import("std");
 
@@ -73,6 +74,15 @@ pub const TokenError = enum {
     unexpected_equals_sign_before_attribute_name,
     unexpected_null_character,
     unexpected_solidus_in_tag,
+
+    missing_semicolon_after_character_reference,
+    unknown_named_character_reference,
+    absence_of_digits_in_numeric_character_reference,
+    null_character_reference,
+    character_reference_outside_unicode_range,
+    surrogate_character_reference,
+    noncharacter_character_reference,
+    control_character_reference,
 };
 
 pub const Token = union(enum) {
@@ -186,7 +196,15 @@ const State = union(enum) {
     script_data_double_escaped_less_than_sign: Data,
     script_data_double_escape_end: Data,
 
-    character_reference: void,
+    character_reference: CharacterReferenceState,
+    named_character_reference: CharacterReferenceState,
+    ambiguous_ampersand: CharacterReferenceState,
+    numeric_character_reference: NumericCharacterReferenceState,
+    hexadecimal_character_reference_start: NumericCharacterReferenceState,
+    decimal_character_reference_start: NumericCharacterReferenceState,
+    hexadecimal_character_reference: NumericCharacterReferenceState,
+    decimal_character_reference: NumericCharacterReferenceState,
+    numeric_character_reference_end: NumericCharacterReferenceState,
 
     markup_declaration_open: u32,
     doctype: u32,
@@ -239,17 +257,8 @@ const State = union(enum) {
         name_raw: Span,
         equal_sign: u32,
     },
-    attribute_value: struct {
-        tag: Token.Tag,
-        quote: enum { double, single },
-        name_raw: Span,
-        value_start: u32,
-    },
-    attribute_value_unquoted: struct {
-        tag: Token.Tag,
-        name_raw: Span,
-        value_start: u32,
-    },
+    attribute_value: AttributeValueState,
+    attribute_value_unquoted: AttributeValueUnquotedState,
     after_attribute_value: struct {
         tag: Token.Tag,
         attr_value_end: u32,
@@ -262,6 +271,58 @@ const State = union(enum) {
     cdata_section_end: u32,
 
     eof: void,
+
+    const AttributeValueState = struct {
+        tag: Token.Tag,
+        quote: enum { double, single },
+        name_raw: Span,
+        value_start: u32,
+    };
+
+    const AttributeValueUnquotedState = struct {
+        tag: Token.Tag,
+        name_raw: Span,
+        value_start: u32,
+    };
+
+    const CharacterReferenceState = struct {
+        ampersand: u32,
+        return_state: union(enum) {
+            text: u32,
+            rcdata: u32,
+            attribute_value: AttributeValueState,
+            attribute_value_unquoted: AttributeValueUnquotedState,
+        },
+
+        pub fn getReturnState(self: CharacterReferenceState) State {
+            switch (self.return_state) {
+                .rcdata => |start| return .{
+                    .rcdata = start,
+                },
+                .text => |start| return .{
+                    .text = .{
+                        .start = start,
+                        // We can set whitespace_only to false unconditionally since
+                        // the text will at least contain the ampersand character.
+                        .whitespace_only = false,
+                        // Also reset the streak for the same reason.
+                        .whitespace_streak = 0,
+                    },
+                },
+                .attribute_value => |state| return .{
+                    .attribute_value = state,
+                },
+                .attribute_value_unquoted => |state| return .{
+                    .attribute_value_unquoted = state,
+                },
+            }
+        }
+    };
+
+    const NumericCharacterReferenceState = struct {
+        code: u21,
+        ref: CharacterReferenceState,
+    };
 };
 
 fn consume(self: *Tokenizer, src: []const u8) bool {
@@ -308,7 +369,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     }
                     return null;
                 } else switch (self.current) {
-                    //'&' => {} we don't process character references in the tokenizer
+                    '&' => {
+                        self.state = .{ .character_reference = .{
+                            .ampersand = self.idx - 1,
+                            .return_state = .{ .text = state.start },
+                        } };
+                    },
                     '<' => {
                         self.state = .{ .tag_open = self.idx - 1 };
                         if (!state.whitespace_only) {
@@ -363,7 +429,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 } else switch (self.current) {
                     // U+0026 AMPERSAND (&)
                     // Set the return state to the data state. Switch to the character reference state.
-                    //'&' => {} we don't process character references in the tokenizer
+                    '&' => {
+                        self.state = .{
+                            .character_reference = .{
+                                .ampersand = self.idx - 1,
+                                // When starting in the data state, we actually want to return to the
+                                // text state since the character reference characters are emitted
+                                // as text.
+                                .return_state = .{ .text = self.idx - 1 },
+                            },
+                        };
+                    },
 
                     // U+003C LESS-THAN SIGN (<)
                     // Switch to the tag open state.
@@ -404,7 +480,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 } else switch (self.current) {
                     // U+0026 AMPERSAND (&)
                     // Set the return state to the RCDATA state. Switch to the character reference state.
-                    // '&' => @panic("TODO"),
+                    '&' => {
+                        self.state = .{
+                            .character_reference = .{
+                                .ampersand = self.idx - 1,
+                                .return_state = .{ .rcdata = start },
+                            },
+                        };
+                    },
                     // U+003C LESS-THAN SIGN (<)
                     // Switch to the RCDATA less-than sign state.
                     '<' => self.state = .{
@@ -2409,9 +2492,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                     // U+0026 AMPERSAND (&)
                     // Set the return state to the attribute value (double-quoted) state. Switch to the character reference state.
-                    //
-                    // (handled downstream)
-                    // '&' => {},
+                    '&' => {
+                        self.state = .{ .character_reference = .{
+                            .ampersand = self.idx - 1,
+                            .return_state = .{ .attribute_value = state },
+                        } };
+                    },
 
                     // U+0000 NULL
                     // This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
@@ -2504,9 +2590,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
 
                     // U+0026 AMPERSAND (&)
                     // Set the return state to the attribute value (unquoted) state. Switch to the character reference state.
-                    //
-                    // (handled elsewhere)
-                    //'&' => {},
+                    '&' => {
+                        self.state = .{
+                            .character_reference = .{
+                                .ampersand = self.idx - 1,
+                                .return_state = .{ .attribute_value_unquoted = state },
+                            },
+                        };
+                    },
 
                     // U+0000 NULL
                     // This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
@@ -2745,8 +2836,390 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     };
                 }
             },
-            .character_reference => {
-                @panic("TODO: implement character reference");
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#character-reference-state
+            .character_reference => |state| {
+                std.debug.assert(self.current == '&');
+                // Set the temporary buffer to the empty string. Append a U+0026 AMPERSAND (&) character to the temporary buffer.
+                // Consume the next input character:
+                if (!self.consume(src)) {
+                    self.state = state.getReturnState();
+                } else switch (self.current) {
+                    // ASCII alphanumeric
+                    // Reconsume in the named character reference state.
+                    'a'...'z', 'A'...'Z', '0'...'9' => {
+                        self.idx -= 1;
+                        self.state = .{ .named_character_reference = state };
+                    },
+                    // U+0023 NUMBER SIGN (#)
+                    // Append the current input character to the temporary buffer. Switch to the numeric character reference state.
+                    '#' => {
+                        self.state = .{ .numeric_character_reference = .{
+                            .code = 0,
+                            .ref = state,
+                        } };
+                    },
+                    // Anything else
+                    // Flush code points consumed as a character reference. Reconsume in the return state.
+                    else => {
+                        self.idx -= 1;
+                        self.state = state.getReturnState();
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
+            .named_character_reference => |state| {
+                // Consume the maximum number of characters possible, where the consumed characters are one of the identifiers in the first column of the named character references table. Append each character to the temporary buffer when it's consumed.
+                var matcher = named_character_references.Matcher{};
+                var pending_count: usize = 0;
+                var ends_with_semicolon: bool = false;
+                var found_match: bool = false;
+                while (true) {
+                    if (!self.consume(src)) {
+                        break;
+                    }
+                    pending_count += 1;
+                    if (!matcher.char(self.current)) break;
+                    if (matcher.matched()) {
+                        found_match = true;
+                        ends_with_semicolon = self.current == ';';
+                        pending_count = 0;
+                    }
+                }
+
+                // If there is a match
+                if (found_match) {
+                    // Rewind the idx to the end of the longest match found
+                    while (pending_count > 0) : (pending_count -= 1) {
+                        self.idx -= 1;
+                    }
+
+                    // From the spec:
+                    //
+                    // > If the character reference was consumed as part of an attribute, and the last character matched is not a U+003B SEMICOLON character (;),
+                    // > and the next input character is either a U+003D EQUALS SIGN character (=) or an ASCII alphanumeric, then, for historical reasons,
+                    // > flush code points consumed as a character reference and switch to the return state.
+                    //
+                    // This is only partially relevant to this tokenizer implementation because character references are never converted
+                    // to their corresponding codepoint(s). The relevant part is that the missing-semicolon-after-character-reference
+                    // error is not emitted if the above conditions are true.
+                    const consumed_as_part_of_attribute = state.return_state == .attribute_value or state.return_state == .attribute_value_unquoted;
+                    const last_char_matched_not_a_semicolon = !ends_with_semicolon;
+                    const next_char_is_equals_or_alphanum = blk: {
+                        if (self.idx + 1 >= src.len) break :blk false;
+                        const next_char = src[self.idx + 1];
+                        break :blk next_char == '=' or std.ascii.isAlphanumeric(next_char);
+                    };
+                    const omit_error = consumed_as_part_of_attribute and last_char_matched_not_a_semicolon and next_char_is_equals_or_alphanum;
+
+                    // Switch to the return state.
+                    self.state = state.getReturnState();
+
+                    // If the last character matched is not a U+003B SEMICOLON character (;), then this is a missing-semicolon-after-character-reference parse error.
+                    if (!ends_with_semicolon and !omit_error) {
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_semicolon_after_character_reference,
+                                    .span = .{
+                                        .start = state.ampersand,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                    }
+                } else {
+                    self.state = .{
+                        .ambiguous_ampersand = state,
+                    };
+                }
+            },
+
+            .ambiguous_ampersand => |state| {
+                // Consume the next input character:
+                if (!self.consume(src)) {
+                    self.state = state.getReturnState();
+                } else switch (self.current) {
+                    // ASCII alphanumeric
+                    // If the character reference was consumed as part of an attribute, then append the current input character to the current attribute's value. Otherwise, emit the current input character as a character token.
+                    'a'...'z', 'A'...'Z', '0'...'9' => {},
+                    // U+003B SEMICOLON (;)
+                    // This is an unknown-named-character-reference parse error. Reconsume in the return state.
+                    ';' => {
+                        self.idx -= 1;
+                        self.state = state.getReturnState();
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .unknown_named_character_reference,
+                                    .span = .{
+                                        .start = state.ampersand,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                    },
+                    // Anything else
+                    // Reconsume in the return state.
+                    else => {
+                        self.idx -= 1;
+                        self.state = state.getReturnState();
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-state
+            .numeric_character_reference => |state| {
+                // Set the character reference code to zero (0).
+                self.state.numeric_character_reference.code = 0;
+
+                // Consume the next input character:
+                if (!self.consume(src)) {
+                    self.state = .{ .decimal_character_reference_start = state };
+                } else switch (self.current) {
+                    // U+0078 LATIN SMALL LETTER X
+                    // U+0058 LATIN CAPITAL LETTER X
+                    // Append the current input character to the temporary buffer. Switch to the hexadecimal character reference start state.
+                    'x', 'X' => {
+                        self.state = .{ .hexadecimal_character_reference_start = state };
+                    },
+                    // Anything else
+                    // Reconsume in the decimal character reference start state.
+                    else => {
+                        self.idx -= 1;
+                        self.state = .{ .decimal_character_reference_start = state };
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-start-state
+            .hexadecimal_character_reference_start => |state| {
+                // Consume the next input character:
+                if (!self.consume(src)) {
+                    self.state = state.ref.getReturnState();
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .absence_of_digits_in_numeric_character_reference,
+                                .span = .{
+                                    .start = state.ref.ampersand,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
+                } else switch (self.current) {
+                    // ASCII hex digit
+                    // Reconsume in the hexadecimal character reference state.
+                    '0'...'9', 'a'...'f', 'A'...'F' => {
+                        self.idx -= 1;
+                        self.state = .{ .hexadecimal_character_reference = state };
+                    },
+                    // Anything else
+                    // Reconsume in the decimal character reference start state.
+                    else => {
+                        self.idx -= 1;
+                        self.state = state.ref.getReturnState();
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .absence_of_digits_in_numeric_character_reference,
+                                    .span = .{
+                                        .start = state.ref.ampersand,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-start-state
+            .decimal_character_reference_start => |state| {
+                // Consume the next input character:
+                if (!self.consume(src)) {
+                    self.state = state.ref.getReturnState();
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .absence_of_digits_in_numeric_character_reference,
+                                .span = .{
+                                    .start = state.ref.ampersand,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
+                } else switch (self.current) {
+                    // SCII digit
+                    // Reconsume in the hexadecimal character reference state.
+                    '0'...'9' => {
+                        self.idx -= 1;
+                        self.state = .{ .decimal_character_reference = state };
+                    },
+                    // Anything else
+                    // Reconsume in the decimal character reference start state.
+                    else => {
+                        self.idx -= 1;
+                        self.state = state.ref.getReturnState();
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .absence_of_digits_in_numeric_character_reference,
+                                    .span = .{
+                                        .start = state.ref.ampersand,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-state
+            .hexadecimal_character_reference => |state| {
+                // Consume the next input character:
+                if (!self.consume(src)) {
+                    self.state = .{ .numeric_character_reference_end = state };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .missing_semicolon_after_character_reference,
+                                .span = .{
+                                    .start = state.ref.ampersand,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
+                } else switch (self.current) {
+                    // ASCII hex digit
+                    // Multiply the character reference code by 16. Add a numeric version of the current input character to the character reference code.
+                    '0'...'9', 'a'...'f', 'A'...'F' => {
+                        const value = std.fmt.charToDigit(self.current, 16) catch unreachable;
+                        self.state.hexadecimal_character_reference.code *|= 16;
+                        self.state.hexadecimal_character_reference.code +|= value;
+                    },
+                    // U+003B SEMICOLON
+                    // Switch to the numeric character reference end state.
+                    ';' => {
+                        self.state = .{ .numeric_character_reference_end = state };
+                    },
+                    // Anything else
+                    // This is a missing-semicolon-after-character-reference parse error. Reconsume in the numeric character reference end state.
+                    else => {
+                        self.idx -= 1;
+                        self.state = .{ .numeric_character_reference_end = state };
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_semicolon_after_character_reference,
+                                    .span = .{
+                                        .start = state.ref.ampersand,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-state
+            .decimal_character_reference => |state| {
+                // Consume the next input character:
+                if (!self.consume(src)) {
+                    self.state = .{ .numeric_character_reference_end = state };
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = .missing_semicolon_after_character_reference,
+                                .span = .{
+                                    .start = state.ref.ampersand,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
+                } else switch (self.current) {
+                    // ASCII digit
+                    // Multiply the character reference code by 10. Add a numeric version of the current input character to the character reference code.
+                    '0'...'9' => {
+                        const value = std.fmt.charToDigit(self.current, 10) catch unreachable;
+                        self.state.decimal_character_reference.code *|= 10;
+                        self.state.decimal_character_reference.code +|= value;
+                    },
+                    // U+003B SEMICOLON
+                    // Switch to the numeric character reference end state.
+                    ';' => {
+                        self.state = .{ .numeric_character_reference_end = state };
+                    },
+                    // Anything else
+                    // This is a missing-semicolon-after-character-reference parse error. Reconsume in the numeric character reference end state.
+                    else => {
+                        self.idx -= 1;
+                        self.state = .{ .numeric_character_reference_end = state };
+                        return .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .missing_semicolon_after_character_reference,
+                                    .span = .{
+                                        .start = state.ref.ampersand,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-end-state
+            .numeric_character_reference_end => |state| {
+                const code = state.code;
+                var parse_error: ?TokenError = null;
+                // Check the character reference code:
+                // If the number is 0x00, then this is a null-character-reference parse error. Set the character reference code to 0xFFFD.
+                if (code == 0) {
+                    parse_error = .null_character_reference;
+                }
+                // If the number is greater than 0x10FFFF, then this is a character-reference-outside-unicode-range parse error. Set the character reference code to 0xFFFD.
+                else if (code > 0x10FFFF) {
+                    parse_error = .character_reference_outside_unicode_range;
+                }
+                // If the number is a surrogate, then this is a surrogate-character-reference parse error. Set the character reference code to 0xFFFD.
+                else if (std.unicode.isSurrogateCodepoint(code)) {
+                    parse_error = .surrogate_character_reference;
+                }
+                // If the number is a noncharacter, then this is a noncharacter-character-reference parse error.
+                else if (isNonCharacter(code)) {
+                    parse_error = .noncharacter_character_reference;
+                }
+                // If the number is 0x0D, or a control that's not ASCII whitespace, then this is a control-character-reference parse error.
+                else if (code == 0x0D or (code <= 0xFF and isControl(@intCast(code)) and !isAsciiWhitespace(@intCast(code)))) {
+                    parse_error = .control_character_reference;
+                }
+
+                // Switch to the return state.
+                self.state = state.ref.getReturnState();
+                if (parse_error) |tag| {
+                    return .{
+                        .token = .{
+                            .parse_error = .{
+                                .tag = tag,
+                                .span = .{
+                                    .start = state.ref.ampersand,
+                                    .end = self.idx,
+                                },
+                            },
+                        },
+                    };
+                }
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-start-state
@@ -4509,6 +4982,35 @@ fn isAsciiAlphaUpper(c: u8) bool {
 fn isAsciiAlpha(c: u8) bool {
     return isAsciiAlphaLower(c) or isAsciiAlphaUpper(c);
 }
+// https://infra.spec.whatwg.org/#noncharacter
+fn isNonCharacter(c: u21) bool {
+    return switch (c) {
+        // zig fmt: off
+        '\u{FDD0}'...'\u{FDEF}',
+        '\u{FFFE}', '\u{FFFF}', '\u{1FFFE}', '\u{1FFFF}', '\u{2FFFE}', '\u{2FFFF}', '\u{3FFFE}',
+        '\u{3FFFF}', '\u{4FFFE}', '\u{4FFFF}', '\u{5FFFE}', '\u{5FFFF}', '\u{6FFFE}', '\u{6FFFF}',
+        '\u{7FFFE}', '\u{7FFFF}', '\u{8FFFE}', '\u{8FFFF}', '\u{9FFFE}', '\u{9FFFF}', '\u{AFFFE}',
+        '\u{AFFFF}', '\u{BFFFE}', '\u{BFFFF}', '\u{CFFFF}', '\u{DFFFE}', '\u{DFFFF}', '\u{EFFFE}',
+        '\u{EFFFF}', '\u{FFFFE}', '\u{FFFFF}', '\u{10FFFE}', '\u{10FFFF}',
+        // zig fmt: on
+        => true,
+        else => false,
+    };
+}
+// https://infra.spec.whatwg.org/#control
+fn isControl(c: u8) bool {
+    // A control is a C0 control or a code point in the range U+007F DELETE to U+009F APPLICATION PROGRAM COMMAND, inclusive.
+    // A C0 control is a code point in the range U+0000 NULL to U+001F INFORMATION SEPARATOR ONE, inclusive.
+    return (c >= 0 and c <= 0x1F) or (c >= 0x7F and c <= 0x9F);
+}
+// https://infra.spec.whatwg.org/#ascii-whitespace
+fn isAsciiWhitespace(c: u8) bool {
+    return switch (c) {
+        // ASCII whitespace is U+0009 TAB, U+000A LF, U+000C FF, U+000D CR, or U+0020 SPACE.
+        '\t', '\n', std.ascii.control_code.ff, '\r', ' ' => true,
+        else => false,
+    };
+}
 
 const tl = std.log.scoped(.trim);
 
@@ -4604,4 +5106,230 @@ test "script single/double escape weirdness" {
 
     t = tokenizer.next(case);
     try std.testing.expect(t == null);
+}
+
+test "character references" {
+    // Named character references
+    try testTokenize("&", &.{
+        .{ .text = .{ .start = 0, .end = 1 } },
+    });
+    try testTokenize("&foo", &.{
+        .{ .text = .{ .start = 0, .end = 4 } },
+    });
+    try testTokenize("&foo;", &.{
+        .{ .parse_error = .{
+            .tag = .unknown_named_character_reference,
+            .span = .{ .start = 0, .end = 4 },
+        } },
+        .{ .text = .{ .start = 0, .end = 5 } },
+    });
+    try testTokenize("&foofoofoofoofoofoofoofoofoo;", &.{
+        .{ .parse_error = .{
+            .tag = .unknown_named_character_reference,
+            .span = .{ .start = 0, .end = 28 },
+        } },
+        .{ .text = .{ .start = 0, .end = 29 } },
+    });
+    try testTokenize("&noti", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 0, .end = 4 },
+        } },
+        .{ .text = .{ .start = 0, .end = 5 } },
+    });
+    // Example from https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
+    // `&not` is valid, `&noti` could still match `&notin;` among others,
+    // but `&notit;` is not a named character reference, so we get
+    // a missing semicolon error for `&not`
+    try testTokenize("&notit;", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 0, .end = 4 },
+        } },
+        .{ .text = .{ .start = 0, .end = 7 } },
+    });
+    try testTokenize("hello &notin;", &.{
+        .{ .text = .{ .start = 0, .end = 13 } },
+    });
+    try testTokenize("hello&notin;", &.{
+        .{ .text = .{ .start = 0, .end = 12 } },
+    });
+    try testTokenize("hello &foo bar", &.{
+        .{ .text = .{ .start = 0, .end = 14 } },
+    });
+    try testTokenize("hello&foo", &.{
+        .{ .text = .{ .start = 0, .end = 9 } },
+    });
+
+    // Numeric character references
+    try testTokenize("&#123; &#x123;", &.{
+        .{ .text = .{ .start = 0, .end = 14 } },
+    });
+    try testTokenize("&#", &.{
+        .{ .parse_error = .{
+            .tag = .absence_of_digits_in_numeric_character_reference,
+            .span = .{ .start = 0, .end = 2 },
+        } },
+        .{ .text = .{ .start = 0, .end = 2 } },
+    });
+    try testTokenize("&#x10FFFF", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 0, .end = 9 },
+        } },
+        .{ .parse_error = .{
+            .tag = .noncharacter_character_reference,
+            .span = .{ .start = 0, .end = 9 },
+        } },
+        .{ .text = .{ .start = 0, .end = 9 } },
+    });
+    try testTokenize("&#x110000", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 0, .end = 9 },
+        } },
+        .{ .parse_error = .{
+            .tag = .character_reference_outside_unicode_range,
+            .span = .{ .start = 0, .end = 9 },
+        } },
+        .{ .text = .{ .start = 0, .end = 9 } },
+    });
+    try testTokenize("&#xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;", &.{
+        .{ .parse_error = .{
+            .tag = .character_reference_outside_unicode_range,
+            .span = .{ .start = 0, .end = 37 },
+        } },
+        .{ .text = .{ .start = 0, .end = 37 } },
+    });
+    try testTokenize("&#0;", &.{
+        .{ .parse_error = .{
+            .tag = .null_character_reference,
+            .span = .{ .start = 0, .end = 4 },
+        } },
+        .{ .text = .{ .start = 0, .end = 4 } },
+    });
+    try testTokenize("&#x0D;", &.{
+        .{ .parse_error = .{
+            .tag = .control_character_reference,
+            .span = .{ .start = 0, .end = 6 },
+        } },
+        .{ .text = .{ .start = 0, .end = 6 } },
+    });
+    try testTokenize("&#x9F;", &.{
+        .{ .parse_error = .{
+            .tag = .control_character_reference,
+            .span = .{ .start = 0, .end = 6 },
+        } },
+        .{ .text = .{ .start = 0, .end = 6 } },
+    });
+    try testTokenize("&#xDF00;", &.{
+        .{ .parse_error = .{
+            .tag = .surrogate_character_reference,
+            .span = .{ .start = 0, .end = 8 },
+        } },
+        .{ .text = .{ .start = 0, .end = 8 } },
+    });
+    try testTokenize("&#xFFFF;", &.{
+        .{ .parse_error = .{
+            .tag = .noncharacter_character_reference,
+            .span = .{ .start = 0, .end = 8 },
+        } },
+        .{ .text = .{ .start = 0, .end = 8 } },
+    });
+
+    // double quoted attribute
+    try testTokenize("<span foo=\"&not\">", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 11, .end = 15 },
+        } },
+        .{ .tag = .{
+            .span = .{ .start = 0, .end = 17 },
+            .name = .{ .start = 1, .end = 5 },
+            .kind = .start,
+        } },
+    });
+    try testTokenize("<span foo=\"&notit;\">", &.{
+        .{ .tag = .{
+            .span = .{ .start = 0, .end = 20 },
+            .name = .{ .start = 1, .end = 5 },
+            .kind = .start,
+        } },
+    });
+
+    // single quoted attribute
+    try testTokenize("<span foo='&not'>", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 11, .end = 15 },
+        } },
+        .{ .tag = .{
+            .span = .{ .start = 0, .end = 17 },
+            .name = .{ .start = 1, .end = 5 },
+            .kind = .start,
+        } },
+    });
+    try testTokenize("<span foo='&notit;'>", &.{
+        .{ .tag = .{
+            .span = .{ .start = 0, .end = 20 },
+            .name = .{ .start = 1, .end = 5 },
+            .kind = .start,
+        } },
+    });
+
+    // unquoted attribute
+    try testTokenize("<span foo=&not>", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 10, .end = 14 },
+        } },
+        .{ .tag = .{
+            .span = .{ .start = 0, .end = 15 },
+            .name = .{ .start = 1, .end = 5 },
+            .kind = .start,
+        } },
+    });
+    try testTokenize("<span foo=&notit;>", &.{
+        .{ .tag = .{
+            .span = .{ .start = 0, .end = 18 },
+            .name = .{ .start = 1, .end = 5 },
+            .kind = .start,
+        } },
+    });
+}
+
+test "rcdata character references" {
+    var tokenizer: Tokenizer = .{};
+    tokenizer.gotoRcData("title");
+
+    try testTokenizeWithState(&tokenizer, "&notit;</title>", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 0, .end = 4 },
+        } },
+        .{ .text = .{ .start = 0, .end = 7 } },
+        .{ .tag = .{
+            .span = .{ .start = 7, .end = 15 },
+            .name = .{ .start = 9, .end = 14 },
+            .kind = .end,
+        } },
+    });
+}
+
+fn testTokenizeWithState(tokenizer: *Tokenizer, src: []const u8, expected_tokens: []const Token) !void {
+    for (expected_tokens, 0..) |expected_token, i| {
+        const t = tokenizer.next(src);
+        std.testing.expectEqual(expected_token, t) catch |e| {
+            std.debug.print("unexpected token at index {}\nexpected: {any}\nactual: {any}\n", .{ i, expected_token, t });
+            return e;
+        };
+    }
+
+    const t = tokenizer.next(src);
+    try std.testing.expect(t == null);
+}
+
+fn testTokenize(src: []const u8, expected_tokens: []const Token) !void {
+    var tokenizer: Tokenizer = .{};
+    return testTokenizeWithState(&tokenizer, src, expected_tokens);
 }
