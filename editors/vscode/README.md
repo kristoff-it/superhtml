@@ -2,7 +2,7 @@
 
 This extension gives you reasonable diagnostics and autoformatting on HTML files.
 
-![](.github/vscode-autoformat.gif)
+![](../../.github/vscode-autoformat.gif)
 
 **NOTE: you will need to get the `super` CLI tool and have it available in your PATH!**
 
@@ -11,7 +11,7 @@ For prebuilt binaries and more info: https://github.com/kristoff-it/super-html
 
 ## Diagnostics
 
-![](.github/vscode.png)
+![](../../.github/vscode.png)
 
 This language server is stricter than the HTML spec whenever it would prevent potential human errors from being reported.
 
