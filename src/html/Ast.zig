@@ -131,9 +131,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
         .next_idx = 0,
     });
 
-    const root = &nodes.items[0];
-
-    var current: *Node = root;
+    var current: *Node = &nodes.items[0];
     var current_idx: u32 = 0;
 
     while (tokenizer.next(src)) |t| {
@@ -380,7 +378,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
     }
 
     // finalize tree
-    while (current != root) {
+    while (current.tag != .root) {
         if (!current.isClosed()) {
             const cur_name: Tokenizer.Span = blk: {
                 var temp_tok: Tokenizer = .{
