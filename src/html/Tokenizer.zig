@@ -127,6 +127,7 @@ pub const Token = union(enum) {
             start_self,
             start_attrs_self,
             end,
+            end_self,
         },
 
         pub fn isVoid(st: @This(), src: []const u8) bool {
@@ -2723,13 +2724,36 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .data;
 
                         var tag = state;
+                        tag.span.end = self.idx;
                         tag.kind = switch (tag.kind) {
                             .start => .start_self,
                             .start_attrs => .start_attrs_self,
+                            .end => .end_self,
                             else => unreachable,
                         };
 
-                        return .{ .token = .{ .tag = tag } };
+                        if (self.return_attrs) {
+                            const deferred: Token = if (tag.kind == .end_self) .{
+                                .parse_error = .{
+                                    .tag = .end_tag_with_trailing_solidus,
+                                    .span = tag.span,
+                                },
+                            } else .{ .tag = tag };
+                            return .{
+                                .token = .{ .tag_name = tag.name },
+                                .deferred = deferred,
+                            };
+                        }
+
+                        return if (tag.kind == .end_self) .{
+                            .token = .{
+                                .parse_error = .{
+                                    .tag = .end_tag_with_trailing_solidus,
+                                    .span = tag.span,
+                                },
+                            },
+                            .deferred = .{ .tag = tag },
+                        } else .{ .token = .{ .tag = tag } };
                     },
                     // Anything else
                     // This is an unexpected-solidus-in-tag parse error. Reconsume in the before attribute name state.

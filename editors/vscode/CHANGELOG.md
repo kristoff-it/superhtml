@@ -2,8 +2,12 @@
 
 All notable changes to the "super" extension will be documented in this file.
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [v0.1.2]
+Override VSCode default autoformatting.
 
+## [v0.1.1]
+Readme fixes
+
+## [v0.1.0]
 - Initial release

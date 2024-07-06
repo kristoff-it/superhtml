@@ -235,7 +235,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                         }
                     }
                 },
-                .end => {
+                .end, .end_self => {
                     if (current.tag == .root) {
                         try errors.append(.{
                             .tag = .{

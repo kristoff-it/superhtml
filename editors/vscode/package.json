@@ -2,7 +2,7 @@
   "name": "super",
   "displayName": "SuperHTML",
   "description": "Actually Functional Language Server for HTML Files",
-  "repository": "https://github.com/kristoff-it/super-html",
+  "repository": "https://github.com/kristoff-it/super-html/",
   "publisher": "LorisCro",
   "version": "0.1.1",
   "engines": {
@@ -15,6 +15,13 @@
     "onLanguage:html"
   ],
   "contributes": {
+    "configurationDefaults": {
+      "[html]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "LorisCro.super",
+        "files.eol": "\n"
+      }
+    },
     "languages": [
       {
         "id": "super",
