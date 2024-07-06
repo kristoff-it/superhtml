@@ -2901,23 +2901,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // > and the next input character is either a U+003D EQUALS SIGN character (=) or an ASCII alphanumeric, then, for historical reasons,
                     // > flush code points consumed as a character reference and switch to the return state.
                     //
-                    // This is only partially relevant to this tokenizer implementation because character references are never converted
-                    // to their corresponding codepoint(s). The relevant part is that the missing-semicolon-after-character-reference
-                    // error is not emitted if the above conditions are true.
-                    const consumed_as_part_of_attribute = state.return_state == .attribute_value or state.return_state == .attribute_value_unquoted;
-                    const last_char_matched_not_a_semicolon = !ends_with_semicolon;
-                    const next_char_is_equals_or_alphanum = blk: {
-                        if (self.idx + 1 >= src.len) break :blk false;
-                        const next_char = src[self.idx + 1];
-                        break :blk next_char == '=' or std.ascii.isAlphanumeric(next_char);
-                    };
-                    const omit_error = consumed_as_part_of_attribute and last_char_matched_not_a_semicolon and next_char_is_equals_or_alphanum;
+                    // This tokenizer implementation is not concerned with historical reasons, and therefore
+                    // does not suppress the missing semicolon error.
 
                     // Switch to the return state.
                     self.state = state.getReturnState();
 
                     // If the last character matched is not a U+003B SEMICOLON character (;), then this is a missing-semicolon-after-character-reference parse error.
-                    if (!ends_with_semicolon and !omit_error) {
+                    if (!ends_with_semicolon) {
                         return .{
                             .token = .{
                                 .parse_error = .{
@@ -5250,6 +5241,10 @@ test "character references" {
         } },
     });
     try testTokenize("<span foo=\"&notit;\">", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 11, .end = 15 },
+        } },
         .{ .tag = .{
             .span = .{ .start = 0, .end = 20 },
             .name = .{ .start = 1, .end = 5 },
@@ -5270,6 +5265,10 @@ test "character references" {
         } },
     });
     try testTokenize("<span foo='&notit;'>", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 11, .end = 15 },
+        } },
         .{ .tag = .{
             .span = .{ .start = 0, .end = 20 },
             .name = .{ .start = 1, .end = 5 },
@@ -5290,6 +5289,10 @@ test "character references" {
         } },
     });
     try testTokenize("<span foo=&notit;>", &.{
+        .{ .parse_error = .{
+            .tag = .missing_semicolon_after_character_reference,
+            .span = .{ .start = 10, .end = 14 },
+        } },
         .{ .tag = .{
             .span = .{ .start = 0, .end = 18 },
             .name = .{ .start = 1, .end = 5 },
