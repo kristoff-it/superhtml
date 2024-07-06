@@ -86,10 +86,10 @@
     "which": "^3.0.0"
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "esbuild --bundle --sourcemap=external --minify --external:vscode src/extension.ts --outdir=out --platform=node --format=cjs",
-    "watch": "esbuild --watch --bundle --sourcemap=external --external:vscode src/extension.ts --outdir=out --platform=node --format=cjs",
-    "test": "npm run compile && node ./node_modules/vscode/bin/test",
+    "vscode:prepublish": "npm run build-base -- --minify",
+    "build-base": "esbuild --bundle --external:vscode src/extension.ts --outdir=out --platform=node --format=cjs",
+    "build": "npm run build-base -- --sourcemap",
+    "watch": "npm run build-base -- --sourcemap --watch",
     "lint": "eslint . --ext .ts"
   }
 }
