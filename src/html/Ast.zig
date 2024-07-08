@@ -3,7 +3,7 @@ const Ast = @This();
 const std = @import("std");
 const Tokenizer = @import("Tokenizer.zig");
 
-const log = std.log.scoped(.ast);
+const log = std.log.scoped(.@"html/ast");
 
 const TagNameMap = std.StaticStringMapWithEql(
     void,
@@ -22,6 +22,11 @@ const rawtext_names = TagNameMap.initComptime(.{
     .{ "noembed", {} },
     .{ "noframes", {} },
     .{ "noscript", {} },
+});
+
+const unsupported_names = TagNameMap.initComptime(.{
+    .{ "plaintext", {} },
+    .{ "listing", {} },
 });
 
 const Node = struct {
@@ -79,6 +84,7 @@ const Error = struct {
             missing_end_tag,
             erroneous_end_tag,
             duplicate_attribute_name,
+            deprecated_and_unsupported,
         },
     },
     span: Tokenizer.Span,
@@ -198,8 +204,13 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                         tokenizer.gotoRcData(name);
                     } else if (rawtext_names.has(name)) {
                         tokenizer.gotoRawText(name);
-                    } else if (std.ascii.eqlIgnoreCase("plaintext", name)) {
-                        tokenizer.gotoPlainText();
+                    } else if (unsupported_names.has(name)) {
+                        try errors.append(.{
+                            .tag = .{
+                                .ast = .deprecated_and_unsupported,
+                            },
+                            .span = tag.name,
+                        });
                     }
 
                     // check for duplicated attrs
@@ -216,7 +227,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                                 .tag => break,
                                 .parse_error => {},
                                 .attr => |attr| {
-                                    const attr_name = attr.name_raw.slice(tag_src);
+                                    const attr_name = attr.name.slice(tag_src);
                                     log.debug("attr_name = '{s}'", .{attr_name});
                                     const gop = try seen_attrs.getOrPut(attr_name);
                                     if (gop.found_existing) {
@@ -225,8 +236,8 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                                                 .ast = .duplicate_attribute_name,
                                             },
                                             .span = .{
-                                                .start = attr.name_raw.start + tag.span.start,
-                                                .end = attr.name_raw.end + tag.span.start,
+                                                .start = attr.name.start + tag.span.start,
+                                                .end = attr.name.end + tag.span.start,
                                             },
                                         });
                                     }
@@ -515,12 +526,12 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
 
             .doctype => {
                 last_rbracket = current.open.end;
-                const maybe_name_raw, const maybe_extra = blk: {
+                const maybe_name, const maybe_extra = blk: {
                     var tt: Tokenizer = .{};
                     const tag = current.open.slice(src);
                     log.debug("doctype tag: {s} {any}", .{ tag, current });
                     const dt = tt.next(tag).?.doctype;
-                    const maybe_name_raw: ?[]const u8 = if (dt.name_raw) |name|
+                    const maybe_name: ?[]const u8 = if (dt.name) |name|
                         name.slice(tag)
                     else
                         null;
@@ -529,10 +540,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     else
                         null;
 
-                    break :blk .{ maybe_name_raw, maybe_extra };
+                    break :blk .{ maybe_name, maybe_extra };
                 };
 
-                if (maybe_name_raw) |n| {
+                if (maybe_name) |n| {
                     try w.print("<!DOCTYPE {s}", .{n});
                 } else {
                     try w.print("<!DOCTYPE", .{});
@@ -584,9 +595,9 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                                     try w.print(" ", .{});
                                 }
                                 try w.print("{s}", .{
-                                    attr.name_raw.slice(tag_src),
+                                    attr.name.slice(tag_src),
                                 });
-                                if (attr.value_raw) |val| {
+                                if (attr.value) |val| {
                                     const q = switch (val.quote) {
                                         .none => "",
                                         .single => "'",

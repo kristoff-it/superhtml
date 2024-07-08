@@ -1,16 +1,19 @@
-// From https://github.com/marler8997/html-css-renderer/blob/master/HtmlTokenizer.zig
-///
-/// An html5 tokenizer.
-/// Implements the state machine described here:
-///     https://html.spec.whatwg.org/multipage/parsing.html#tokenization
-/// This tokenizer does not perform any processing/allocation, it simply
-/// splits the input text into higher-level tokens.
+///! A HTML5 tokenizer.
+///! Implements the state machine described here:
+///!     https://html.spec.whatwg.org/multipage/parsing.html#tokenization
+///! This tokenizer does not perform any processing/allocation, it simply
+///! splits the input text into higher-level tokens.
+///!
+///! As it's main usecase is powering developer tooling for handwritten
+///! HTML, on occasion i'ts more strict than the official spec in order
+///! to catch common mistakes.
 const Tokenizer = @This();
 const named_character_references = @import("named_character_references.zig");
 
 const std = @import("std");
 
-const log = std.log.scoped(.tokenizer);
+const log = std.log.scoped(.@"html/tokenizer");
+const form_feed = std.ascii.control_code.ff;
 
 return_attrs: bool = false,
 idx: u32 = 0,
@@ -18,9 +21,6 @@ current: u8 = undefined,
 state: State = .data,
 deferred_token: ?Token = null,
 last_start_tag_name: []const u8 = "",
-
-const DOCTYPE = "DOCTYPE";
-const form_feed = 0xc;
 
 pub const Span = struct {
     start: u32,
@@ -34,9 +34,6 @@ pub const TokenError = enum {
     abrupt_closing_of_empty_comment,
     abrupt_doctype_public_identifier,
     abrupt_doctype_system_identifier,
-
-    // Custom error
-    deprecated_and_unsupported,
 
     end_tag_with_trailing_solidus,
     eof_before_tag_name,
@@ -85,20 +82,55 @@ pub const TokenError = enum {
     control_character_reference,
 };
 
+pub const Attr = struct {
+    name: Span,
+    value: ?Value,
+
+    pub const Value = struct {
+        quote: enum { none, single, double },
+        span: Span,
+
+        pub const UnescapedSlice = struct {
+            must_free: bool = false,
+            str: []const u8 = &.{},
+
+            pub fn deinit(
+                self: UnescapedSlice,
+                allocator: std.mem.Allocator,
+            ) void {
+                if (self.must_free) allocator.free(self.str);
+            }
+        };
+
+        pub fn unescape(
+            self: Value,
+            gpa: std.mem.Allocator,
+            src: []const u8,
+        ) !UnescapedSlice {
+            _ = self;
+            _ = gpa;
+            _ = src;
+            @panic("TODO");
+        }
+
+        pub fn unquote(value: Value, src: []const u8) []const u8 {
+            switch (value.quote) {
+                .double, .single => {
+                    const quoted = value.span.slice(src);
+                    return quoted[1 .. quoted.len - 2];
+                },
+                else => {
+                    return value.span.slice(src);
+                },
+            }
+        }
+    };
+};
+
 pub const Token = union(enum) {
     // Only returned when return_attrs == true
     tag_name: Span,
-    attr: struct {
-        // NOTE: process the name_raw by replacing
-        //     - upper-case ascii alpha with lower case (add 0x20)
-        //     - 0 with U+FFFD
-        name_raw: Span,
-        // NOTE: process value...somehow...
-        value_raw: ?struct {
-            quote: enum { none, single, double },
-            span: Span,
-        },
-    },
+    attr: Attr,
 
     // Returned during normal operation
     doctype: Doctype,
@@ -113,7 +145,7 @@ pub const Token = union(enum) {
 
     pub const Doctype = struct {
         span: Span,
-        name_raw: ?Span,
+        name: ?Span,
         extra: Span = .{ .start = 0, .end = 0 },
         force_quirks: bool,
     };
@@ -133,10 +165,9 @@ pub const Token = union(enum) {
         pub fn isVoid(st: @This(), src: []const u8) bool {
             std.debug.assert(st.name.end != 0);
             const void_tags: []const []const u8 = &.{
-                "area", "base",   "br",
-                "col",  "embed",  "hr",
-                "img",  "input",  "link",
-                "meta", "source", "track",
+                "area",  "base", "br",     "col",
+                "embed", "hr",   "img",    "input",
+                "link",  "meta", "source", "track",
                 "wbr",
             };
 
@@ -216,7 +247,7 @@ const State = union(enum) {
     },
     after_doctype_name: struct {
         lbracket: u32,
-        name_raw: Span,
+        name: Span,
     },
 
     after_doctype_public_kw: Token.Doctype,
@@ -251,11 +282,11 @@ const State = union(enum) {
     },
     after_attribute_name: struct {
         tag: Token.Tag,
-        name_raw: Span,
+        name: Span,
     },
     before_attribute_value: struct {
         tag: Token.Tag,
-        name_raw: Span,
+        name: Span,
         equal_sign: u32,
     },
     attribute_value: AttributeValueState,
@@ -276,13 +307,13 @@ const State = union(enum) {
     const AttributeValueState = struct {
         tag: Token.Tag,
         quote: enum { double, single },
-        name_raw: Span,
+        name: Span,
         value_start: u32,
     };
 
     const AttributeValueUnquotedState = struct {
         tag: Token.Tag,
-        name_raw: Span,
+        name: Span,
         value_start: u32,
     };
 
@@ -610,40 +641,45 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#plaintext-state
-            .plaintext => |start| {
-                if (!self.consume(src)) {
-                    // EOF
-                    // Emit an end-of-file token.
-                    self.state = .eof;
-                    return .{
-                        .token = .{
-                            .parse_error = .{
-                                .tag = .deprecated_and_unsupported,
-                                .span = .{ .start = start, .end = self.idx },
-                            },
-                        },
-                    };
-                } else switch (self.current) {
-                    // U+0000 NULL
-                    // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
-                    0 => {
-                        self.state = .data;
-                        return .{
-                            .token = .{
-                                .parse_error = .{
-                                    .tag = .unexpected_null_character,
-                                    .span = .{
-                                        .start = self.idx - 1,
-                                        .end = self.idx,
-                                    },
-                                },
-                            },
-                        };
-                    },
-                    // Anything else
-                    // Emit the current input character as a character token.
-                    else => {},
-                }
+            .plaintext => {
+                // Entering this state would have to be triggered by the
+                // parser, but we never do it as we consider plaintext a
+                // deprecated and unsupported tag (ie we emit an error
+                // and treat it like a normal tag to contiue parsing).
+                unreachable;
+                // if (!self.consume(src)) {
+                //     // EOF
+                //     // Emit an end-of-file token.
+                //     self.state = .eof;
+                //     return .{
+                //         .token = .{
+                //             .parse_error = .{
+                //                 .tag = .deprecated_and_unsupported,
+                //                 .span = .{ .start = start, .end = self.idx },
+                //             },
+                //         },
+                //     };
+                // } else switch (self.current) {
+                //     // U+0000 NULL
+                //     // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                //     0 => {
+                //         self.state = .data;
+                //         return .{
+                //             .token = .{
+                //                 .parse_error = .{
+                //                     .tag = .unexpected_null_character,
+                //                     .span = .{
+                //                         .start = self.idx - 1,
+                //                         .end = self.idx,
+                //                     },
+                //                 },
+                //             },
+                //         };
+                //     },
+                //     // Anything else
+                //     // Emit the current input character as a character token.
+                //     else => {},
+                // }
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
@@ -832,7 +868,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Switch to the before attribute name state.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         var tag = state;
                         tag.name.end = self.idx - 1;
                         self.state = .{ .before_attribute_name = tag };
@@ -933,7 +969,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // If the current end tag token is an appropriate end tag token, then switch to the before attribute name state. Otherwise, treat it as per the "anything else" entry below.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
                             .span = .{
@@ -1114,7 +1150,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // If the current end tag token is an appropriate end tag token, then switch to the before attribute name state. Otherwise, treat it as per the "anything else" entry below.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
                             .span = .{
@@ -1303,7 +1339,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // If the current end tag token is an appropriate end tag token, then switch to the before attribute name state. Otherwise, treat it as per the "anything else" entry below.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
                             .span = .{
@@ -1680,7 +1716,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // If the current end tag token is an appropriate end tag token, then switch to the before attribute name state. Otherwise, treat it as per the "anything else" entry below.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
                             .span = .{
@@ -1825,7 +1861,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+002F SOLIDUS (/)
                     // U+003E GREATER-THAN SIGN (>)
                     // If the temporary buffer is the string "script", then switch to the script data double escaped state. Otherwise, switch to the script data escaped state. Emit the current input character as a character token.
-                    '\t', '\n', form_feed, ' ', '/', '>' => {
+                    '\t', '\n', '\r', form_feed, ' ', '/', '>' => {
                         const name: Span = .{
                             .start = state.name_start,
                             .end = self.idx - 1,
@@ -2040,7 +2076,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+002F SOLIDUS (/)
                     // U+003E GREATER-THAN SIGN (>)
                     // If the temporary buffer is the string "script", then switch to the script data escaped state. Otherwise, switch to the script data double escaped state. Emit the current input character as a character token.
-                    '\t', '\n', form_feed, ' ', '/', '>' => {
+                    '\t', '\n', '\r', form_feed, ' ', '/', '>' => {
                         const name: Span = .{
                             .start = state.name_start,
                             .end = self.idx - 1,
@@ -2087,7 +2123,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // self.state = .{
                     //     .after_attribute_name = .{
                     //         .tag = state,
-                    //         .name_raw = .{
+                    //         .name = .{
                     //             .start = self.idx,
                     //             .end = self.idx + 1,
                     //         },
@@ -2099,7 +2135,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
 
                     // U+002F SOLIDUS (/)
                     // U+003E GREATER-THAN SIGN (>)
@@ -2116,7 +2152,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         // self.state = .{
                         //     .after_attribute_name = .{
                         //         .tag = state,
-                        //         .name_raw = .{
+                        //         .name = .{
                         //             .start = self.idx - 2,
                         //             .end = self.idx,
                         //         },
@@ -2163,7 +2199,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     self.state = .{
                         .after_attribute_name = .{
                             .tag = state.tag,
-                            .name_raw = .{
+                            .name = .{
                                 .start = state.name_start,
                                 .end = self.idx,
                             },
@@ -2178,12 +2214,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+003E GREATER-THAN SIGN (>)
                     // EOF
                     // Reconsume in the after attribute name state.
-                    '\t', '\n', form_feed, ' ', '/', '>' => {
+                    '\t', '\n', '\r', form_feed, ' ', '/', '>' => {
                         self.idx -= 1;
                         self.state = .{
                             .after_attribute_name = .{
                                 .tag = state.tag,
-                                .name_raw = .{
+                                .name = .{
                                     .start = state.name_start,
                                     .end = self.idx,
                                 },
@@ -2197,7 +2233,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .before_attribute_value = .{
                             .tag = state.tag,
                             .equal_sign = self.idx - 1,
-                            .name_raw = .{
+                            .name = .{
                                 .start = state.name_start,
                                 .end = self.idx - 1,
                             },
@@ -2262,7 +2298,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
                     // U+002F SOLIDUS (/)
                     // Switch to the self-closing start tag state.
                     '/' => {
@@ -2274,8 +2310,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name_raw = state.name_raw,
-                                        .value_raw = null,
+                                        .name = state.name,
+                                        .value = null,
                                     },
                                 },
                             };
@@ -2286,7 +2322,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '=' => self.state = .{
                         .before_attribute_value = .{
                             .tag = state.tag,
-                            .name_raw = state.name_raw,
+                            .name = state.name,
                             .equal_sign = self.idx - 1,
                         },
                     },
@@ -2301,8 +2337,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name_raw = state.name_raw,
-                                        .value_raw = null,
+                                        .name = state.name,
+                                        .value = null,
                                     },
                                 },
                             };
@@ -2325,8 +2361,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name_raw = state.name_raw,
-                                        .value_raw = null,
+                                        .name = state.name,
+                                        .value = null,
                                     },
                                 },
                             };
@@ -2341,7 +2377,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     self.state = .{
                         .attribute_value_unquoted = .{
                             .tag = state.tag,
-                            .name_raw = state.name_raw,
+                            .name = state.name,
                             .value_start = self.idx,
                         },
                     };
@@ -2351,13 +2387,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
                     // U+0022 QUOTATION MARK (")
                     // Switch to the attribute value (double-quoted) state.
                     '"' => self.state = .{
                         .attribute_value = .{
                             .tag = state.tag,
-                            .name_raw = state.name_raw,
+                            .name = state.name,
                             .quote = .double,
                             .value_start = self.idx,
                         },
@@ -2367,7 +2403,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '\'' => self.state = .{
                         .attribute_value = .{
                             .tag = state.tag,
-                            .name_raw = state.name_raw,
+                            .name = state.name,
                             .quote = .single,
                             .value_start = self.idx,
                         },
@@ -2401,7 +2437,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .{
                             .attribute_value_unquoted = .{
                                 .tag = state.tag,
-                                .name_raw = state.name_raw,
+                                .name = state.name,
                                 .value_start = self.idx,
                             },
                         };
@@ -2445,8 +2481,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 return .{
                                     .token = .{
                                         .attr = .{
-                                            .name_raw = state.name_raw,
-                                            .value_raw = .{
+                                            .name = state.name,
+                                            .value = .{
                                                 .quote = .double,
                                                 .span = .{
                                                     .start = state.value_start,
@@ -2477,8 +2513,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 return .{
                                     .token = .{
                                         .attr = .{
-                                            .name_raw = state.name_raw,
-                                            .value_raw = .{
+                                            .name = state.name,
+                                            .value = .{
                                                 .quote = .single,
                                                 .span = .{
                                                     .start = state.value_start,
@@ -2542,13 +2578,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Switch to the before attribute name state.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
+                        self.state = .{ .before_attribute_name = state.tag };
                         if (self.return_attrs) {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name_raw = state.name_raw,
-                                        .value_raw = .{
+                                        .name = state.name,
+                                        .value = .{
                                             .quote = .single,
                                             .span = .{
                                                 .start = state.value_start,
@@ -2559,7 +2596,6 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 },
                             };
                         }
-                        self.state = .{ .before_attribute_name = state.tag };
                     },
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the data state. Emit the current tag token.
@@ -2573,8 +2609,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name_raw = state.name_raw,
-                                        .value_raw = .{
+                                        .name = state.name,
+                                        .value = .{
                                             .quote = .single,
                                             .span = .{
                                                 .start = state.value_start,
@@ -2661,7 +2697,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Switch to the before attribute name state.
-                    '\t', '\n', form_feed, ' ' => self.state = .{
+                    '\t', '\n', '\r', form_feed, ' ' => self.state = .{
                         .before_attribute_name = state.tag,
                     },
                     // U+003E GREATER-THAN SIGN (>)
@@ -2828,10 +2864,10 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Consume those two characters, create a comment token whose data is the empty string, and switch to the comment start state.
                     self.idx += 2;
                     self.state = .{ .comment_start = lbracket };
-                } else if (self.nextCharsAreIgnoreCase(DOCTYPE, src)) {
+                } else if (self.nextCharsAreIgnoreCase("DOCTYPE", src)) {
                     // ASCII case-insensitive match for the word "DOCTYPE"
                     // Consume those characters and switch to the DOCTYPE state.
-                    self.idx += @intCast(DOCTYPE.len);
+                    self.idx += @intCast("DOCTYPE".len);
                     self.state = .{ .doctype = lbracket };
                 } else if (self.nextCharsAre("[CDATA[", src)) {
                     // The string "[CDATA[" (the five uppercase letters "CDATA" with a U+005B LEFT SQUARE BRACKET character before and after)
@@ -3654,7 +3690,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .deferred = .{
                             .doctype = .{
                                 .force_quirks = true,
-                                .name_raw = null,
+                                .name = null,
                                 .span = .{
                                     .start = lbracket,
                                     .end = self.idx,
@@ -3669,7 +3705,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Switch to the before DOCTYPE name state.
-                    '\t', '\n', form_feed, ' ' => self.state = .{
+                    '\t', '\n', '\r', form_feed, ' ' => self.state = .{
                         .before_doctype_name = lbracket,
                     },
 
@@ -3725,7 +3761,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .end = self.idx,
                                 },
                                 .force_quirks = true,
-                                .name_raw = null,
+                                .name = null,
                             },
                         },
                     };
@@ -3736,7 +3772,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
                     // U+0000 NULL
                     // This is an unexpected-null-character parse error. Create a new DOCTYPE token. Set the token's name to a U+FFFD REPLACEMENT CHARACTER character. Switch to the DOCTYPE name state.
                     0 => {
@@ -3780,7 +3816,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                         .end = self.idx + 1,
                                     },
                                     .force_quirks = true,
-                                    .name_raw = null,
+                                    .name = null,
                                 },
                             },
                         };
@@ -3823,7 +3859,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .end = self.idx + 1,
                                 },
                                 .force_quirks = true,
-                                .name_raw = null,
+                                .name = null,
                             },
                         },
                     };
@@ -3834,11 +3870,11 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Switch to the after DOCTYPE name state.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         self.state = .{
                             .after_doctype_name = .{
                                 .lbracket = state.lbracket,
-                                .name_raw = .{
+                                .name = .{
                                     .start = state.name_start,
                                     .end = self.idx - 1,
                                 },
@@ -3856,7 +3892,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                         .start = state.lbracket,
                                         .end = self.idx,
                                     },
-                                    .name_raw = .{
+                                    .name = .{
                                         .start = state.name_start,
                                         .end = self.idx - 1,
                                     },
@@ -3908,7 +3944,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .start = state.lbracket,
                                     .end = self.idx,
                                 },
-                                .name_raw = state.name_raw,
+                                .name = state.name,
                                 .force_quirks = true,
                             },
                         },
@@ -3920,7 +3956,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the data state. Emit the current DOCTYPE token.
                     '>' => {
@@ -3932,7 +3968,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                         .start = state.lbracket,
                                         .end = self.idx,
                                     },
-                                    .name_raw = state.name_raw,
+                                    .name = state.name,
                                     .force_quirks = false,
                                 },
                             },
@@ -3950,7 +3986,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                         .start = state.lbracket,
                                         .end = 0,
                                     },
-                                    .name_raw = state.name_raw,
+                                    .name = state.name,
                                     .extra = .{
                                         .start = self.idx,
                                         .end = 0,
@@ -3968,7 +4004,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                         .start = state.lbracket,
                                         .end = 0,
                                     },
-                                    .name_raw = state.name_raw,
+                                    .name = state.name,
                                     .extra = .{
                                         .start = self.idx - 1,
                                         .end = 0,
@@ -3986,7 +4022,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                         .start = state.lbracket,
                                         .end = 0,
                                     },
-                                    .name_raw = state.name_raw,
+                                    .name = state.name,
                                     .extra = .{
                                         .start = self.idx - 1,
                                         .end = 0,
@@ -4039,7 +4075,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Switch to the before DOCTYPE public identifier state.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         self.state = .{
                             .before_doctype_public_identifier = state,
                         };
@@ -4154,7 +4190,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
 
                     // U+0022 QUOTATION MARK (")
                     // Set the current DOCTYPE token's public identifier to the empty string (not missing), then switch to the DOCTYPE public identifier (double-quoted) state.
@@ -4327,7 +4363,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Switch to the between DOCTYPE public and system identifiers state.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         self.state = .{
                             .beteen_doctype_public_and_system_identifiers = state,
                         };
@@ -4431,7 +4467,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the data state. Emit the current DOCTYPE token.
                     '>' => {
@@ -4508,7 +4544,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Switch to the before DOCTYPE system identifier state.
-                    '\t', '\n', form_feed, ' ' => {
+                    '\t', '\n', '\r', form_feed, ' ' => {
                         self.state = .{
                             .before_doctype_system_identifier = state,
                         };
@@ -4624,7 +4660,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
 
                     // U+0022 QUOTATION MARK (")
                     // Set the current DOCTYPE token's system identifier to the empty string (not missing), then switch to the DOCTYPE system identifier (double-quoted) state.
@@ -4800,7 +4836,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+000C FORM FEED (FF)
                     // U+0020 SPACE
                     // Ignore the character.
-                    '\t', '\n', form_feed, ' ' => {},
+                    '\t', '\n', '\r', form_feed, ' ' => {},
 
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the data state. Emit the current DOCTYPE token.
@@ -5022,7 +5058,7 @@ fn isControl(c: u8) bool {
 fn isAsciiWhitespace(c: u8) bool {
     return switch (c) {
         // ASCII whitespace is U+0009 TAB, U+000A LF, U+000C FF, U+000D CR, or U+0020 SPACE.
-        '\t', '\n', std.ascii.control_code.ff, '\r', ' ' => true,
+        '\t', '\n', form_feed, '\r', ' ' => true,
         else => false,
     };
 }
