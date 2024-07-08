@@ -37,16 +37,17 @@ pub const Handler = struct {
     gpa: std.mem.Allocator,
     server: *SuperLsp,
     files: std.StringHashMapUnmanaged(Document) = .{},
+    offset_encoding: offsets.Encoding = .@"utf-16",
 
     usingnamespace @import("lsp/logic.zig");
 
     pub fn initialize(
-        self: Handler,
+        self: *Handler,
         _: std.mem.Allocator,
         request: types.InitializeParams,
-        offset_encoding: offsets.Encoding,
+        offset_encoding_: offsets.Encoding,
     ) !lsp.types.InitializeResult {
-        _ = self;
+        self.offset_encoding = offset_encoding_;
 
         if (request.clientInfo) |clientInfo| {
             log.info("client is '{s}-{s}'", .{ clientInfo.name, clientInfo.version orelse "<no version>" });
@@ -58,7 +59,7 @@ pub const Handler = struct {
                 .version = "0.0.1",
             },
             .capabilities = .{
-                .positionEncoding = switch (offset_encoding) {
+                .positionEncoding = switch (offset_encoding_) {
                     .@"utf-8" => .@"utf-8",
                     .@"utf-16" => .@"utf-16",
                     .@"utf-32" => .@"utf-32",
@@ -66,7 +67,7 @@ pub const Handler = struct {
                 .textDocumentSync = .{
                     .TextDocumentSyncOptions = .{
                         .openClose = true,
-                        .change = .Full,
+                        .change = .Incremental,
                         .save = .{ .bool = true },
                     },
                 },
@@ -142,19 +143,49 @@ pub const Handler = struct {
         arena: std.mem.Allocator,
         notification: types.DidChangeTextDocumentParams,
     ) !void {
-        if (notification.contentChanges.len == 0) return;
+        errdefer |e| log.err("changeDocument failed: {any}", .{e});
 
-        const new_text = try self.gpa.dupeZ(u8, notification.contentChanges[notification.contentChanges.len - 1].literal_1.text); // We informed the client that we only do full document syncs
-        errdefer self.gpa.free(new_text);
+        if (notification.contentChanges.len == 0) {
+            log.warn("changeDocument failed: no changes", .{});
+            return error.InvalidParams;
+        }
+        const file = self.files.get(notification.textDocument.uri) orelse {
+            log.warn("changeDocument failed: unknown file: {any}", .{notification.textDocument.uri});
+            return error.InvalidParams;
+        };
 
-        // TODO: this is a hack while we wait for actual incremental reloads
-        const file = self.files.get(notification.textDocument.uri) orelse return;
-        try self.loadFile(
-            arena,
-            new_text,
-            notification.textDocument.uri,
-            file.language,
-        );
+        for (notification.contentChanges) |change_| {
+            const new_text = switch (change_) {
+                .literal_1 => |change| try self.gpa.dupeZ(u8, change.text),
+                .literal_0 => |change| blk: {
+                    const old_text = file.bytes;
+                    const range = change.range;
+                    const start_idx = offsets.maybePositionToIndex(old_text, range.start, self.offset_encoding) orelse {
+                        log.warn("changeDocument failed: invalid start position: {any}", .{range.start});
+                        return error.InternalError;
+                    };
+                    const end_idx = offsets.maybePositionToIndex(old_text, range.end, self.offset_encoding) orelse {
+                        log.warn("changeDocument failed: invalid end position: {any}", .{range.end});
+                        return error.InternalError;
+                    };
+                    var new_text = std.ArrayList(u8).init(self.gpa);
+                    errdefer new_text.deinit();
+                    try new_text.appendSlice(old_text[0..start_idx]);
+                    try new_text.appendSlice(change.text);
+                    try new_text.appendSlice(old_text[end_idx..]);
+                    break :blk try new_text.toOwnedSliceSentinel(0);
+                },
+            };
+            errdefer self.gpa.free(new_text);
+
+            // TODO: this is a hack while we wait for actual incremental reloads
+            try self.loadFile(
+                arena,
+                new_text,
+                notification.textDocument.uri,
+                file.language,
+            );
+        }
     }
 
     pub fn saveDocument(
