@@ -25,8 +25,31 @@ const rawtext_names = TagNameMap.initComptime(.{
 });
 
 const unsupported_names = TagNameMap.initComptime(.{
-    .{ "plaintext", {} },
+    .{ "applet", {} },
+    .{ "acronym", {} },
+    .{ "bgsound", {} },
+    .{ "dir", {} },
+    .{ "frame", {} },
+    .{ "frameset", {} },
+    .{ "noframes", {} },
+    .{ "hgroup", {} },
+    .{ "isindex", {} },
     .{ "listing", {} },
+    .{ "nextid", {} },
+    .{ "noembed", {} },
+    .{ "plaintext", {} },
+    .{ "strike", {} },
+    .{ "xmp", {} },
+    .{ "basefont", {} },
+    .{ "big", {} },
+    .{ "blink", {} },
+    .{ "center", {} },
+    .{ "font", {} },
+    .{ "marquee", {} },
+    .{ "multicol", {} },
+    .{ "nobr", {} },
+    .{ "spacer", {} },
+    .{ "tt", {} },
 });
 
 const Node = struct {
