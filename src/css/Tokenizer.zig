@@ -19,25 +19,55 @@ pub const Token = union(enum) {
     at_keyword: Span,
     hash: Span,
     string: Span,
-    bad_string,
+    bad_string: Span,
     url: Span,
-    bad_url,
-    delim: u8,
-    number: f64,
+    bad_url: Span,
+    delim: u32,
+    number: Span,
     percentage, // TODO
     dimension, // TODO
-    whitespace,
-    cdo,
-    cdc,
-    colon,
-    semicolon,
-    comma,
-    open_square,
-    close_square,
-    open_paren,
-    close_paren,
-    open_curly,
-    close_curly,
+    cdo: u32,
+    cdc: u32,
+    colon: u32,
+    semicolon: u32,
+    comma: u32,
+    open_square: u32,
+    close_square: u32,
+    open_paren: u32,
+    close_paren: u32,
+    open_curly: u32,
+    close_curly: u32,
+
+    pub fn span(self: Token) Span {
+        return switch (self) {
+            .ident,
+            .function,
+            .at_keyword,
+            .hash,
+            .string,
+            .bad_string,
+            .url,
+            .bad_url,
+            => |s| s,
+            .percentage,
+            .dimension,
+            => @panic("TODO"),
+            .cdo,
+            => |i| .{ .start = i, .end = i + 4 },
+            .cdc,
+            => |i| .{ .start = i, .end = i + 3 },
+            .colon,
+            .semicolon,
+            .comma,
+            .open_square,
+            .close_square,
+            .open_paren,
+            .close_paren,
+            .open_curly,
+            .close_curly,
+            => |i| .{ .start = i, .end = i + 1 },
+        };
+    }
 };
 
 fn consume(self: *Tokenizer, src: []const u8) bool {
@@ -85,11 +115,15 @@ fn isIdentChar(char: u8) bool {
 pub fn next(self: *Tokenizer, src: []const u8) ?Token {
     if (self.consume(src)) {
         switch (self.current) {
-            '\n', '\t', ' ' => while (true) {
-                if (self.peek(src)) |c| switch (c) {
-                    '\n', '\t', ' ' => std.debug.assert(self.consume(src)),
-                    else => return .whitespace,
-                } else return .whitespace;
+            '\n', '\t', ' ' => {
+                while (true) {
+                    if (self.peek(src)) |c| switch (c) {
+                        '\n', '\t', ' ' => std.debug.assert(self.consume(src)),
+                        else => break,
+                    } else break;
+                }
+
+                return self.next(src);
             },
             '"' => @panic("TODO"),
             '#' => @panic("TODO"),
@@ -100,15 +134,15 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
             ',' => @panic("TODO"),
             '-' => @panic("TODO"),
             '.' => @panic("TODO"),
-            ':' => return .colon,
-            ';' => return .semicolon,
+            ':' => return .{ .colon = self.idx - 1 },
+            ';' => return .{ .semicolon = self.idx - 1 },
             '<' => @panic("TODO"),
             '@' => @panic("TODO"),
             '[' => @panic("TODO"),
             '\\' => @panic("TODO"),
             ']' => @panic("TODO"),
-            '{' => return .open_curly,
-            '}' => return .close_curly,
+            '{' => return .{ .open_curly = self.idx - 1 },
+            '}' => return .{ .close_curly = self.idx - 1 },
             '0'...'9' => @panic("TODO"),
             else => |c| if (isIdentStartChar(c)) {
                 self.reconsume(src);
@@ -165,15 +199,11 @@ test {
     var tokenizer = Tokenizer{};
 
     try std.testing.expectEqual(Token{ .ident = .{ .start = 0, .end = 1 } }, tokenizer.next(src).?);
-    try std.testing.expectEqual(Token.whitespace, tokenizer.next(src).?);
-    try std.testing.expectEqual(Token.open_curly, tokenizer.next(src).?);
-    try std.testing.expectEqual(Token.whitespace, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .open_curly = 2 }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .ident = .{ .start = 8, .end = 13 } }, tokenizer.next(src).?);
-    try std.testing.expectEqual(Token.colon, tokenizer.next(src).?);
-    try std.testing.expectEqual(Token.whitespace, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .colon = 13 }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .ident = .{ .start = 15, .end = 18 } }, tokenizer.next(src).?);
-    try std.testing.expectEqual(Token.semicolon, tokenizer.next(src).?);
-    try std.testing.expectEqual(Token.whitespace, tokenizer.next(src).?);
-    try std.testing.expectEqual(Token.close_curly, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .semicolon = 18 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .close_curly = 20 }, tokenizer.next(src).?);
     try std.testing.expectEqual(null, tokenizer.next(src));
 }
