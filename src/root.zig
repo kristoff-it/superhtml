@@ -1,6 +1,7 @@
 // const interpreter = @import("interpreter.zig");
 const std = @import("std");
 pub const html = @import("html.zig");
+pub const css = @import("css.zig");
 pub const Ast = @import("Ast.zig");
 // pub const SuperVM = interpreter.SuperVM;
 // pub const Exception = interpreter.Exception;
