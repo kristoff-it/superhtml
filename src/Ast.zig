@@ -10,9 +10,6 @@ const ErrWriter = errors.ErrWriter;
 const log = std.log.scoped(.ast);
 
 src: []const u8,
-html: html.Ast,
-template_name: []const u8,
-template_path: []const u8,
 extends_idx: u32 = 0,
 interface: std.StringArrayHashMapUnmanaged(u32),
 blocks: std.StringHashMapUnmanaged(u32),
@@ -27,6 +24,10 @@ const Error = struct {
         late_loop,
         var_no_value,
         loop_no_value,
+        block_missing_id,
+        extend_without_template_attr,
+        missing_template_value,
+        unexpected_extend,
         unscripted_var,
         duplicate_block: Span,
     },
@@ -391,18 +392,37 @@ pub const Node = struct {
         return SuperCursor.init(node);
     }
 
-    pub fn debug(node: *const Node, ast: Ast) void {
+    pub fn debug(
+        node: *const Node,
+        src: []const u8,
+        html_ast: html.Ast,
+        ast: Ast,
+    ) void {
         std.debug.print("\n\n-- DEBUG --\n", .{});
-        node.debugInternal(ast, std.io.getStdErr().writer(), 0) catch unreachable;
+        node.debugInternal(
+            src,
+            html_ast,
+            ast,
+            std.io.getStdErr().writer(),
+            0,
+        ) catch unreachable;
     }
 
     // Allows passing in a writer, useful for tests
-    pub fn debugWriter(node: *const Node, ast: Ast, w: anytype) void {
-        node.debugInternal(ast, w, 0) catch unreachable;
+    pub fn debugWriter(
+        node: *const Node,
+        src: []const u8,
+        html_ast: html.Ast,
+        ast: Ast,
+        w: anytype,
+    ) void {
+        node.debugInternal(src, html_ast, ast, w, 0) catch unreachable;
     }
 
     fn debugInternal(
         node: Node,
+        src: []const u8,
+        html_ast: html.Ast,
         ast: Ast,
         w: anytype,
         lvl: usize,
@@ -411,19 +431,19 @@ pub const Node = struct {
         try w.print("({s} {}", .{ @tagName(node.kind), node.depth });
 
         if (node.kind.hasId()) {
-            try w.print(" #{s}", .{node.idValue().span.slice(ast.src)});
+            try w.print(" #{s}", .{node.idValue().span.slice(src)});
         } else if (node.kind == .extend) {
-            try w.print(" {s}", .{node.templateAttr().span().slice(ast.src)});
+            try w.print(" {s}", .{node.templateAttr().span().slice(src)});
         } else if (node.kind == .super) {
             try w.print(" ->#{s}", .{
-                node.superBlock(ast.html).id_value.span.slice(ast.src),
+                node.superBlock(html_ast).id_value.span.slice(src),
             });
         }
 
         if (ast.child(node)) |ch| {
             // assert(@src(), ch.parent == node);
             try w.print("\n", .{});
-            try ch.debugInternal(ast, w, lvl + 1);
+            try ch.debugInternal(src, html_ast, ast, w, lvl + 1);
             for (0..lvl) |_| try w.print("    ", .{});
         }
         try w.print(")\n", .{});
@@ -431,7 +451,7 @@ pub const Node = struct {
         if (ast.next(node)) |sibling| {
             // assert(@src(), sibling.prev == node);
             // assert(@src(), sibling.parent == node.parent);
-            try sibling.debugInternal(ast, w, lvl);
+            try sibling.debugInternal(src, html_ast, ast, w, lvl);
         }
     }
 };
@@ -462,7 +482,6 @@ pub fn childrenCount(ast: Ast, node: Node) usize {
 }
 
 pub fn deinit(ast: Ast, gpa: std.mem.Allocator) void {
-    ast.html.deinit(gpa);
     @constCast(&ast).interface.deinit(gpa);
     @constCast(&ast).blocks.deinit(gpa);
     gpa.free(ast.nodes);
@@ -472,13 +491,14 @@ pub fn deinit(ast: Ast, gpa: std.mem.Allocator) void {
 
 pub fn init(
     gpa: std.mem.Allocator,
-    template_name: []const u8,
-    template_path: []const u8,
+    html_ast: html.Ast,
     src: []const u8,
 ) error{OutOfMemory}!Ast {
+    std.debug.assert(html_ast.language == .superhtml);
+
     var p: Parser = .{
         .src = src,
-        .html = try html.Ast.init(gpa, src),
+        .html = html_ast,
     };
     errdefer p.deinit(gpa);
 
@@ -501,7 +521,7 @@ pub fn init(
             else => continue,
         }
 
-        seen_non_comment_elems = true;
+        defer seen_non_comment_elems = true;
 
         // Ensure that node always points at a node not more deeply nested
         // than our current html_node.
@@ -610,9 +630,6 @@ pub fn init(
 
     return .{
         .src = src,
-        .html = p.html,
-        .template_name = template_name,
-        .template_path = template_path,
         .nodes = try p.nodes.toOwnedSlice(gpa),
         .errors = try p.errors.toOwnedSlice(gpa),
         .scripted_attrs = try p.scripted_attrs.toOwnedSlice(gpa),
@@ -636,7 +653,6 @@ const Parser = struct {
     blocks: std.StringHashMapUnmanaged(u32) = .{},
 
     pub fn deinit(p: *Parser, gpa: std.mem.Allocator) void {
-        p.html.deinit(gpa);
         p.nodes.deinit(gpa);
         p.errors.deinit(gpa);
         p.scripted_attrs.deinit(gpa);
@@ -681,7 +697,7 @@ const Parser = struct {
         const block_context = block_mode and depth == 1;
         if (block_context) tmp_result.kind = .block;
 
-        var start_tag = elem.startTag(p.src);
+        var start_tag = elem.startTag(p.src, .superhtml);
         const tag_name = start_tag.name_span;
 
         // is it a special tag
@@ -700,10 +716,14 @@ const Parser = struct {
 
                 // validation
                 {
-                    const parent_isnt_root = depth != 1;
+                    const parent_isnt_root = elem.parent_idx != 0;
 
                     if (parent_isnt_root or seen_non_comment_elems) {
-                        @panic("TODO");
+                        try p.errors.append(gpa, .{
+                            .kind = .unexpected_extend,
+                            .main_location = tag_name,
+                        });
+                        return null;
                         // return p.reportError(
                         //     tag_name,
                         //     "unexpected_extend",
@@ -716,14 +736,44 @@ const Parser = struct {
                     }
 
                     const template_attr = start_tag.next(p.src) orelse {
-                        @panic("TODO: explain that super must have a template attr");
+                        try p.errors.append(gpa, .{
+                            .kind = .extend_without_template_attr,
+                            .main_location = tag_name,
+                        });
+                        return null;
                     };
+
+                    if (!is(template_attr.name.slice(p.src), "template")) {
+                        try p.errors.append(gpa, .{
+                            .kind = .extend_without_template_attr,
+                            .main_location = tag_name,
+                        });
+                        try p.errors.append(gpa, .{
+                            .kind = .bad_attr,
+                            .main_location = template_attr.name,
+                        });
+                        return null;
+                    }
+
+                    const template = template_attr.value orelse {
+                        try p.errors.append(gpa, .{
+                            .kind = .missing_template_value,
+                            .main_location = template_attr.name,
+                        });
+                        return null;
+                    };
+
+                    // TODO: more validation about this template value?
+                    _ = template;
 
                     tmp_result.id_template_parentid = template_attr;
 
                     if (start_tag.next(p.src)) |a| {
-                        _ = a;
-                        @panic("TODO: explain that extend can't have attrs other than `template`");
+                        try p.errors.append(gpa, .{
+                            .kind = .bad_attr,
+                            .main_location = a.name,
+                        });
+                        return null;
                     }
 
                     const new_node = try p.nodes.addOne(gpa);
@@ -758,7 +808,7 @@ const Parser = struct {
                 //The immediate parent must have an id
                 const pr = p.html.parent(tmp_result.elem(p.html)).?;
 
-                var parent_start_tag = pr.startTag(p.src);
+                var parent_start_tag = pr.startTag(p.src, .superhtml);
                 while (parent_start_tag.next(p.src)) |attr| {
                     if (is(attr.name.slice(p.src), "id")) {
                         // We can assert that the value is present because
@@ -1441,7 +1491,11 @@ const Parser = struct {
 
         // TODO: see if the error reporting order makes sense
         if (tmp_result.kind.role() == .block and !attrs_seen.contains("id")) {
-            @panic("TODO");
+            try p.errors.append(gpa, .{
+                .kind = .block_missing_id,
+                .main_location = tag_name,
+            });
+            return null;
             // const name = tmp_result.elem(p.html).startTag(p.src).name_span;
             // return p.reportError(
             //     name,
@@ -1676,18 +1730,19 @@ test "basics" {
         \\<div>Hello World!</div>
     ;
 
-    const tree = try Ast.init(
+    const html_ast = try html.Ast.init(
         std.testing.allocator,
-        "foo.html",
-        "path/to/foo.html",
         case,
+        .superhtml,
     );
+    defer html_ast.deinit(std.testing.allocator);
+    const tree = try Ast.init(std.testing.allocator, html_ast, case);
     defer tree.deinit(std.testing.allocator);
 
     const r = tree.root();
     try std.testing.expectEqual(Node.Kind.root, r.kind);
 
-    errdefer r.debug(tree);
+    errdefer r.debug(case, html_ast, tree);
 
     try std.testing.expectEqual(0, r.parent_idx);
     try std.testing.expectEqual(0, r.next_idx);
@@ -1706,12 +1761,13 @@ test "var - errors" {
 
     var it = std.mem.tokenizeScalar(u8, cases, '\n');
     while (it.next()) |case| {
-        const tree = try Ast.init(
+        const html_ast = try html.Ast.init(
             std.testing.allocator,
-            "foo.html",
-            "path/to/foo.html",
             case,
+            .superhtml,
         );
+        defer html_ast.deinit(std.testing.allocator);
+        const tree = try Ast.init(std.testing.allocator, html_ast, case);
         defer tree.deinit(std.testing.allocator);
 
         errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
@@ -1729,19 +1785,19 @@ test "siblings" {
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
 
-    // foo
-    const tree = try Ast.init(
+    const html_ast = try html.Ast.init(
         std.testing.allocator,
-        "foo.html",
-        "path/to/foo.html",
         case,
+        .superhtml,
     );
+    defer html_ast.deinit(std.testing.allocator);
+    const tree = try Ast.init(std.testing.allocator, html_ast, case);
     defer tree.deinit(std.testing.allocator);
 
     var out = std.ArrayList(u8).init(std.testing.allocator);
     defer out.deinit();
 
-    tree.root().debugWriter(tree, out.writer());
+    tree.root().debugWriter(case, html_ast, tree, out.writer());
 
     const ex =
         \\(root 0
@@ -1763,19 +1819,19 @@ test "nesting" {
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
 
-    // foo
-    const tree = try Ast.init(
+    const html_ast = try html.Ast.init(
         std.testing.allocator,
-        "foo.html",
-        "path/to/foo.html",
         case,
+        .superhtml,
     );
+    defer html_ast.deinit(std.testing.allocator);
+    const tree = try Ast.init(std.testing.allocator, html_ast, case);
     defer tree.deinit(std.testing.allocator);
 
     var out = std.ArrayList(u8).init(std.testing.allocator);
     defer out.deinit();
 
-    tree.root().debugWriter(tree, out.writer());
+    tree.root().debugWriter(case, html_ast, tree, out.writer());
 
     const ex =
         \\(root 0
@@ -1799,20 +1855,19 @@ test "deeper nesting" {
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
 
-    // foo
-    const tree = try Ast.init(
+    const html_ast = try html.Ast.init(
         std.testing.allocator,
-        "foo.html",
-        "path/to/foo.html",
         case,
+        .superhtml,
     );
-
+    defer html_ast.deinit(std.testing.allocator);
+    const tree = try Ast.init(std.testing.allocator, html_ast, case);
     defer tree.deinit(std.testing.allocator);
 
     var out = std.ArrayList(u8).init(std.testing.allocator);
     defer out.deinit();
 
-    tree.root().debugWriter(tree, out.writer());
+    tree.root().debugWriter(case, html_ast, tree, out.writer());
 
     const ex =
         \\(root 0
@@ -1841,20 +1896,20 @@ test "complex example" {
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
 
-    // foo
-    const tree = try Ast.init(
+    const html_ast = try html.Ast.init(
         std.testing.allocator,
-        "foo.html",
-        "path/to/foo.html",
         case,
+        .superhtml,
     );
+    defer html_ast.deinit(std.testing.allocator);
+    const tree = try Ast.init(std.testing.allocator, html_ast, case);
     defer tree.deinit(std.testing.allocator);
 
     var out = std.ArrayList(u8).init(std.testing.allocator);
     defer out.deinit();
 
     const r = tree.root();
-    r.debugWriter(tree, out.writer());
+    r.debugWriter(case, html_ast, tree, out.writer());
 
     const cex: usize = 3;
     try std.testing.expectEqual(cex, tree.childrenCount(tree.child(r).?));
@@ -1888,12 +1943,13 @@ test "if-else-loop errors" {
 
     var it = std.mem.tokenizeScalar(u8, cases, '\n');
     while (it.next()) |case| {
-        const tree = try Ast.init(
+        const html_ast = try html.Ast.init(
             std.testing.allocator,
-            "foo.html",
-            "path/to/foo.html",
             case,
+            .superhtml,
         );
+        defer html_ast.deinit(std.testing.allocator);
+        const tree = try Ast.init(std.testing.allocator, html_ast, case);
         defer tree.deinit(std.testing.allocator);
 
         errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
@@ -1916,20 +1972,20 @@ test "super" {
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
 
-    // foo
-    const tree = try Ast.init(
+    const html_ast = try html.Ast.init(
         std.testing.allocator,
-        "foo.html",
-        "path/to/foo.html",
         case,
+        .superhtml,
     );
+    defer html_ast.deinit(std.testing.allocator);
+    const tree = try Ast.init(std.testing.allocator, html_ast, case);
     defer tree.deinit(std.testing.allocator);
 
     var out = std.ArrayList(u8).init(std.testing.allocator);
     defer out.deinit();
 
     const r = tree.root();
-    r.debugWriter(tree, out.writer());
+    r.debugWriter(case, html_ast, tree, out.writer());
 
     const ex =
         \\(root 0
