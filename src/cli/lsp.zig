@@ -7,6 +7,7 @@ const ResultType = lsp.server.ResultType;
 const Message = lsp.server.Message;
 const super = @import("super");
 const Document = @import("lsp/Document.zig");
+const version = @import("../cli.zig").version;
 
 const log = std.log.scoped(.super_lsp);
 
@@ -15,7 +16,7 @@ const SuperLsp = lsp.server.Server(Handler);
 pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     _ = args;
 
-    log.debug("Super LSP started!", .{});
+    log.debug("SuperHTML LSP started!", .{});
 
     var transport = lsp.Transport.init(
         std.io.getStdIn().reader(),
@@ -55,8 +56,8 @@ pub const Handler = struct {
 
         return .{
             .serverInfo = .{
-                .name = "Super LSP",
-                .version = "0.0.1",
+                .name = "SuperHTML LSP",
+                .version = version,
             },
             .capabilities = .{
                 .positionEncoding = switch (offset_encoding_) {
@@ -72,7 +73,7 @@ pub const Handler = struct {
                     },
                 },
                 .completionProvider = .{
-                    .triggerCharacters = &[_][]const u8{ ".", ":", "@", "\"" },
+                    .triggerCharacters = &[_][]const u8{"<"},
                 },
                 .hoverProvider = .{ .bool = true },
                 .definitionProvider = .{ .bool = true },
@@ -126,7 +127,7 @@ pub const Handler = struct {
         errdefer self.gpa.free(new_text);
 
         const language_id = notification.textDocument.languageId;
-        const language = std.meta.stringToEnum(Document.Language, language_id) orelse {
+        const language = std.meta.stringToEnum(super.Language, language_id) orelse {
             log.debug("unrecognized language id: '{s}'", .{language_id});
             return;
         };
@@ -158,7 +159,7 @@ pub const Handler = struct {
             const new_text = switch (change_) {
                 .literal_1 => |change| try self.gpa.dupeZ(u8, change.text),
                 .literal_0 => |change| blk: {
-                    const old_text = file.bytes;
+                    const old_text = file.src;
                     const range = change.range;
                     const start_idx = offsets.maybePositionToIndex(old_text, range.start, self.offset_encoding) orelse {
                         log.warn("changeDocument failed: invalid start position: {any}", .{range.start});
@@ -204,7 +205,7 @@ pub const Handler = struct {
     ) error{}!void {
         var kv = self.files.fetchRemove(notification.textDocument.uri) orelse return;
         self.gpa.free(kv.key);
-        kv.value.deinit();
+        kv.value.deinit(self.gpa);
     }
 
     pub fn completion(
@@ -272,29 +273,24 @@ pub const Handler = struct {
     ) !?[]types.TextEdit {
         log.debug("format request!!", .{});
 
-        const file = self.files.getPtr(request.textDocument.uri) orelse return null;
-        log.debug("file found", .{});
-        if (file.ast.errors.len != 0) {
-            log.debug("ast has errors - no autoformatting", .{});
-            return null;
-        }
+        const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
 
         log.debug("format!!", .{});
 
         var buf = std.ArrayList(u8).init(self.gpa);
         errdefer buf.deinit();
 
-        try file.ast.render(file.bytes, buf.writer());
+        try doc.html.render(doc.src, buf.writer());
 
         const edits = try lsp.diff.edits(
             arena,
-            file.bytes,
+            doc.src,
             buf.items,
             .@"utf-8",
         );
 
-        self.gpa.free(file.bytes);
-        file.bytes = try buf.toOwnedSlice();
+        self.gpa.free(doc.src);
+        doc.src = try buf.toOwnedSlice();
 
         return edits.items;
     }

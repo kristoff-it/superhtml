@@ -1,8 +1,10 @@
 const Ast = @This();
 
 const std = @import("std");
+const root = @import("../root.zig");
+const Language = root.Language;
+const Span = root.Span;
 const Tokenizer = @import("Tokenizer.zig");
-const Span = @import("../root.zig").Span;
 
 const log = std.log.scoped(.@"html/ast");
 
@@ -113,8 +115,12 @@ pub const Node = struct {
         }
     };
 
-    pub fn startTag(n: Node, src: []const u8) TagIterator {
-        var t: Tokenizer = .{ .idx = n.open.start, .return_attrs = true };
+    pub fn startTag(n: Node, src: []const u8, language: Language) TagIterator {
+        var t: Tokenizer = .{
+            .language = language,
+            .idx = n.open.start,
+            .return_attrs = true,
+        };
         // TODO: depending on how we deal with errors with might
         //       need more sophisticated logic here than a yolo
         //       union access.
@@ -131,7 +137,7 @@ pub const Node = struct {
     }
 };
 
-const Error = struct {
+pub const Error = struct {
     tag: union(enum) {
         token: Tokenizer.TokenError,
         ast: enum {
@@ -141,9 +147,10 @@ const Error = struct {
             deprecated_and_unsupported,
         },
     },
-    span: Span,
+    main_location: Span,
 };
 
+language: Language,
 nodes: []const Node,
 errors: []const Error,
 
@@ -153,7 +160,7 @@ pub fn cursor(ast: Ast, idx: u32) Cursor {
 
 pub fn printErrors(ast: Ast, src: []const u8, path: ?[]const u8) void {
     for (ast.errors) |err| {
-        const range = err.span.range(src);
+        const range = err.main_location.range(src);
         std.debug.print("{s}:{}:{}: {s}\n", .{
             path orelse "<stdin>",
             range.start.row,
@@ -170,7 +177,11 @@ pub fn deinit(ast: Ast, gpa: std.mem.Allocator) void {
     gpa.free(ast.errors);
 }
 
-pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
+pub fn init(
+    gpa: std.mem.Allocator,
+    src: []const u8,
+    language: Language,
+) error{OutOfMemory}!Ast {
     if (src.len > std.math.maxInt(u32)) @panic("too long");
 
     var nodes = std.ArrayList(Node).init(gpa);
@@ -197,7 +208,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
         .next_idx = 0,
     });
 
-    var tokenizer: Tokenizer = .{};
+    var tokenizer: Tokenizer = .{ .language = language };
 
     var current: *Node = &nodes.items[0];
     var current_idx: u32 = 0;
@@ -237,7 +248,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                 .start_self,
                 => {
                     var new: Node = .{
-                        .tag = if (tag.isVoid(src)) .element_void else .element,
+                        .tag = if (tag.isVoid(src, language)) .element_void else .element,
                         .open = tag.span,
                     };
                     switch (current.direction()) {
@@ -269,7 +280,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                             .tag = .{
                                 .ast = .deprecated_and_unsupported,
                             },
-                            .span = tag.name,
+                            .main_location = tag.name,
                         });
                     }
 
@@ -277,6 +288,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                     {
                         seen_attrs.clearRetainingCapacity();
                         var tt: Tokenizer = .{
+                            .language = language,
                             .idx = tag.span.start,
                             .return_attrs = true,
                         };
@@ -302,7 +314,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                                             .tag = .{
                                                 .ast = .duplicate_attribute_name,
                                             },
-                                            .span = .{
+                                            .main_location = .{
                                                 .start = attr.name.start,
                                                 .end = attr.name.end,
                                             },
@@ -319,7 +331,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                             .tag = .{
                                 .ast = .erroneous_end_tag,
                             },
-                            .span = tag.name,
+                            .main_location = tag.name,
                         });
                         continue;
                     }
@@ -338,13 +350,14 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                             current_idx = original_current_idx;
                             try errors.append(.{
                                 .tag = .{ .ast = .erroneous_end_tag },
-                                .span = tag.name,
+                                .main_location = tag.name,
                             });
                             break;
                         }
 
                         const current_name = blk: {
                             var temp_tok: Tokenizer = .{
+                                .language = language,
                                 .return_attrs = true,
                             };
                             const tag_src = current.open.slice(src);
@@ -376,6 +389,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                                 if (!cur.isClosed()) {
                                     const cur_name: Span = blk: {
                                         var temp_tok: Tokenizer = .{
+                                            .language = language,
                                             .return_attrs = true,
                                         };
                                         const tag_src = cur.open.slice(src);
@@ -387,7 +401,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                                     };
                                     try errors.append(.{
                                         .tag = .{ .ast = .missing_end_tag },
-                                        .span = cur_name,
+                                        .main_location = cur_name,
                                     });
                                 }
 
@@ -458,7 +472,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                     .tag = .{
                         .token = pe.tag,
                     },
-                    .span = pe.span,
+                    .main_location = pe.span,
                 });
             },
         }
@@ -469,7 +483,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
         if (!current.isClosed()) {
             try errors.append(.{
                 .tag = .{ .ast = .missing_end_tag },
-                .span = current.open,
+                .main_location = current.open,
             });
         }
 
@@ -477,6 +491,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
     }
 
     return .{
+        .language = language,
         .nodes = try nodes.toOwnedSlice(),
         .errors = try errors.toOwnedSlice(),
     };
@@ -592,7 +607,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             .doctype => {
                 last_rbracket = current.open.end;
                 const maybe_name, const maybe_extra = blk: {
-                    var tt: Tokenizer = .{};
+                    var tt: Tokenizer = .{ .language = ast.language };
                     const tag = current.open.slice(src);
                     log.debug("doctype tag: {s} {any}", .{ tag, current });
                     const dt = tt.next(tag).?.doctype;
@@ -631,7 +646,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             .element, .element_void => switch (direction) {
                 .enter => {
                     last_rbracket = current.open.end;
-                    var tt: Tokenizer = .{ .return_attrs = true };
+                    var tt: Tokenizer = .{
+                        .language = ast.language,
+                        .return_attrs = true,
+                    };
                     const tag_src = current.open.slice(src);
                     log.debug("retokenize: {s}", .{tag_src});
                     const name = tt.next(tag_src).?.tag_name.slice(tag_src);
@@ -709,7 +727,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     last_rbracket = current.close.end;
                     if (current.close.start != 0) {
                         const name = blk: {
-                            var tt: Tokenizer = .{ .return_attrs = true };
+                            var tt: Tokenizer = .{
+                                .language = ast.language,
+                                .return_attrs = true,
+                            };
                             const tag = current.close.slice(src);
                             log.debug("retokenize {s}\n", .{tag});
                             break :blk tt.next(tag).?.tag_name.slice(tag);
@@ -779,7 +800,7 @@ const Formatter = struct {
 test "basics" {
     const case = "<html><head></head><body><div><link></div></body></html>";
 
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
@@ -790,7 +811,7 @@ test "basics - attributes" {
         \\<div id="foo" class="bar">
     ++ "<link></div></body></html>";
 
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
@@ -806,7 +827,7 @@ test "newlines" {
         \\  </body>
         \\</html>
     ;
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
@@ -844,7 +865,7 @@ test "formatting - simple" {
         \\  </body>
         \\</html>
     ;
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
@@ -876,7 +897,7 @@ test "formatting - attributes" {
         \\  </body>
         \\</html>
     ;
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
@@ -893,7 +914,7 @@ test "pre" {
         \\<pre>      </pre>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
@@ -911,7 +932,7 @@ test "pre text" {
         \\<pre>   banana   </pre>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
@@ -947,7 +968,7 @@ test "what" {
         \\<a href="#">foo</a>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
@@ -983,7 +1004,7 @@ test "spans" {
         \\</html>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case);
+    const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});

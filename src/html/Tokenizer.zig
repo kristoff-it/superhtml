@@ -11,17 +11,44 @@ const Tokenizer = @This();
 const named_character_references = @import("named_character_references.zig");
 
 const std = @import("std");
-const Span = @import("../root.zig").Span;
+const root = @import("../root.zig");
+const Language = root.Language;
+const Span = root.Span;
 
 const log = std.log.scoped(.@"html/tokenizer");
 const form_feed = std.ascii.control_code.ff;
 
+language: Language,
 return_attrs: bool = false,
 idx: u32 = 0,
 current: u8 = undefined,
 state: State = .data,
 deferred_token: ?Token = null,
 last_start_tag_name: []const u8 = "",
+
+const TagNameMap = std.StaticStringMapWithEql(
+    void,
+    std.static_string_map.eqlAsciiIgnoreCase,
+);
+const super_void_tag_names = TagNameMap.initComptime(.{
+    .{ "extend", {} },
+    .{ "super", {} },
+});
+const void_tag_names = TagNameMap.initComptime(.{
+    .{ "area", {} },
+    .{ "base", {} },
+    .{ "br", {} },
+    .{ "col", {} },
+    .{ "embed", {} },
+    .{ "hr", {} },
+    .{ "img", {} },
+    .{ "input", {} },
+    .{ "link", {} },
+    .{ "meta", {} },
+    .{ "source", {} },
+    .{ "track", {} },
+    .{ "wbr", {} },
+});
 
 pub const TokenError = enum {
     abrupt_closing_of_empty_comment,
@@ -152,20 +179,19 @@ pub const Token = union(enum) {
             end_self,
         },
 
-        pub fn isVoid(st: @This(), src: []const u8) bool {
+        pub fn isVoid(st: @This(), src: []const u8, language: Language) bool {
             std.debug.assert(st.name.end != 0);
-            const void_tags: []const []const u8 = &.{
-                "area",  "base", "br",     "col",
-                "embed", "hr",   "img",    "input",
-                "link",  "meta", "source", "track",
-                "wbr",
-            };
 
-            for (void_tags) |t| {
-                if (std.ascii.eqlIgnoreCase(st.name.slice(src), t)) {
+            if (language == .superhtml) {
+                if (super_void_tag_names.has(st.name.slice(src))) {
                     return true;
                 }
             }
+
+            if (void_tag_names.has(st.name.slice(src))) {
+                return true;
+            }
+
             return false;
         }
     };
@@ -5371,7 +5397,7 @@ test "character references" {
 }
 
 test "rcdata character references" {
-    var tokenizer: Tokenizer = .{};
+    var tokenizer: Tokenizer = .{ .language = .html };
     tokenizer.gotoRcData("title");
 
     try testTokenizeWithState(&tokenizer, "&notit;</title>", &.{
@@ -5402,6 +5428,6 @@ fn testTokenizeWithState(tokenizer: *Tokenizer, src: []const u8, expected_tokens
 }
 
 fn testTokenize(src: []const u8, expected_tokens: []const Token) !void {
-    var tokenizer: Tokenizer = .{};
+    var tokenizer: Tokenizer = .{ .language = .html };
     return testTokenizeWithState(&tokenizer, src, expected_tokens);
 }

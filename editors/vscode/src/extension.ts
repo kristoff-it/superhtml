@@ -1,68 +1,66 @@
-import * as path from 'path';
-import { workspace, ExtensionContext, window, languages } from 'vscode';
-import { SuperFormatProvider } from './formatter';
-
+import {
+    createStdioOptions,
+    startServer
+} from '@vscode/wasm-wasi-lsp';
+import { ProcessOptions, Wasm } from '@vscode/wasm-wasi';
+import { ExtensionContext, Uri, window, workspace } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
     ServerOptions
 } from 'vscode-languageclient/node';
-import { getSuperPath } from './util';
 
-let client: LanguageClient;
+export async function activate(context: ExtensionContext) {
+    const wasm: Wasm = await Wasm.load();
 
-const logChannel = window.createOutputChannel("Super");
+    const channel = window.createOutputChannel('SuperHTML LSP WASM Server');
+    // The server options to run the WebAssembly language server.
+    const serverOptions: ServerOptions = async () => {
+        const options: ProcessOptions = {
+            stdio: createStdioOptions(),
+            mountPoints: [{ kind: 'workspaceFolder' }]
+        };
 
-export function activate(context: ExtensionContext) {
+        // Load the WebAssembly code
+        const filename = Uri.joinPath(
+            context.extensionUri,
+            'wasm',
+            'server.wasm'
+        );
+        const bits = await workspace.fs.readFile(filename);
+        const module = await WebAssembly.compile(bits);
 
-    // If the extension is launched in debug mode then the debug server options are used
-    // Otherwise the run options are used
-    const serverOptions: ServerOptions = {
-        command: getSuperPath(),
-        args: ["lsp"],
+        // Create the wasm worker that runs the LSP server
+        const process = await wasm.createProcess(
+            'superhtml',
+            module,
+            { initial: 160, maximum: 160, shared: true },
+            options
+        );
+
+        // Hook stderr to the output channel
+        const decoder = new TextDecoder('utf-8');
+        process.stderr!.onData(data => {
+            channel.append(decoder.decode(data));
+        });
+
+        return startServer(process);
     };
 
-    // Options to control the language client
     const clientOptions: LanguageClientOptions = {
-        // Register the server for plain text documents
         documentSelector: [
             { scheme: "file", language: 'html' },
             { scheme: "file", language: 'super' },
         ],
-        outputChannel: logChannel,
-        // synchronize: {
-        // 	// Notify the server about file changes to '.clientrc files contained in the workspace
-        // 	fileEvents: workspace.createFileSystemWatcher('**/.zgy')
-        // }
+        outputChannel: channel,
     };
 
-    // Create the language client and start the client.
     const client = new LanguageClient(
         "super",
         "SuperHTML Language Server",
         serverOptions,
         clientOptions
+
     );
-
-    client.start().catch(reason => {
-        window.showWarningMessage(`Failed to run SuperHTML Language Server: ${reason}`);
-    });
-
-    context.subscriptions.push(
-        languages.registerDocumentFormattingEditProvider(
-            [{ scheme: "file", language: "html" }],
-            new SuperFormatProvider(client),
-        ),
-        languages.registerDocumentRangeFormattingEditProvider(
-            [{ scheme: "file", language: "html" }],
-            new SuperFormatProvider(client),
-        ),
-    );
-}
-
-export function deactivate(): Thenable<void> | undefined {
-    if (!client) {
-        return undefined;
-    }
-    return client.stop();
+    await client.start();
 }

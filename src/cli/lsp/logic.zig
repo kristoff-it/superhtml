@@ -11,7 +11,7 @@ pub fn loadFile(
     arena: std.mem.Allocator,
     new_text: [:0]const u8,
     uri: []const u8,
-    language: Document.Language,
+    language: super.Language,
 ) !void {
     var res: lsp.types.PublishDiagnosticsParams = .{
         .uri = uri,
@@ -23,7 +23,7 @@ pub fn loadFile(
         new_text,
         language,
     );
-    errdefer doc.deinit();
+    errdefer doc.deinit(self.gpa);
 
     log.debug("document init", .{});
 
@@ -31,17 +31,17 @@ pub fn loadFile(
     errdefer _ = self.files.remove(uri);
 
     if (gop.found_existing) {
-        gop.value_ptr.deinit();
+        gop.value_ptr.deinit(self.gpa);
     } else {
         gop.key_ptr.* = try self.gpa.dupe(u8, uri);
     }
 
     gop.value_ptr.* = doc;
 
-    if (doc.ast.errors.len != 0) {
-        const diags = try arena.alloc(lsp.types.Diagnostic, doc.ast.errors.len);
-        for (doc.ast.errors, diags) |err, *d| {
-            const range = getRange(err.span, doc.bytes);
+    if (doc.html.errors.len != 0) {
+        const diags = try arena.alloc(lsp.types.Diagnostic, doc.html.errors.len);
+        for (doc.html.errors, diags) |err, *d| {
+            const range = getRange(err.main_location, doc.src);
             d.* = .{
                 .range = range,
                 .severity = .Error,
@@ -51,11 +51,25 @@ pub fn loadFile(
                 },
             };
         }
-
         res.diagnostics = diags;
+    } else {
+        if (doc.super) |super_ast| {
+            const diags = try arena.alloc(
+                lsp.types.Diagnostic,
+                super_ast.errors.len,
+            );
+            for (super_ast.errors, diags) |err, *d| {
+                const range = getRange(err.main_location, doc.src);
+                d.* = .{
+                    .range = range,
+                    .severity = .Error,
+                    .message = @tagName(err.kind),
+                };
+            }
+            res.diagnostics = diags;
+        }
     }
 
-    log.debug("sending diags!", .{});
     const msg = try self.server.sendToClientNotification(
         "textDocument/publishDiagnostics",
         res,
@@ -64,25 +78,10 @@ pub fn loadFile(
     defer self.gpa.free(msg);
 }
 
-pub fn getRange(self: super.Span, code: []const u8) lsp.types.Range {
-    var selection: lsp.types.Range = .{
-        .start = .{ .line = 0, .character = 0 },
-        .end = undefined,
+pub fn getRange(span: super.Span, src: []const u8) lsp.types.Range {
+    const r = span.range(src);
+    return .{
+        .start = .{ .line = r.start.row, .character = r.start.col },
+        .end = .{ .line = r.end.row, .character = r.end.col },
     };
-
-    for (code[0..self.start]) |c| {
-        if (c == '\n') {
-            selection.start.line += 1;
-            selection.start.character = 0;
-        } else selection.start.character += 1;
-    }
-
-    selection.end = selection.start;
-    for (code[self.start..self.end]) |c| {
-        if (c == '\n') {
-            selection.end.line += 1;
-            selection.end.character = 0;
-        } else selection.end.character += 1;
-    }
-    return selection;
 }
