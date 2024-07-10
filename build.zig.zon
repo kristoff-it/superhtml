@@ -3,8 +3,8 @@
     .version = "0.0.0",
     .dependencies = .{
         .@"zig-lsp-kit" = .{
-            .url = "git+https://github.com/kristoff-it/zig-lsp-kit.git#9bfcc041a9b60808c0888fb7df2ddbcd0b0b3aee",
-            .hash = "12200bd8ae2cad85905872888a4dc7a63b2baa5140a7f7540c46fd9233a4942f9242",
+            .url = "git+https://github.com/kristoff-it/zig-lsp-kit#b4bf61d7fbf9cf7cfdb6f01b211947d2de3e42fd",
+            .hash = "1220b9ce6dc0e1fbcd9e7b406ab164344f81774351495f860a90729187c3c058ef4f",
         },
         .@"known-folders" = .{
             .url = "git+https://github.com/ziglibs/known-folders.git#0ad514dcfb7525e32ae349b9acc0a53976f3a9fa",
