@@ -156,7 +156,7 @@ pub fn printErrors(ast: Ast, src: []const u8, path: ?[]const u8) void {
         const range = err.span.range(src);
         std.debug.print("{s}:{}:{}: {s}\n", .{
             path orelse "<stdin>",
-            range.start.line,
+            range.start.row,
             range.start.col,
             switch (err.tag) {
                 inline else => |t| @tagName(t),
@@ -276,18 +276,25 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                     // check for duplicated attrs
                     {
                         seen_attrs.clearRetainingCapacity();
-                        var tt: Tokenizer = .{ .return_attrs = true };
-                        const tag_src = tag.span.slice(src);
-                        // discard name token
-                        _ = tt.next(tag_src).?.tag_name.slice(tag_src);
+                        var tt: Tokenizer = .{
+                            .idx = tag.span.start,
+                            .return_attrs = true,
+                        };
 
-                        while (tt.next(tag_src)) |maybe_attr| {
+                        while (tt.next(src[0..tag.span.end])) |maybe_attr| {
                             switch (maybe_attr) {
-                                else => unreachable,
+                                else => {
+                                    log.debug("found unexpected: '{s}' {any}", .{
+                                        @tagName(maybe_attr),
+                                        maybe_attr,
+                                    });
+                                    unreachable;
+                                },
+                                .tag_name => {},
                                 .tag => break,
                                 .parse_error => {},
                                 .attr => |attr| {
-                                    const attr_name = attr.name.slice(tag_src);
+                                    const attr_name = attr.name.slice(src);
                                     log.debug("attr_name = '{s}'", .{attr_name});
                                     const gop = try seen_attrs.getOrPut(attr_name);
                                     if (gop.found_existing) {
@@ -296,8 +303,8 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                                                 .ast = .duplicate_attribute_name,
                                             },
                                             .span = .{
-                                                .start = attr.name.start + tag.span.start,
-                                                .end = attr.name.end + tag.span.start,
+                                                .start = attr.name.start,
+                                                .end = attr.name.end,
                                             },
                                         });
                                     }
@@ -341,7 +348,16 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                                 .return_attrs = true,
                             };
                             const tag_src = current.open.slice(src);
-                            break :blk temp_tok.next(tag_src).?.tag_name.slice(tag_src);
+                            // all early exit brances are in the case of
+                            // malformed HTML and we also expect in all of
+                            // those cases that errors were already emitted
+                            // by the tokenizer
+                            const maybe_name = temp_tok.next(tag_src) orelse break;
+
+                            switch (maybe_name) {
+                                .tag_name => |n| break :blk n.slice(tag_src),
+                                else => break,
+                            }
                         };
 
                         log.debug("matching cn: {s} tag: {s}", .{
@@ -449,26 +465,28 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
     }
 
     // finalize tree
-    while (current.tag != .root) {
-        if (!current.isClosed()) {
-            const cur_name: Span = blk: {
-                var temp_tok: Tokenizer = .{
-                    .return_attrs = true,
+    if (errors.items.len == 0) {
+        while (current.tag != .root) {
+            if (!current.isClosed()) {
+                const cur_name: Span = blk: {
+                    var temp_tok: Tokenizer = .{
+                        .return_attrs = true,
+                    };
+                    const tag_src = current.open.slice(src);
+                    const rel_name = temp_tok.next(tag_src).?.tag_name;
+                    break :blk .{
+                        .start = rel_name.start + current.open.start,
+                        .end = rel_name.end + current.open.start,
+                    };
                 };
-                const tag_src = current.open.slice(src);
-                const rel_name = temp_tok.next(tag_src).?.tag_name;
-                break :blk .{
-                    .start = rel_name.start + current.open.start,
-                    .end = rel_name.end + current.open.start,
-                };
-            };
-            try errors.append(.{
-                .tag = .{ .ast = .missing_end_tag },
-                .span = cur_name,
-            });
-        }
+                try errors.append(.{
+                    .tag = .{ .ast = .missing_end_tag },
+                    .span = cur_name,
+                });
+            }
 
-        current = &nodes.items[current.parent_idx];
+            current = &nodes.items[current.parent_idx];
+        }
     }
 
     return .{

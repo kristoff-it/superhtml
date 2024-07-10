@@ -64,10 +64,7 @@ pub fn loadFile(
     defer self.gpa.free(msg);
 }
 
-pub fn getRange(
-    self: super.html.Tokenizer.Span,
-    code: []const u8,
-) lsp.types.Range {
+pub fn getRange(self: super.Span, code: []const u8) lsp.types.Range {
     var selection: lsp.types.Range = .{
         .start = .{ .line = 0, .character = 0 },
         .end = undefined,
