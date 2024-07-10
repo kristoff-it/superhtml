@@ -2,6 +2,7 @@ const Ast = @This();
 
 const std = @import("std");
 const Tokenizer = @import("Tokenizer.zig");
+const Span = @import("../root.zig").Span;
 
 const log = std.log.scoped(.@"html/ast");
 
@@ -52,7 +53,7 @@ const unsupported_names = TagNameMap.initComptime(.{
     .{ "tt", {} },
 });
 
-const Node = struct {
+pub const Node = struct {
     tag: enum {
         root,
         doctype,
@@ -64,11 +65,11 @@ const Node = struct {
     },
 
     /// Span covering start_tag, diamond brackets included
-    open: Tokenizer.Span,
+    open: Span,
     /// Span covering end_tag, diamond brackets included
     /// Unset status is represented by .start = 0 and .end = 0
     /// not set for doctype, element_void and elment_self_closing
-    close: Tokenizer.Span = .{ .start = 0, .end = 0 },
+    close: Span = .{ .start = 0, .end = 0 },
 
     parent_idx: u32 = 0,
     first_child_idx: u32 = 0,
@@ -98,6 +99,36 @@ const Node = struct {
             .doctype, .element_void, .element_self_closing, .text, .comment => return .after,
         }
     }
+
+    pub const TagIterator = struct {
+        end: u32,
+        name_span: Span,
+        tokenizer: Tokenizer,
+
+        pub fn next(ti: *TagIterator, src: []const u8) ?Tokenizer.Attr {
+            while (ti.tokenizer.next(src[0..ti.end])) |maybe_attr| switch (maybe_attr) {
+                .attr => |attr| return attr,
+                else => {},
+            } else return null;
+        }
+    };
+
+    pub fn startTag(n: Node, src: []const u8) TagIterator {
+        var t: Tokenizer = .{ .idx = n.open.start, .return_attrs = true };
+        // TODO: depending on how we deal with errors with might
+        //       need more sophisticated logic here than a yolo
+        //       union access.
+        const name = t.next(src[0..n.open.end]).?.tag_name;
+        return .{
+            .end = n.open.end,
+            .tokenizer = t,
+            .name_span = name,
+        };
+    }
+
+    pub fn debug(n: Node, src: []const u8) void {
+        std.debug.print("{s}", .{n.open.slice(src)});
+    }
 };
 
 const Error = struct {
@@ -110,15 +141,19 @@ const Error = struct {
             deprecated_and_unsupported,
         },
     },
-    span: Tokenizer.Span,
+    span: Span,
 };
 
 nodes: []const Node,
 errors: []const Error,
 
+pub fn cursor(ast: Ast, idx: u32) Cursor {
+    return .{ .ast = ast, .idx = idx, .dir = .in };
+}
+
 pub fn printErrors(ast: Ast, src: []const u8, path: ?[]const u8) void {
     for (ast.errors) |err| {
-        const range = getRange(err.span, src);
+        const range = err.span.range(src);
         std.debug.print("{s}:{}:{}: {s}\n", .{
             path orelse "<stdin>",
             range.start.line,
@@ -138,9 +173,11 @@ pub fn deinit(ast: Ast, gpa: std.mem.Allocator) void {
 pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
     if (src.len > std.math.maxInt(u32)) @panic("too long");
 
-    var tokenizer: Tokenizer = .{};
     var nodes = std.ArrayList(Node).init(gpa);
+    errdefer nodes.deinit();
+
     var errors = std.ArrayList(Error).init(gpa);
+    errdefer errors.deinit();
 
     var seen_attrs = std.StringHashMap(void).init(gpa);
     defer seen_attrs.deinit();
@@ -159,6 +196,8 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
         .first_child_idx = 0,
         .next_idx = 0,
     });
+
+    var tokenizer: Tokenizer = .{};
 
     var current: *Node = &nodes.items[0];
     var current_idx: u32 = 0;
@@ -196,8 +235,6 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
             .tag => |tag| switch (tag.kind) {
                 .start,
                 .start_self,
-                .start_attrs,
-                .start_attrs_self,
                 => {
                     var new: Node = .{
                         .tag = if (tag.isVoid(src)) .element_void else .element,
@@ -318,18 +355,18 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                             tag.name.slice(src),
                         )) {
                             current.close = tag.span;
-                            var cursor = original_current;
-                            while (cursor != current) {
-                                if (!cursor.isClosed()) {
-                                    const cur_name: Tokenizer.Span = blk: {
+                            var cur = original_current;
+                            while (cur != current) {
+                                if (!cur.isClosed()) {
+                                    const cur_name: Span = blk: {
                                         var temp_tok: Tokenizer = .{
                                             .return_attrs = true,
                                         };
-                                        const tag_src = cursor.open.slice(src);
+                                        const tag_src = cur.open.slice(src);
                                         const rel_name = temp_tok.next(tag_src).?.tag_name;
                                         break :blk .{
-                                            .start = rel_name.start + cursor.open.start,
-                                            .end = rel_name.end + cursor.open.start,
+                                            .start = rel_name.start + cur.open.start,
+                                            .end = rel_name.end + cur.open.start,
                                         };
                                     };
                                     try errors.append(.{
@@ -338,7 +375,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
                                     });
                                 }
 
-                                cursor = &nodes.items[cursor.parent_idx];
+                                cur = &nodes.items[cur.parent_idx];
                             }
 
                             break;
@@ -414,7 +451,7 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
     // finalize tree
     while (current.tag != .root) {
         if (!current.isClosed()) {
-            const cur_name: Tokenizer.Span = blk: {
+            const cur_name: Span = blk: {
                 var temp_tok: Tokenizer = .{
                     .return_attrs = true,
                 };
@@ -690,6 +727,30 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
     }
 }
 
+fn at(ast: Ast, idx: u32) ?Node {
+    if (idx == 0) return null;
+    return ast.nodes[idx];
+}
+
+pub fn parent(ast: Ast, n: Node) ?Node {
+    if (n.parent_idx == 0) return null;
+    return ast.nodes[n.parent_idx];
+}
+
+pub fn nextSibling(ast: Ast, n: Node) ?Node {
+    return ast.at(n.next_idx);
+}
+
+pub fn lastChild(ast: Ast, n: Node) ?Node {
+    _ = ast;
+    _ = n;
+    @panic("TODO");
+}
+
+pub fn child(ast: Ast, n: Node) ?Node {
+    return ast.at(n.first_child_idx);
+}
+
 pub fn formatter(ast: Ast, src: []const u8) Formatter {
     return .{ .ast = ast, .src = src };
 }
@@ -923,38 +984,50 @@ test "spans" {
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
 }
 
-const Range = struct {
-    start: Pos,
-    end: Pos,
+pub const Cursor = struct {
+    ast: Ast,
+    idx: u32,
+    depth: u32 = 0,
+    dir: enum { in, next, out } = .in,
 
-    const Pos = struct {
-        line: u32,
-        col: u32,
-    };
+    pub fn reset(c: *Cursor, n: Node) void {
+        _ = c;
+        _ = n;
+        @panic("TODO");
+    }
+
+    pub fn node(c: Cursor) Node {
+        return c.ast.nodes[c.idx];
+    }
+
+    pub fn next(c: *Cursor) ?Node {
+        if (c.idx == 0 and c.dir == .out) return null;
+
+        var n = c.node();
+        if (c.ast.child(n)) |ch| {
+            c.idx = n.first_child_idx;
+            c.dir = .in;
+            c.depth += 1;
+            return ch;
+        }
+
+        if (c.ast.nextSibling(n)) |s| {
+            c.idx = n.next_idx;
+            c.dir = .next;
+            return s;
+        }
+
+        return while (c.ast.parent(n)) |p| {
+            n = p;
+            c.depth -= 1;
+            const uncle = c.ast.nextSibling(p) orelse continue;
+            c.idx = p.next_idx;
+            c.dir = .out;
+            break uncle;
+        } else blk: {
+            c.idx = 0;
+            c.dir = .out;
+            break :blk null;
+        };
+    }
 };
-
-pub fn getRange(
-    self: Tokenizer.Span,
-    code: []const u8,
-) Range {
-    var selection: Range = .{
-        .start = .{ .line = 0, .col = 0 },
-        .end = undefined,
-    };
-
-    for (code[0..self.start]) |c| {
-        if (c == '\n') {
-            selection.start.line += 1;
-            selection.start.col = 0;
-        } else selection.start.col += 1;
-    }
-
-    selection.end = selection.start;
-    for (code[self.start..self.end]) |c| {
-        if (c == '\n') {
-            selection.end.line += 1;
-            selection.end.col = 0;
-        } else selection.end.col += 1;
-    }
-    return selection;
-}

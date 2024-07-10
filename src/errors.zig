@@ -1,6 +1,7 @@
 const std = @import("std");
-const sitter = @import("sitter.zig");
 const builtin = @import("builtin");
+const html = @import("html.zig");
+const Span = @import("root.zig").Span;
 
 pub const ErrWriter = std.fs.File.Writer;
 
@@ -31,15 +32,22 @@ pub fn report(
     writer: ErrWriter,
     template_name: []const u8,
     template_path: []const u8,
-    bad_node: sitter.Node,
-    html: []const u8,
+    bad_node: Span,
+    src: []const u8,
     comptime error_code: []const u8,
     comptime title: []const u8,
     comptime msg: []const u8,
 ) Fatal {
     try header(writer, title, msg);
     const error_line = comptime "[" ++ error_code ++ "]";
-    try diagnostic(writer, template_name, template_path, error_line, bad_node, html);
+    try diagnostic(
+        writer,
+        template_name,
+        template_path,
+        error_line,
+        bad_node,
+        src,
+    );
     return error.Fatal;
 }
 
@@ -48,19 +56,18 @@ pub fn diagnostic(
     template_name: []const u8,
     template_path: []const u8,
     comptime note_line: []const u8,
-    node: sitter.Node,
-    html: []const u8,
+    span: Span,
+    src: []const u8,
 ) error{ErrIO}!void {
-    const pos = node.selection();
-    const line_off = node.line(html);
-    const offset = node.offset();
+    const pos = span.range(src);
+    const line_off = span.line(src);
 
     // trim spaces
     const line_trim_left = std.mem.trimLeft(u8, line_off.line, &std.ascii.whitespace);
     const start_trim_left = line_off.start + line_off.line.len - line_trim_left.len;
 
-    const caret_len = offset.end - offset.start;
-    const caret_spaces_len = offset.start - start_trim_left;
+    const caret_len = span.end - span.start;
+    const caret_spaces_len = span.start - start_trim_left;
 
     const line_trim = std.mem.trimRight(u8, line_trim_left, &std.ascii.whitespace);
 

@@ -2,10 +2,6 @@
     .name = "super",
     .version = "0.0.0",
     .dependencies = .{
-        .@"tree-sitter" = .{
-            .url = "https://github.com/neurocyte/tree-sitter/releases/download/zig-0.13-1101c655d7634bf67e2ff09c60041cf7ae69608f/source.tar.gz",
-            .hash = "1220b4350e6913255a3adf45e6f2754c0c5ee6669652316624a098b388d9c6344d01",
-        },
         .@"zig-lsp-kit" = .{
             .url = "git+https://github.com/kristoff-it/zig-lsp-kit.git#9bfcc041a9b60808c0888fb7df2ddbcd0b0b3aee",
             .hash = "12200bd8ae2cad85905872888a4dc7a63b2baa5140a7f7540c46fd9233a4942f9242",

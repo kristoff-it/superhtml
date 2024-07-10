@@ -6,7 +6,6 @@ pub fn build(b: *std.Build) !void {
     const mode = .{ .target = target, .optimize = optimize };
 
     const scripty = b.dependency("scripty", mode);
-    const ts = b.dependency("tree-sitter", mode);
 
     const super = b.addModule("super", .{
         .root_source_file = b.path("src/root.zig"),
@@ -14,8 +13,6 @@ pub fn build(b: *std.Build) !void {
     });
 
     super.addImport("scripty", scripty.module("scripty"));
-    super.addImport("treez", ts.module("treez"));
-    super.linkLibrary(ts.artifact("tree-sitter"));
 
     // super.include_dirs.append(b.allocator, .{ .other_step = ts.artifact("tree-sitter") }) catch unreachable;
 
@@ -24,11 +21,9 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = .Debug,
         // .strip = true,
-        // .filter = "page.html",
+        .filter = "nesting",
     });
 
-    unit_tests.linkLibrary(ts.artifact("tree-sitter"));
-    unit_tests.linkLibC();
     unit_tests.root_module.addImport("super", super);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
@@ -99,7 +94,6 @@ pub fn build(b: *std.Build) !void {
         const release_mode = .{ .target = release_target, .optimize = .ReleaseFast };
 
         const scripty_release = b.dependency("scripty", release_mode);
-        const ts_release = b.dependency("tree-sitter", release_mode);
 
         const super_release = b.addModule("super", .{
             .root_source_file = b.path("src/root.zig"),
@@ -107,8 +101,6 @@ pub fn build(b: *std.Build) !void {
         });
 
         super_release.addImport("scripty", scripty_release.module("scripty"));
-        super_release.addImport("treez", ts_release.module("treez"));
-        super_release.linkLibrary(ts_release.artifact("tree-sitter"));
         super_exe_release.root_module.addImport("super", super_release);
         super_exe_release.root_module.addImport(
             "known-folders",

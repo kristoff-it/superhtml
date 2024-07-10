@@ -11,6 +11,7 @@ const Tokenizer = @This();
 const named_character_references = @import("named_character_references.zig");
 
 const std = @import("std");
+const Span = @import("../root.zig").Span;
 
 const log = std.log.scoped(.@"html/tokenizer");
 const form_feed = std.ascii.control_code.ff;
@@ -21,14 +22,6 @@ current: u8 = undefined,
 state: State = .data,
 deferred_token: ?Token = null,
 last_start_tag_name: []const u8 = "",
-
-pub const Span = struct {
-    start: u32,
-    end: u32,
-    pub fn slice(self: Span, src: []const u8) []const u8 {
-        return src[self.start..self.end];
-    }
-};
 
 pub const TokenError = enum {
     abrupt_closing_of_empty_comment,
@@ -86,43 +79,41 @@ pub const Attr = struct {
     name: Span,
     value: ?Value,
 
+    pub fn span(attr: Attr) Span {
+        if (attr.value) |v| {
+            return .{
+                .start = attr.name.start,
+                .end = v.span.end,
+            };
+        }
+
+        return attr.name;
+    }
+
     pub const Value = struct {
         quote: enum { none, single, double },
         span: Span,
 
         pub const UnescapedSlice = struct {
             must_free: bool = false,
-            str: []const u8 = &.{},
+            slice: []const u8 = &.{},
 
             pub fn deinit(
                 self: UnescapedSlice,
                 allocator: std.mem.Allocator,
             ) void {
-                if (self.must_free) allocator.free(self.str);
+                if (self.must_free) allocator.free(self.slice);
             }
         };
 
         pub fn unescape(
-            self: Value,
+            value: Value,
             gpa: std.mem.Allocator,
             src: []const u8,
         ) !UnescapedSlice {
-            _ = self;
             _ = gpa;
-            _ = src;
-            @panic("TODO");
-        }
-
-        pub fn unquote(value: Value, src: []const u8) []const u8 {
-            switch (value.quote) {
-                .double, .single => {
-                    const quoted = value.span.slice(src);
-                    return quoted[1 .. quoted.len - 2];
-                },
-                else => {
-                    return value.span.slice(src);
-                },
-            }
+            // TODO: sqeek-senpai please implement this for real
+            return .{ .slice = value.span.slice(src) };
         }
     };
 };
@@ -153,11 +144,10 @@ pub const Token = union(enum) {
     pub const Tag = struct {
         span: Span,
         name: Span,
+        attr_count: u32 = 0,
         kind: enum {
             start,
-            start_attrs,
             start_self,
-            start_attrs_self,
             end,
             end_self,
         },
@@ -2302,10 +2292,9 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+002F SOLIDUS (/)
                     // Switch to the self-closing start tag state.
                     '/' => {
-                        self.state = .{
-                            .self_closing_start_tag = state.tag,
-                        };
-
+                        var tag = state.tag;
+                        tag.attr_count += 1;
+                        self.state = .{ .self_closing_start_tag = tag };
                         if (self.return_attrs) {
                             return .{
                                 .token = .{
@@ -2331,6 +2320,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state.tag;
                         tag.span.end = self.idx + 1;
+                        tag.attr_count += 1;
 
                         self.state = .data;
                         if (self.return_attrs) {
@@ -2350,9 +2340,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Start a new attribute in the current tag token. Set that attribute name and value to the empty string. Reconsume in the attribute name state.
                     else => {
                         self.idx -= 1;
+
+                        var tag = state.tag;
+                        tag.attr_count += 1;
+
                         self.state = .{
                             .attribute_name = .{
-                                .tag = state.tag,
+                                .tag = tag,
                                 .name_start = self.idx,
                             },
                         };
@@ -2471,9 +2465,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             // Just a normal char in this case
                         },
                         .double => {
+                            var tag = state.tag;
+                            tag.attr_count += 1;
+
                             self.state = .{
                                 .after_attribute_value = .{
-                                    .tag = state.tag,
+                                    .tag = tag,
                                     .attr_value_end = self.idx,
                                 },
                             };
@@ -2503,9 +2500,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             // Just a normal char in this case
                         },
                         .single => {
+                            var tag = state.tag;
+                            tag.attr_count += 1;
+
                             self.state = .{
                                 .after_attribute_value = .{
-                                    .tag = state.tag,
+                                    .tag = tag,
                                     .attr_value_end = self.idx,
                                 },
                             };
@@ -2579,7 +2579,10 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+0020 SPACE
                     // Switch to the before attribute name state.
                     '\t', '\n', '\r', form_feed, ' ' => {
-                        self.state = .{ .before_attribute_name = state.tag };
+                        var tag = state.tag;
+                        tag.attr_count += 1;
+
+                        self.state = .{ .before_attribute_name = tag };
                         if (self.return_attrs) {
                             return .{
                                 .token = .{
@@ -2602,6 +2605,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state.tag;
                         tag.span.end = self.idx;
+                        tag.attr_count += 1;
 
                         self.state = .data;
 
@@ -2763,7 +2767,6 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         tag.span.end = self.idx;
                         tag.kind = switch (tag.kind) {
                             .start => .start_self,
-                            .start_attrs => .start_attrs_self,
                             .end => .end_self,
                             else => unreachable,
                         };
@@ -5297,6 +5300,7 @@ test "character references" {
         .{ .tag = .{
             .span = .{ .start = 0, .end = 17 },
             .name = .{ .start = 1, .end = 5 },
+            .attr_count = 1,
             .kind = .start,
         } },
     });
@@ -5308,6 +5312,7 @@ test "character references" {
         .{ .tag = .{
             .span = .{ .start = 0, .end = 20 },
             .name = .{ .start = 1, .end = 5 },
+            .attr_count = 1,
             .kind = .start,
         } },
     });
@@ -5321,6 +5326,7 @@ test "character references" {
         .{ .tag = .{
             .span = .{ .start = 0, .end = 17 },
             .name = .{ .start = 1, .end = 5 },
+            .attr_count = 1,
             .kind = .start,
         } },
     });
@@ -5332,6 +5338,7 @@ test "character references" {
         .{ .tag = .{
             .span = .{ .start = 0, .end = 20 },
             .name = .{ .start = 1, .end = 5 },
+            .attr_count = 1,
             .kind = .start,
         } },
     });
@@ -5345,6 +5352,7 @@ test "character references" {
         .{ .tag = .{
             .span = .{ .start = 0, .end = 15 },
             .name = .{ .start = 1, .end = 5 },
+            .attr_count = 1,
             .kind = .start,
         } },
     });
@@ -5356,6 +5364,7 @@ test "character references" {
         .{ .tag = .{
             .span = .{ .start = 0, .end = 18 },
             .name = .{ .start = 1, .end = 5 },
+            .attr_count = 1,
             .kind = .start,
         } },
     });
