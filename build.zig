@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = .Debug,
         // .strip = true,
-        .filter = "nesting",
+        // .filter = "nesting",
     });
 
     unit_tests.root_module.addImport("super", super);
