@@ -9,7 +9,6 @@ pub fn build(b: *std.Build) !void {
 
     const super = b.addModule("super", .{
         .root_source_file = b.path("src/root.zig"),
-        .link_libc = true,
     });
 
     super.addImport("scripty", scripty.module("scripty"));
@@ -97,7 +96,6 @@ pub fn build(b: *std.Build) !void {
 
         const super_release = b.addModule("super", .{
             .root_source_file = b.path("src/root.zig"),
-            .link_libc = true,
         });
 
         super_release.addImport("scripty", scripty_release.module("scripty"));
@@ -129,6 +127,8 @@ pub fn build(b: *std.Build) !void {
             .os_tag = .wasi,
         }),
         .optimize = wasm_mode,
+        .single_threaded = true,
+        .link_libc = false,
     });
 
     super_wasm_lsp.root_module.addImport("super", super);
