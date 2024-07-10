@@ -54,6 +54,8 @@ pub const Handler = struct {
             log.info("client is '{s}-{s}'", .{ clientInfo.name, clientInfo.version orelse "<no version>" });
         }
 
+        log.debug("init!", .{});
+
         return .{
             .serverInfo = .{
                 .name = "SuperHTML LSP",

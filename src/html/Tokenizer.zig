@@ -3182,8 +3182,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Multiply the character reference code by 16. Add a numeric version of the current input character to the character reference code.
                     '0'...'9', 'a'...'f', 'A'...'F' => {
                         const value = std.fmt.charToDigit(self.current, 16) catch unreachable;
-                        self.state.hexadecimal_character_reference.code *|= 16;
-                        self.state.hexadecimal_character_reference.code +|= value;
+                        self.state.hexadecimal_character_reference.code = std.math.lossyCast(u21, @as(u32, self.state.hexadecimal_character_reference.code) * 16 + value);
                     },
                     // U+003B SEMICOLON
                     // Switch to the numeric character reference end state.
@@ -3231,8 +3230,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Multiply the character reference code by 10. Add a numeric version of the current input character to the character reference code.
                     '0'...'9' => {
                         const value = std.fmt.charToDigit(self.current, 10) catch unreachable;
-                        self.state.decimal_character_reference.code *|= 10;
-                        self.state.decimal_character_reference.code +|= value;
+                        self.state.decimal_character_reference.code = std.math.lossyCast(u21, @as(u32, self.state.decimal_character_reference.code) * 10 + value);
                     },
                     // U+003B SEMICOLON
                     // Switch to the numeric character reference end state.

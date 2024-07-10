@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_unit_tests.step);
 
     const super_cli = b.addExecutable(.{
-        .name = "super",
+        .name = "superhtml",
         .root_source_file = b.path("src/cli.zig"),
         .target = target,
         .optimize = optimize,
@@ -119,20 +119,24 @@ pub fn build(b: *std.Build) !void {
         release_step.dependOn(&target_output.step);
     }
 
+    const wasm_mode: std.builtin.OptimizeMode = if (b.option(bool, "debug", "Make a debug build") orelse false) .Debug else .ReleaseSmall;
+
     const super_wasm_lsp = b.addExecutable(.{
-        .name = "super",
+        .name = "superhtml",
         .root_source_file = b.path("src/wasm.zig"),
         .target = b.resolveTargetQuery(.{
             .cpu_arch = .wasm32,
             .os_tag = .wasi,
         }),
-        .optimize = .ReleaseSmall,
+        .optimize = wasm_mode,
     });
 
     super_wasm_lsp.root_module.addImport("super", super);
     super_wasm_lsp.root_module.addImport("lsp", lsp.module("lsp"));
 
     const wasm = b.step("wasm", "Generate WASM Build of the LSP for VSCode");
-    const target_output = b.addInstallArtifact(super_wasm_lsp, .{});
+    const target_output = b.addInstallArtifact(super_wasm_lsp, .{
+        .dest_dir = .{ .override = .{ .custom = "" } },
+    });
     wasm.dependOn(&target_output.step);
 }

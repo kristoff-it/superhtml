@@ -2,7 +2,7 @@
   "name": "super",
   "displayName": "SuperHTML",
   "description": "Actually Functional Language Server for HTML Files",
-  "repository": "https://github.com/kristoff-it/super-html/",
+  "repository": "https://github.com/kristoff-it/superhtml/",
   "publisher": "LorisCro",
   "version": "0.1.3",
   "engines": {
@@ -21,7 +21,7 @@
         "editor.defaultFormatter": "LorisCro.super",
         "files.eol": "\n"
       },
-      "[super]": {
+      "[superhtml]": {
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "LorisCro.super",
         "files.eol": "\n"
@@ -29,7 +29,7 @@
     },
     "languages": [
       {
-        "id": "super",
+        "id": "superhtml",
         "aliases": [
           "SuperHTML",
           "Super HTML",
@@ -38,17 +38,16 @@
           "super"
         ],
         "extensions": [
-          ".shtml",
-          ".super"
+          ".shtml"
         ],
-        "configuration": "./super.language-configuration.json"
+        "configuration": "./superhtml.language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "super",
-        "scopeName": "text.super",
-        "path": "./syntaxes/super.tmLanguage.json"
+        "language": "superhtml",
+        "scopeName": "text.superhtml",
+        "path": "./syntaxes/superhtml.tmLanguage.json"
       }
     ],
     "configuration": {
