@@ -1,8 +1,8 @@
 import {
-    createStdioOptions,
+    // createStdioOptions,
     startServer
 } from '@vscode/wasm-wasi-lsp';
-import { ProcessOptions, Wasm } from '@vscode/wasm-wasi';
+import { ProcessOptions, Stdio, Wasm } from '@vscode/wasm-wasi';
 import { ExtensionContext, languages, Uri, window, workspace } from 'vscode';
 import {
     LanguageClient,
@@ -37,7 +37,7 @@ export async function activate(context: ExtensionContext) {
         const process = await wasm.createProcess(
             'superhtml',
             module,
-            { initial: 160, maximum: 160, shared: true },
+            { initial: 160, maximum: 160, shared: false },
             options
         );
 
@@ -46,6 +46,9 @@ export async function activate(context: ExtensionContext) {
         process.stderr!.onData(data => {
             channel.append(decoder.decode(data));
         });
+
+        // process.stdin!.write("banana".repeat(10000));
+        // process.stdin!.write("cake");
 
         return startServer(process);
     };
@@ -93,4 +96,20 @@ export function deactivate(): Thenable<void> | undefined {
         return undefined;
     }
     return client.stop();
+}
+
+
+function createStdioOptions(): Stdio {
+    return {
+        in: {
+            kind: 'pipeIn',
+            // path: "foobar"
+        },
+        out: {
+            kind: 'pipeOut'
+        },
+        err: {
+            kind: 'pipeOut'
+        }
+    };
 }
