@@ -465,28 +465,15 @@ pub fn init(gpa: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
     }
 
     // finalize tree
-    if (errors.items.len == 0) {
-        while (current.tag != .root) {
-            if (!current.isClosed()) {
-                const cur_name: Span = blk: {
-                    var temp_tok: Tokenizer = .{
-                        .return_attrs = true,
-                    };
-                    const tag_src = current.open.slice(src);
-                    const rel_name = temp_tok.next(tag_src).?.tag_name;
-                    break :blk .{
-                        .start = rel_name.start + current.open.start,
-                        .end = rel_name.end + current.open.start,
-                    };
-                };
-                try errors.append(.{
-                    .tag = .{ .ast = .missing_end_tag },
-                    .span = cur_name,
-                });
-            }
-
-            current = &nodes.items[current.parent_idx];
+    while (current.tag != .root) {
+        if (!current.isClosed()) {
+            try errors.append(.{
+                .tag = .{ .ast = .missing_end_tag },
+                .span = current.open,
+            });
         }
+
+        current = &nodes.items[current.parent_idx];
     }
 
     return .{
