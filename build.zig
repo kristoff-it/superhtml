@@ -56,7 +56,7 @@ pub fn build(b: *std.Build) !void {
 
     const run_exe = b.addRunArtifact(super_cli);
     if (b.args) |args| run_exe.addArgs(args);
-    const run_exe_step = b.step("run", "Run the Super LSP");
+    const run_exe_step = b.step("run", "Run the SuperHTML CLI");
     run_exe_step.dependOn(&run_exe.step);
 
     b.installArtifact(super_cli);
@@ -76,10 +76,10 @@ pub fn build(b: *std.Build) !void {
     super_cli_check.root_module.addImport("lsp", lsp.module("lsp"));
     super_cli_check.root_module.addOptions("build_options", options);
 
-    const check = b.step("check", "Check if Super compiles");
+    const check = b.step("check", "Check if the SuperHTML CLI compiles");
     check.dependOn(&super_cli_check.step);
 
-    const release_step = b.step("release", "Create releases for the Super CLI tool");
+    const release_step = b.step("release", "Create releases for the SuperHTML CLI");
     const targets: []const std.Target.Query = &.{
         .{ .cpu_arch = .aarch64, .os_tag = .macos },
         .{ .cpu_arch = .aarch64, .os_tag = .linux },
@@ -127,8 +127,6 @@ pub fn build(b: *std.Build) !void {
         release_step.dependOn(&target_output.step);
     }
 
-    const wasm_mode: std.builtin.OptimizeMode = if (b.option(bool, "debug", "Make a debug build") orelse false) .Debug else .ReleaseSmall;
-
     const super_wasm_lsp = b.addExecutable(.{
         .name = "superhtml",
         .root_source_file = b.path("src/wasm.zig"),
@@ -136,7 +134,7 @@ pub fn build(b: *std.Build) !void {
             .cpu_arch = .wasm32,
             .os_tag = .wasi,
         }),
-        .optimize = wasm_mode,
+        .optimize = optimize,
         .single_threaded = true,
         .link_libc = false,
     });
@@ -145,9 +143,35 @@ pub fn build(b: *std.Build) !void {
     super_wasm_lsp.root_module.addImport("lsp", lsp.module("lsp"));
     super_wasm_lsp.root_module.addOptions("build_options", options);
 
-    const wasm = b.step("wasm", "Generate WASM Build of the LSP for VSCode");
+    const wasm = b.step("wasm", "Generate a WASM build of the SuperHTML LSP for VSCode");
     const target_output = b.addInstallArtifact(super_wasm_lsp, .{
         .dest_dir = .{ .override = .{ .custom = "" } },
     });
     wasm.dependOn(&target_output.step);
+
+    const super_fuzz_name = b.fmt("superfuzz{s}", .{target.result.exeFileExt()});
+    const super_fuzz = b.addExecutable(.{
+        .name = super_fuzz_name,
+        .root_source_file = b.path("src/fuzz.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .single_threaded = true,
+    });
+
+    super_fuzz.root_module.addImport("super", super);
+
+    super_fuzz.root_module.stack_check = false; // not linking with compiler-rt
+    super_fuzz.root_module.link_libc = true; // afl runtime depends on libc
+    _ = super_fuzz.getEmittedBin(); // hack around build system bug
+
+    const afl_clang_fast_path = try b.findProgram(
+        &.{ "afl-clang-fast", "afl-clang" },
+        if (b.option([]const u8, "afl-path", "Path to AFLplusplus")) |afl_path| &.{afl_path} else &.{},
+    );
+    const run_afl_clang_fast = b.addSystemCommand(&.{ afl_clang_fast_path, "-o" });
+    const prog_exe = run_afl_clang_fast.addOutputFileArg(super_fuzz_name);
+    run_afl_clang_fast.addFileArg(super_fuzz.getEmittedLlvmBc());
+
+    const fuzz = b.step("fuzz", "Generate an executable to fuzz html/Parser");
+    fuzz.dependOn(&b.addInstallBinFile(prog_exe, super_fuzz_name).step);
 }
