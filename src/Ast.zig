@@ -515,7 +515,7 @@ pub fn init(
         const html_node_idx = cursor.idx;
         const depth = cursor.depth;
 
-        switch (html_node.tag) {
+        switch (html_node.kind) {
             .element,
             .element_void,
             .element_self_closing,
@@ -699,6 +699,9 @@ const Parser = struct {
         const block_context = block_mode and depth == 1;
         if (block_context) tmp_result.kind = .block;
 
+        // used to detect when a block is missing an id
+        var seen_id_attr = false;
+
         var start_tag = elem.startTag(p.src, .superhtml);
         const tag_name = start_tag.name_span;
 
@@ -858,9 +861,6 @@ const Parser = struct {
             .root, .extend, .super_block, .super => unreachable,
         }
 
-        var attrs_seen = std.StringHashMap(Span).init(gpa);
-        defer attrs_seen.deinit();
-
         var last_attr_end = tag_name.end;
         var scripted_attrs_span: Node.ScriptedAttrsSpan = .{
             .start = @intCast(p.scripted_attrs.items.len),
@@ -963,6 +963,7 @@ const Parser = struct {
                 }
 
                 tmp_result.id_template_parentid = attr;
+                seen_id_attr = true;
 
                 continue;
             }
@@ -1489,8 +1490,7 @@ const Parser = struct {
             else => {},
         }
 
-        // TODO: see if the error reporting order makes sense
-        if (tmp_result.kind.role() == .block and !attrs_seen.contains("id")) {
+        if (tmp_result.kind.role() == .block and !seen_id_attr) {
             try p.errors.append(gpa, .{
                 .kind = .block_missing_id,
                 .main_location = tag_name,
@@ -1520,9 +1520,8 @@ const Parser = struct {
         //       having inserted the node in the tree. anything that
         //       can be tested sooner should go in self.buildNode().
         //
-        // NOTE: We can only validate constraints *upwards* with regards
-        //       to the SuperTree.
-
+        // NOTE: We can only validate constraints *upwards*, as the
+        //       rest of the tree has not yet been built.
         switch (node.kind.role()) {
             .root => unreachable,
             .element => {},

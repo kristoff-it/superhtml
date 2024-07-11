@@ -277,6 +277,10 @@ pub const Handler = struct {
 
         const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
 
+        if (doc.html.errors.len != 0) {
+            return null;
+        }
+
         log.debug("format!!", .{});
 
         var buf = std.ArrayList(u8).init(self.gpa);

@@ -34,7 +34,14 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/cli.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = true,
     });
+
+    const verbose_logging = b.option(bool, "log", "Enable verbose logging also in release modes") orelse false;
+    const scopes = b.option([]const []const u8, "scope", "Enable this scope (all scopes are enabled when none is specified through this option), can be used multiple times") orelse &[0][]const u8{};
+    const options = b.addOptions();
+    options.addOption(bool, "verbose_logging", verbose_logging);
+    options.addOption([]const []const u8, "enabled_scopes", scopes);
 
     const folders = b.dependency("known-folders", .{});
     const lsp = b.dependency("zig-lsp-kit", .{});
@@ -45,6 +52,7 @@ pub fn build(b: *std.Build) !void {
         folders.module("known-folders"),
     );
     super_cli.root_module.addImport("lsp", lsp.module("lsp"));
+    super_cli.root_module.addOptions("build_options", options);
 
     const run_exe = b.addRunArtifact(super_cli);
     if (b.args) |args| run_exe.addArgs(args);
@@ -66,6 +74,7 @@ pub fn build(b: *std.Build) !void {
         folders.module("known-folders"),
     );
     super_cli_check.root_module.addImport("lsp", lsp.module("lsp"));
+    super_cli_check.root_module.addOptions("build_options", options);
 
     const check = b.step("check", "Check if Super compiles");
     check.dependOn(&super_cli_check.step);
@@ -105,6 +114,7 @@ pub fn build(b: *std.Build) !void {
             folders.module("known-folders"),
         );
         super_exe_release.root_module.addImport("lsp", lsp.module("lsp"));
+        super_exe_release.root_module.addOptions("build_options", options);
 
         const target_output = b.addInstallArtifact(super_exe_release, .{
             .dest_dir = .{
@@ -133,6 +143,7 @@ pub fn build(b: *std.Build) !void {
 
     super_wasm_lsp.root_module.addImport("super", super);
     super_wasm_lsp.root_module.addImport("lsp", lsp.module("lsp"));
+    super_wasm_lsp.root_module.addOptions("build_options", options);
 
     const wasm = b.step("wasm", "Generate WASM Build of the LSP for VSCode");
     const target_output = b.addInstallArtifact(super_wasm_lsp, .{

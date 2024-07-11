@@ -56,16 +56,7 @@ const unsupported_names = TagNameMap.initComptime(.{
 });
 
 pub const Node = struct {
-    tag: enum {
-        root,
-        doctype,
-        element,
-        element_void,
-        element_self_closing,
-        comment,
-        text,
-    },
-
+    kind: Kind,
     /// Span covering start_tag, diamond brackets included
     open: Span,
     /// Span covering end_tag, diamond brackets included
@@ -77,8 +68,18 @@ pub const Node = struct {
     first_child_idx: u32 = 0,
     next_idx: u32 = 0,
 
+    pub const Kind = enum {
+        root,
+        doctype,
+        element,
+        element_void,
+        element_self_closing,
+        comment,
+        text,
+    };
+
     pub fn isClosed(n: Node) bool {
-        return switch (n.tag) {
+        return switch (n.kind) {
             .root => unreachable,
             .element => n.close.start != 0,
             .doctype, .element_void, .element_self_closing, .text, .comment => true,
@@ -87,7 +88,7 @@ pub const Node = struct {
 
     pub const Direction = enum { in, after };
     pub fn direction(n: Node) Direction {
-        switch (n.tag) {
+        switch (n.kind) {
             .root => {
                 std.debug.assert(n.first_child_idx == 0);
                 return .in;
@@ -141,6 +142,7 @@ pub const Error = struct {
     tag: union(enum) {
         token: Tokenizer.TokenError,
         ast: enum {
+            html_elements_cant_self_close,
             missing_end_tag,
             erroneous_end_tag,
             duplicate_attribute_name,
@@ -194,7 +196,7 @@ pub fn init(
     defer seen_attrs.deinit();
 
     try nodes.append(.{
-        .tag = .root,
+        .kind = .root,
         .open = .{
             .start = 0,
             .end = 0,
@@ -212,18 +214,18 @@ pub fn init(
 
     var current: *Node = &nodes.items[0];
     var current_idx: u32 = 0;
-
+    var svg_lvl: u32 = 0;
     while (tokenizer.next(src)) |t| {
-        log.debug("cur_idx: {} cur_tag: {s} tok: {any}", .{
+        log.debug("cur_idx: {} cur_kind: {s} tok: {any}", .{
             current_idx,
-            @tagName(current.tag),
+            @tagName(current.kind),
             t,
         });
         switch (t) {
             .tag_name, .attr => unreachable,
             .doctype => |dt| {
                 var new: Node = .{
-                    .tag = .doctype,
+                    .kind = .doctype,
                     .open = dt.span,
                 };
                 switch (current.direction()) {
@@ -247,10 +249,28 @@ pub fn init(
                 .start,
                 .start_self,
                 => {
-                    var new: Node = .{
-                        .tag = if (tag.isVoid(src, language)) .element_void else .element,
-                        .open = tag.span,
+                    const node_kind: Node.Kind = switch (tag.kind) {
+                        else => unreachable,
+                        .start_self => blk: {
+                            if (svg_lvl == 0) {
+                                try errors.append(.{
+                                    .tag = .{
+                                        .ast = .html_elements_cant_self_close,
+                                    },
+                                    .main_location = tag.name,
+                                });
+                            }
+                            break :blk .element_self_closing;
+                        },
+                        .start => if (tag.isVoid(src, language))
+                            .element_void
+                        else
+                            .element,
                     };
+
+                    if (std.ascii.eqlIgnoreCase(tag.name.slice(src), "svg")) svg_lvl += 1;
+
+                    var new: Node = .{ .kind = node_kind, .open = tag.span };
                     switch (current.direction()) {
                         .in => {
                             new.parent_idx = current_idx;
@@ -326,7 +346,7 @@ pub fn init(
                     }
                 },
                 .end, .end_self => {
-                    if (current.tag == .root) {
+                    if (current.kind == .root) {
                         try errors.append(.{
                             .tag = .{
                                 .ast = .erroneous_end_tag,
@@ -345,7 +365,7 @@ pub fn init(
                     }
 
                     while (true) {
-                        if (current.tag == .root) {
+                        if (current.kind == .root) {
                             current = original_current;
                             current_idx = original_current_idx;
                             try errors.append(.{
@@ -383,6 +403,8 @@ pub fn init(
                             current_name,
                             tag.name.slice(src),
                         )) {
+                            if (std.ascii.eqlIgnoreCase(current_name, "svg")) svg_lvl -= 1;
+
                             current.close = tag.span;
                             var cur = original_current;
                             while (cur != current) {
@@ -418,7 +440,7 @@ pub fn init(
             },
             .text => |txt| {
                 var new: Node = .{
-                    .tag = .text,
+                    .kind = .text,
                     .open = txt,
                 };
 
@@ -441,7 +463,7 @@ pub fn init(
             },
             .comment => |c| {
                 var new: Node = .{
-                    .tag = .comment,
+                    .kind = .comment,
                     .open = c,
                 };
 
@@ -479,7 +501,7 @@ pub fn init(
     }
 
     // finalize tree
-    while (current.tag != .root) {
+    while (current.kind != .root) {
         if (!current.isClosed()) {
             try errors.append(.{
                 .tag = .{ .ast = .missing_end_tag },
@@ -527,17 +549,17 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                             try w.writeAll("  ");
                         }
                     }
-                    switch (current.tag) {
+                    switch (current.kind) {
                         else => {},
                         .element => indentation += 1,
                     }
                 }
             },
             .exit => {
-                std.debug.assert(current.tag != .text);
-                std.debug.assert(current.tag != .element_void);
-                std.debug.assert(current.tag != .element_self_closing);
-                if (current.tag == .root) return;
+                std.debug.assert(current.kind != .text);
+                std.debug.assert(current.kind != .element_void);
+                std.debug.assert(current.kind != .element_self_closing);
+                if (current.kind == .root) return;
 
                 log.debug("rendering exit ({}): {s} {any}", .{
                     indentation,
@@ -545,7 +567,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     current,
                 });
 
-                switch (current.tag) {
+                switch (current.kind) {
                     else => {},
                     .element => indentation -= 1,
                 }
@@ -566,8 +588,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             },
         }
 
-        switch (current.tag) {
-            inline else => |tag| @panic("TODO: implement " ++ @tagName(tag) ++ " in Ast.render()"),
+        switch (current.kind) {
             .root => switch (direction) {
                 .enter => {
                     if (current.first_child_idx == 0) break;
@@ -643,7 +664,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                 }
             },
 
-            .element, .element_void => switch (direction) {
+            .element, .element_void, .element_self_closing => switch (direction) {
                 .enter => {
                     last_rbracket = current.open.end;
                     var tt: Tokenizer = .{
@@ -705,9 +726,13 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                             try w.print("  ", .{});
                         }
                     }
+
+                    if (current.kind == .element_self_closing) {
+                        try w.print("/", .{});
+                    }
                     try w.print(">", .{});
 
-                    switch (current.tag) {
+                    switch (current.kind) {
                         else => unreachable,
                         .element => {
                             if (current.first_child_idx == 0) {
@@ -727,7 +752,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     }
                 },
                 .exit => {
-                    std.debug.assert(current.tag != .element_void);
+                    std.debug.assert(current.kind != .element_void);
                     last_rbracket = current.close.end;
                     if (current.close.start != 0) {
                         const name = blk: {

@@ -2157,21 +2157,25 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+003E GREATER-THAN SIGN (>)
                     // EOF
                     // Reconsume in the after attribute name state.
-                    //
-                    // NOTE: handled differently
+                    // NOTE: handled differently to simplify
+                    //       control flow in after_attribute_name
+                    //       as otherwise it would need to keep
+                    //       track of when we don't have an attribute
+                    //       at all
                     '/', '>' => {
                         self.state = .data;
                         var tag = state;
                         tag.span.end = self.idx;
+                        if (self.current == '/') {
+                            std.debug.assert(tag.kind == .start);
+                            tag.kind = .start_self;
+                        }
                         return .{ .token = .{ .tag = tag } };
                         // self.idx -= 1;
                         // self.state = .{
                         //     .after_attribute_name = .{
                         //         .tag = state,
-                        //         .name = .{
-                        //             .start = self.idx - 2,
-                        //             .end = self.idx,
-                        //         },
+                        //         .name = .{ .start = 0, .end = 0 },
                         //     },
                         // };
                     },
@@ -2615,10 +2619,10 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .attr = .{
                                         .name = state.name,
                                         .value = .{
-                                            .quote = .single,
+                                            .quote = .none,
                                             .span = .{
                                                 .start = state.value_start,
-                                                .end = self.idx - 1,
+                                                .end = self.idx,
                                             },
                                         },
                                     },

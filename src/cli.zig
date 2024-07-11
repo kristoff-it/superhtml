@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_options = @import("build_options");
 const super = @import("super");
 const logging = @import("cli/logging.zig");
 const fmt_exe = @import("cli/fmt.zig");
@@ -13,6 +14,10 @@ pub const known_folders_config = .{
 };
 
 pub const std_options: std.Options = .{
+    .log_level = if (build_options.verbose_logging)
+        .debug
+    else
+        std.log.default_level,
     .logFn = logging.logFn,
 };
 

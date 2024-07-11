@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_options = @import("build_options");
 const folders = @import("known-folders");
 
 pub var log_file: ?std.fs.File = switch (builtin.target.os.tag) {
@@ -7,13 +8,27 @@ pub var log_file: ?std.fs.File = switch (builtin.target.os.tag) {
     else => null,
 };
 
+// const enabled_scopes = blk: {
+//     const len = build_options.enabled_scopes.len;
+//     const scopes: [len]@Type(.EnumLiteral) = undefined;
+//     for (build_options.enabled_scopes, &scopes) |s, *e| {
+//         e.* = @Type()
+//     }
+// };
+
 pub fn logFn(
     comptime level: std.log.Level,
     comptime scope: @Type(.EnumLiteral),
     comptime format: []const u8,
     args: anytype,
 ) void {
-    // if (scope != .ws and scope != .network) return;
+    if (build_options.enabled_scopes.len > 0) {
+        inline for (build_options.enabled_scopes) |es| {
+            if (comptime std.mem.eql(u8, es, @tagName(scope))) {
+                break;
+            }
+        } else return;
+    }
 
     const l = log_file orelse return;
     const scope_prefix = "(" ++ @tagName(scope) ++ "): ";

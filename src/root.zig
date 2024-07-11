@@ -24,6 +24,11 @@ pub const Line = struct { line: []const u8, start: u32 };
 pub const Span = struct {
     start: u32,
     end: u32,
+
+    pub fn len(span: Span) u32 {
+        return span.end - span.start;
+    }
+
     pub fn slice(self: Span, src: []const u8) []const u8 {
         return src[self.start..self.end];
     }
