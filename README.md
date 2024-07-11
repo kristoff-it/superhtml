@@ -27,7 +27,7 @@ General Options:
 This language server is stricter than the HTML spec whenever it would prevent potential human errors from being reported.
 
 
-As an example, HTML allows for closing some tags implicitly. For example the following snipped is correct HTML.
+As an example, HTML allows for closing some tags implicitly. For example the following snippet is correct HTML.
 
 ```html
 <ul>
