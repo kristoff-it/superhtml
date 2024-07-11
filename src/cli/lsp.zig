@@ -70,7 +70,7 @@ pub const Handler = struct {
                 .textDocumentSync = .{
                     .TextDocumentSyncOptions = .{
                         .openClose = true,
-                        .change = .Incremental,
+                        .change = .Full,
                         .save = .{ .bool = true },
                     },
                 },
@@ -293,6 +293,7 @@ pub const Handler = struct {
 
         self.gpa.free(doc.src);
         doc.src = try buf.toOwnedSlice();
+        try doc.reparse(self.gpa);
 
         return edits.items;
     }

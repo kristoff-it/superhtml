@@ -36,3 +36,17 @@ pub fn init(
 
     return doc;
 }
+
+pub fn reparse(doc: *Document, gpa: std.mem.Allocator) !void {
+    doc.deinit(gpa);
+    doc.html = try super.html.Ast.init(gpa, doc.src, doc.language);
+    errdefer doc.html.deinit(gpa);
+
+    if (doc.language == .superhtml and doc.html.errors.len == 0) {
+        doc.super = try super.Ast.init(gpa, doc.html, doc.src);
+    } else {
+        doc.super = null;
+    }
+
+    return;
+}

@@ -2345,7 +2345,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Switch to the data state. Emit the current tag token.
                     '>' => {
                         var tag = state.tag;
-                        tag.span.end = self.idx + 1;
+                        tag.span.end = self.idx;
                         tag.attr_count += 1;
 
                         self.state = .data;

@@ -23,9 +23,11 @@ const Error = struct {
         late_else,
         late_loop,
         var_no_value,
+        id_no_value,
         loop_no_value,
         block_missing_id,
         extend_without_template_attr,
+        super_parent_element_missing_id,
         missing_template_value,
         unexpected_extend,
         unscripted_var,
@@ -811,9 +813,7 @@ const Parser = struct {
                 var parent_start_tag = pr.startTag(p.src, .superhtml);
                 while (parent_start_tag.next(p.src)) |attr| {
                     if (is(attr.name.slice(p.src), "id")) {
-                        // We can assert that the value is present because
-                        // the parent element has already been validated.
-                        const value = attr.value.?;
+                        const value = attr.value orelse return null;
                         const gop = try p.interface.getOrPut(
                             gpa,
                             value.span.slice(p.src),
@@ -830,7 +830,11 @@ const Parser = struct {
                         return new_node;
                     }
                 } else {
-                    @panic("TODO");
+                    try p.errors.append(gpa, .{
+                        .kind = .super_parent_element_missing_id,
+                        .main_location = parent_start_tag.name_span,
+                    });
+                    return null;
                     // p.reportError(
                     //     tag_name,
                     //     "super_block_missing_id",
@@ -922,10 +926,11 @@ const Parser = struct {
                 };
 
                 const value = attr.value orelse {
-                    // TODO: check if this is a general HTML error
-                    //       in which case it's the HTML parser's
-                    //       responsibility to check for it.
-                    @panic("TODO: explain that id must have a value");
+                    try p.errors.append(gpa, .{
+                        .kind = .id_no_value,
+                        .main_location = name,
+                    });
+                    return null;
                 };
 
                 // TODO: implement value.unescape
@@ -1090,11 +1095,6 @@ const Parser = struct {
                 };
 
                 continue;
-            }
-
-            // template outside of <extend/>
-            if (is(name_string, "template")) {
-                @panic("TODO: explain that `template` can only go in extend tags");
             }
 
             // if

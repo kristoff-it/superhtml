@@ -647,22 +647,26 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                 .enter => {
                     last_rbracket = current.open.end;
                     var tt: Tokenizer = .{
-                        .language = ast.language,
+                        .idx = current.open.start,
                         .return_attrs = true,
+                        .language = ast.language,
                     };
-                    const tag_src = current.open.slice(src);
-                    log.debug("retokenize: {s}", .{tag_src});
-                    const name = tt.next(tag_src).?.tag_name.slice(tag_src);
 
+                    log.debug("retokenizing: '{s}'", .{current.open.slice(src)});
+                    const name = tt.next(src[0..current.open.end]).?.tag_name.slice(src);
                     if (std.ascii.eqlIgnoreCase("pre", name)) {
                         pre += 1;
                     }
 
                     try w.print("<{s}", .{name});
 
-                    const vertical = std.ascii.isWhitespace(tag_src[tag_src.len - 2]);
+                    const vertical = std.ascii.isWhitespace(
+                        // <div arst="arst" >
+                        //                 ^
+                        src[current.open.end - 2],
+                    );
 
-                    while (tt.next(tag_src)) |maybe_attr| {
+                    while (tt.next(src[0..current.open.end])) |maybe_attr| {
                         log.debug("tt: {s}", .{@tagName(maybe_attr)});
                         log.debug("tt: {any}", .{maybe_attr});
                         switch (maybe_attr) {
@@ -678,7 +682,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                                     try w.print(" ", .{});
                                 }
                                 try w.print("{s}", .{
-                                    attr.name.slice(tag_src),
+                                    attr.name.slice(src),
                                 });
                                 if (attr.value) |val| {
                                     const q = switch (val.quote) {
@@ -688,7 +692,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                                     };
                                     try w.print("={s}{s}{s}", .{
                                         q,
-                                        val.span.slice(tag_src),
+                                        val.span.slice(src),
                                         q,
                                     });
                                 }
