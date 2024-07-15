@@ -4,7 +4,7 @@
   "description": "Actually Functional Language Server for HTML Files",
   "repository": "https://github.com/kristoff-it/superhtml/",
   "publisher": "LorisCro",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "engines": {
     "vscode": "^1.87.0"
   },
