@@ -382,6 +382,17 @@ fn consume(self: *Tokenizer, src: []const u8) bool {
     return true;
 }
 
+pub fn getName(tokenizer: *Tokenizer, tag_src: []const u8) ?Span {
+    std.debug.assert(tokenizer.return_attrs);
+    return while (tokenizer.next(tag_src)) |maybe_name| {
+        switch (maybe_name) {
+            .tag_name => |n| break n,
+            .tag => break null,
+            else => continue,
+        }
+    } else null;
+}
+
 pub fn next(self: *Tokenizer, src: []const u8) ?Token {
     if (self.deferred_token) |t| {
         const token_copy = t;
@@ -2131,20 +2142,17 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             .before_attribute_name => |state| {
                 // See EOF case from below
                 if (!self.consume(src)) {
-                    self.state = .data;
-                    var tag = state;
-                    tag.span.end = self.idx;
-                    return .{ .token = .{ .tag = tag } };
-                    // self.idx -= 1;
-                    // self.state = .{
-                    //     .after_attribute_name = .{
-                    //         .tag = state,
-                    //         .name = .{
-                    //             .start = self.idx,
-                    //             .end = self.idx + 1,
-                    //         },
-                    //     },
-                    // };
+                    // self.state = .data;
+                    // var tag = state;
+                    // tag.span.end = self.idx;
+                    // return .{ .token = .{ .tag = tag } };
+                    self.idx -= 1;
+                    self.state = .{
+                        .after_attribute_name = .{
+                            .tag = state,
+                            .name = .{ .start = 0, .end = 0 },
+                        },
+                    };
                 } else switch (self.current) {
                     // U+0009 CHARACTER TABULATION (tab)
                     // U+000A LINE FEED (LF)
@@ -2157,27 +2165,22 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+003E GREATER-THAN SIGN (>)
                     // EOF
                     // Reconsume in the after attribute name state.
-                    // NOTE: handled differently to simplify
-                    //       control flow in after_attribute_name
-                    //       as otherwise it would need to keep
-                    //       track of when we don't have an attribute
-                    //       at all
                     '/', '>' => {
-                        self.state = .data;
-                        var tag = state;
-                        tag.span.end = self.idx;
-                        if (self.current == '/') {
-                            std.debug.assert(tag.kind == .start);
-                            tag.kind = .start_self;
-                        }
-                        return .{ .token = .{ .tag = tag } };
-                        // self.idx -= 1;
-                        // self.state = .{
-                        //     .after_attribute_name = .{
-                        //         .tag = state,
-                        //         .name = .{ .start = 0, .end = 0 },
-                        //     },
-                        // };
+                        // self.state = .data;
+                        // var tag = state;
+                        // tag.span.end = self.idx;
+                        // if (self.current == '/') {
+                        //     std.debug.assert(tag.kind == .start);
+                        //     tag.kind = .start_self;
+                        // }
+                        // return .{ .token = .{ .tag = tag } };
+                        self.idx -= 1;
+                        self.state = .{
+                            .after_attribute_name = .{
+                                .tag = state,
+                                .name = .{ .start = 0, .end = 0 },
+                            },
+                        };
                     },
 
                     //U+003D EQUALS SIGN (=)
@@ -2301,6 +2304,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // EOF
                     // This is an eof-in-tag parse error. Emit an end-of-file token.
                     self.state = .eof;
+                    // here, in > and in / there could be no attr name
+                    // to return.
                     return .{
                         .token = .{
                             .parse_error = .{
@@ -2323,9 +2328,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Switch to the self-closing start tag state.
                     '/' => {
                         var tag = state.tag;
-                        tag.attr_count += 1;
+
+                        // here, in > and in EOF there could be no attr name
+                        // to return.
+                        if (state.name.len() > 0) {
+                            tag.attr_count += 1;
+                        }
                         self.state = .{ .self_closing_start_tag = tag };
-                        if (self.return_attrs) {
+                        if (self.return_attrs and state.name.len() > 0) {
                             return .{
                                 .token = .{
                                     .attr = .{
@@ -2350,10 +2360,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state.tag;
                         tag.span.end = self.idx;
-                        tag.attr_count += 1;
+                        // here, in / and in EOF there could be no attr name
+                        // to return.
+                        if (state.name.len() > 0) {
+                            tag.attr_count += 1;
+                        }
 
                         self.state = .data;
-                        if (self.return_attrs) {
+                        if (self.return_attrs and state.name.len() > 0) {
                             return .{
                                 .token = .{
                                     .attr = .{

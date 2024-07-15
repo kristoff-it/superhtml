@@ -17,3 +17,18 @@ pub fn main() !void {
     const ast = try super.html.Ast.init(gpa, data, .html);
     defer ast.deinit(gpa);
 }
+
+test "afl++ fuzz cases" {
+    const cases: []const []const u8 = &.{
+        @embedFile("fuzz/2.html"),
+        @embedFile("fuzz/3.html"),
+        @embedFile("fuzz/12.html"),
+    };
+
+    for (cases) |c| {
+        std.debug.print("test: \n\n{s}\n\n", .{c});
+        const ast = try super.html.Ast.init(std.testing.allocator, c, .html);
+        defer ast.deinit(std.testing.allocator);
+        ast.debug(c);
+    }
+}

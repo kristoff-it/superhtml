@@ -1,13 +1,12 @@
 // const interpreter = @import("interpreter.zig");
 const std = @import("std");
 pub const html = @import("html.zig");
-pub const max_size = html.max_size;
 pub const Ast = @import("Ast.zig");
-
-pub const Language = enum { html, superhtml };
-
 // pub const SuperVM = interpreter.SuperVM;
 // pub const Exception = interpreter.Exception;
+
+pub const Language = enum { html, superhtml };
+pub const max_size = 4 * 1024 * 1024 * 1024;
 
 const Range = struct {
     start: Pos,
@@ -78,6 +77,7 @@ pub const Span = struct {
 };
 
 test {
+    _ = @import("html.zig");
+    // _ = @import("Ast.zig");
     // _ = @import("template.zig");
-    _ = @import("Ast.zig");
 }

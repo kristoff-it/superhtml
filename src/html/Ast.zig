@@ -360,6 +360,10 @@ pub fn init(
                     const original_current_idx = current_idx;
 
                     if (current.isClosed()) {
+                        log.debug("current {} is closed, going up to {}", .{
+                            current_idx,
+                            current.parent_idx,
+                        });
                         current_idx = current.parent_idx;
                         current = &nodes.items[current.parent_idx];
                     }
@@ -385,12 +389,12 @@ pub fn init(
                             // malformed HTML and we also expect in all of
                             // those cases that errors were already emitted
                             // by the tokenizer
-                            const maybe_name = temp_tok.next(tag_src) orelse break;
-
-                            switch (maybe_name) {
-                                .tag_name => |n| break :blk n.slice(tag_src),
-                                else => break,
-                            }
+                            const name_span = temp_tok.getName(tag_src) orelse {
+                                current = original_current;
+                                current_idx = original_current_idx;
+                                break;
+                            };
+                            break :blk name_span.slice(tag_src);
                         };
 
                         log.debug("matching cn: {s} tag: {s}", .{
@@ -415,7 +419,7 @@ pub fn init(
                                             .return_attrs = true,
                                         };
                                         const tag_src = cur.open.slice(src);
-                                        const rel_name = temp_tok.next(tag_src).?.tag_name;
+                                        const rel_name = temp_tok.getName(tag_src).?;
                                         break :blk .{
                                             .start = rel_name.start + cur.open.start,
                                             .end = rel_name.end + cur.open.start,
@@ -447,6 +451,9 @@ pub fn init(
                 switch (current.direction()) {
                     .in => {
                         new.parent_idx = current_idx;
+                        if (current.first_child_idx != 0) {
+                            debugNodes(nodes.items, src);
+                        }
                         std.debug.assert(current.first_child_idx == 0);
                         current_idx = @intCast(nodes.items.len);
                         current.first_child_idx = current_idx;
@@ -825,6 +832,52 @@ const Formatter = struct {
         try f.ast.render(f.src, out_stream);
     }
 };
+
+pub fn debug(ast: Ast, src: []const u8) void {
+    var c = ast.cursor(0);
+    var last_depth: u32 = 0;
+    std.debug.print(" \n node count: {}\n", .{ast.nodes.len});
+    while (c.next()) |n| {
+        if (c.dir == .out) {
+            std.debug.print("\n", .{});
+            while (last_depth > c.depth) : (last_depth -= 1) {
+                for (0..last_depth - 2) |_| std.debug.print("    ", .{});
+                std.debug.print(")", .{});
+                if (last_depth - c.depth > 1) {
+                    std.debug.print("\n", .{});
+                }
+            }
+            last_depth = c.depth;
+            continue;
+        }
+        std.debug.print("\n", .{});
+        for (0..c.depth - 1) |_| std.debug.print("    ", .{});
+        const range = n.open.range(src);
+        std.debug.print("({s} #{} @{} [{}, {}] - [{}, {}]", .{
+            @tagName(n.kind),
+            c.idx,
+            c.depth,
+            range.start.row,
+            range.start.col,
+            range.end.row,
+            range.end.col,
+        });
+        if (n.first_child_idx == 0) {
+            std.debug.print(")", .{});
+        }
+        last_depth = c.depth;
+    }
+    std.debug.print("\n", .{});
+    while (last_depth > 1) : (last_depth -= 1) {
+        for (0..last_depth - 2) |_| std.debug.print("    ", .{});
+        std.debug.print(")\n", .{});
+    }
+}
+
+fn debugNodes(nodes: []const Node, src: []const u8) void {
+    const ast = Ast{ .nodes = nodes, .errors = &.{}, .language = .html };
+    ast.debug(src);
+}
 
 test "basics" {
     const case = "<html><head></head><body><div><link></div></body></html>";

@@ -6,14 +6,8 @@ pub fn build(b: *std.Build) !void {
     const mode = .{ .target = target, .optimize = optimize };
 
     const scripty = b.dependency("scripty", mode);
-
-    const super = b.addModule("super", .{
-        .root_source_file = b.path("src/root.zig"),
-    });
-
+    const super = b.addModule("super", .{ .root_source_file = b.path("src/root.zig") });
     super.addImport("scripty", scripty.module("scripty"));
-
-    // super.include_dirs.append(b.allocator, .{ .other_step = ts.artifact("tree-sitter") }) catch unreachable;
 
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/root.zig"),
@@ -164,14 +158,26 @@ pub fn build(b: *std.Build) !void {
     super_fuzz.root_module.link_libc = true; // afl runtime depends on libc
     _ = super_fuzz.getEmittedBin(); // hack around build system bug
 
-    const afl_clang_fast_path = try b.findProgram(
+    const afl_clang_fast_path = b.findProgram(
         &.{ "afl-clang-fast", "afl-clang" },
         if (b.option([]const u8, "afl-path", "Path to AFLplusplus")) |afl_path| &.{afl_path} else &.{},
-    );
+    ) catch "afl-clang";
+
+    const fuzz = b.step("fuzz", "Generate an executable to fuzz html/Parser");
     const run_afl_clang_fast = b.addSystemCommand(&.{ afl_clang_fast_path, "-o" });
     const prog_exe = run_afl_clang_fast.addOutputFileArg(super_fuzz_name);
     run_afl_clang_fast.addFileArg(super_fuzz.getEmittedLlvmBc());
-
-    const fuzz = b.step("fuzz", "Generate an executable to fuzz html/Parser");
     fuzz.dependOn(&b.addInstallBinFile(prog_exe, super_fuzz_name).step);
+
+    const fuzz_tests = b.addTest(.{
+        .root_source_file = b.path("src/fuzz.zig"),
+        .target = target,
+        .optimize = .Debug,
+        // .strip = true,
+        // .filter = "nesting",
+    });
+
+    fuzz_tests.root_module.addImport("super", super);
+    const run_fuzz_tests = b.addRunArtifact(fuzz_tests);
+    test_step.dependOn(&run_fuzz_tests.step);
 }
