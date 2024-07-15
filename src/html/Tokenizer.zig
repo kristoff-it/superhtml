@@ -900,6 +900,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         tag.name.end = self.idx - 1;
                         self.state = .{ .before_attribute_name = tag };
 
+                        std.debug.assert(tag.name.len() > 0);
                         if (self.return_attrs) {
                             return .{ .token = .{ .tag_name = tag.name } };
                         }
@@ -920,6 +921,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         tag.name.end = self.idx - 1;
                         tag.span.end = self.idx;
 
+                        std.debug.assert(tag.name.len() > 0);
                         self.state = .data;
                         if (self.return_attrs) {
                             return .{ .token = .{ .tag_name = tag.name } };
@@ -2368,6 +2370,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state.tag;
                         tag.span.end = self.idx;
+                        tag.name.end = self.idx;
+
                         // here, in / and in EOF there could be no attr name
                         // to return.
                         if (state.name.len() > 0) {

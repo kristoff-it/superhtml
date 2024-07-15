@@ -730,7 +730,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     }
                     if (vertical) {
                         try w.print("\n", .{});
-                        for (0..indentation - 1) |_| {
+                        for (0..indentation -| 1) |_| {
                             try w.print("  ", .{});
                         }
                     }
@@ -773,7 +773,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                             };
                             const tag = current.close.slice(src);
                             log.debug("retokenize {s}\n", .{tag});
-                            break :blk tt.next(tag).?.tag_name.slice(tag);
+                            break :blk tt.getName(tag).?.slice(tag);
                         };
 
                         if (std.ascii.eqlIgnoreCase("pre", name)) {

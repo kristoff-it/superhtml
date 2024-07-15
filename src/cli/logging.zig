@@ -37,8 +37,9 @@ pub fn logFn(
     std.debug.lockStdErr();
     defer std.debug.unlockStdErr();
 
-    const writer = l.writer();
-    writer.print(prefix ++ format ++ "\n", args) catch return;
+    var buf_writer = std.io.bufferedWriter(l.writer());
+    buf_writer.writer().print(prefix ++ format ++ "\n", args) catch return;
+    buf_writer.flush() catch return;
 }
 
 pub fn setup(gpa: std.mem.Allocator) void {
@@ -54,10 +55,7 @@ fn setupInternal(gpa: std.mem.Allocator) !void {
     const cache_base = try folders.open(gpa, .cache, .{}) orelse return error.Failure;
     try cache_base.makePath("super");
 
-    const log_name = "super.log";
-    const log_path = try std.fmt.allocPrint(gpa, "super/{s}", .{log_name});
-    defer gpa.free(log_path);
-
+    const log_path = "superhtml.log";
     const file = try cache_base.createFile(log_path, .{ .truncate = false });
     const end = try file.getEndPos();
     try file.seekTo(end);

@@ -3,19 +3,12 @@ const super = @import("super");
 
 pub const std_options = .{ .log_level = .err };
 
-pub fn main() !void {
-    var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
-
-    // this will check for leaks and crash the program if it finds any
-    defer std.debug.assert(gpa_impl.deinit() == .ok);
+var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
+export fn zig_fuzz_test(buf: [*]u8, len: isize) void {
     const gpa = gpa_impl.allocator();
+    const src = buf[0..@intCast(len)];
 
-    // Read the data from stdin
-    const stdin = std.io.getStdIn();
-    const src = try stdin.readToEndAlloc(gpa, std.math.maxInt(usize));
-    defer gpa.free(src);
-
-    const ast = try super.html.Ast.init(gpa, src, .html);
+    const ast = super.html.Ast.init(gpa, src, .html) catch unreachable;
     defer ast.deinit(gpa);
 
     if (ast.errors.len == 0) {
@@ -32,12 +25,18 @@ test "afl++ fuzz cases" {
         @embedFile("fuzz/round2/3.html"),
         @embedFile("fuzz/round3/2.html"),
         @embedFile("fuzz/77.html"),
+        @embedFile("fuzz/3-01.html"),
+        @embedFile("fuzz/4-01.html"),
+        @embedFile("fuzz/5-01.html"),
     };
 
     for (cases) |c| {
         // std.debug.print("test: \n\n{s}\n\n", .{c});
         const ast = try super.html.Ast.init(std.testing.allocator, c, .html);
         defer ast.deinit(std.testing.allocator);
+        if (ast.errors.len == 0) {
+            try ast.render(c, std.io.null_writer);
+        }
         // ast.debug(c);
     }
 }

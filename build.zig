@@ -144,9 +144,10 @@ pub fn build(b: *std.Build) !void {
     wasm.dependOn(&target_output.step);
 
     const super_fuzz_name = b.fmt("superfuzz{s}", .{target.result.exeFileExt()});
-    const super_fuzz = b.addExecutable(.{
+    const super_fuzz = b.addObject(.{
         .name = super_fuzz_name,
         .root_source_file = b.path("src/fuzz.zig"),
+        // .target = b.resolveTargetQuery(.{ .cpu_model = .baseline }),
         .target = target,
         .optimize = .Debug,
         .single_threaded = true,
@@ -160,12 +161,21 @@ pub fn build(b: *std.Build) !void {
 
     const afl_clang_fast_path = b.findProgram(
         &.{ "afl-clang-fast", "afl-clang" },
-        if (b.option([]const u8, "afl-path", "Path to AFLplusplus")) |afl_path| &.{afl_path} else &.{},
-    ) catch "afl-clang";
+        if (b.option([]const u8, "afl-path", "Path to AFLplusplus")) |afl_path|
+            &.{afl_path}
+        else
+            &.{},
+    ) catch "afl-clang-fast";
 
     const fuzz = b.step("fuzz", "Generate an executable to fuzz html/Parser");
-    const run_afl_clang_fast = b.addSystemCommand(&.{ afl_clang_fast_path, "-o" });
+    const run_afl_clang_fast = b.addSystemCommand(&.{
+        afl_clang_fast_path,
+        "-o",
+    });
+    // run_afl_clang_fast.setEnvironmentVariable("AFL_NO_FORKSRV", "1");
+
     const prog_exe = run_afl_clang_fast.addOutputFileArg(super_fuzz_name);
+    run_afl_clang_fast.addFileArg(b.path("src/fuzz.c"));
     run_afl_clang_fast.addFileArg(super_fuzz.getEmittedLlvmBc());
     fuzz.dependOn(&b.addInstallBinFile(prog_exe, super_fuzz_name).step);
 
