@@ -1702,7 +1702,9 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Set the temporary buffer to the empty string. Emit a U+003C LESS-THAN SIGN character token. Reconsume in the script data double escape start state.
                     'a'...'z', 'A'...'Z' => {
                         self.idx -= 1;
-                        @panic("TODO");
+                        self.state = .{
+                            .script_data_double_escape_start = state,
+                        };
                     },
                     // Anything else
                     // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the script data escaped state.
@@ -1722,7 +1724,11 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Create a new end tag token, set its tag name to the empty string. Reconsume in the script data escaped end tag name state.
                     'a'...'z', 'A'...'Z' => {
                         self.idx -= 1;
-                        @panic("TODO");
+                        var new = state;
+                        new.name_start = self.idx;
+                        self.state = .{
+                            .script_data_escaped_end_tag_name = new,
+                        };
                     },
                     // Anything else
                     // Emit a U+003C LESS-THAN SIGN character token and a U+002F SOLIDUS character token. Reconsume in the script data escaped state.
@@ -2348,12 +2354,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                     // U+003D EQUALS SIGN (=)
                     // Switch to the before attribute value state.
-                    '=' => self.state = .{
-                        .before_attribute_value = .{
-                            .tag = state.tag,
-                            .name = state.name,
-                            .equal_sign = self.idx - 1,
-                        },
+                    '=' => {
+                        self.state = .{
+                            .before_attribute_value = .{
+                                .tag = state.tag,
+                                .name = state.name,
+                                .equal_sign = self.idx - 1,
+                            },
+                        };
                     },
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the data state. Emit the current tag token.
@@ -2383,8 +2391,9 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Anything else
                     // Start a new attribute in the current tag token. Set that attribute name and value to the empty string. Reconsume in the attribute name state.
                     else => {
-                        self.idx -= 1;
+                        std.debug.assert(state.name.len() != 0);
 
+                        self.idx -= 1;
                         var tag = state.tag;
                         tag.attr_count += 1;
 
@@ -3513,28 +3522,22 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-state
             .comment_less_than_sign_bang_dash => |comment_start| {
                 if (!self.consume(src)) {
+                    self.idx -= 1;
                     self.state = .{ .comment_end_dash = comment_start };
                 }
                 switch (self.current) {
                     // U+002D HYPHEN-MINUS (-)
                     // Switch to the comment less-than sign bang dash dash state.
-                    '-' => switch (self.state) {
-                        else => unreachable,
-                        .comment_less_than_sign_bang => {
-                            self.state = .{
-                                .comment_less_than_sign_bang_dash = comment_start,
-                            };
-                        },
-                        .comment_less_than_sign_bang_dash => {
-                            self.state = .{
-                                .comment_less_than_sign_bang_dash_dash = comment_start,
-                            };
-                        },
+                    '-' => self.state = .{
+                        .comment_less_than_sign_bang_dash_dash = comment_start,
                     },
 
                     // Anything else
                     // Reconsume in the comment end dash state.
-                    else => self.state = .{ .comment_end_dash = comment_start },
+                    else => {
+                        self.idx -= 1;
+                        self.state = .{ .comment_end_dash = comment_start };
+                    },
                 }
             },
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-dash-state

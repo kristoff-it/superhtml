@@ -574,10 +574,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     current,
                 });
 
-                switch (current.kind) {
+                if (pre == 0) switch (current.kind) {
                     else => {},
                     .element => indentation -= 1,
-                }
+                };
 
                 const open_was_vertical = std.ascii.isWhitespace(src[current.open.end]);
 
@@ -748,7 +748,9 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                                 current = ast.nodes[current.first_child_idx];
                             }
                         },
-                        .element_void => {
+                        .element_void,
+                        .element_self_closing,
+                        => {
                             if (current.next_idx != 0) {
                                 current = ast.nodes[current.next_idx];
                             } else {
@@ -760,6 +762,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                 },
                 .exit => {
                     std.debug.assert(current.kind != .element_void);
+                    std.debug.assert(current.kind != .element_self_closing);
                     last_rbracket = current.close.end;
                     if (current.close.start != 0) {
                         const name = blk: {

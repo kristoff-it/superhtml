@@ -1,11 +1,11 @@
 # SuperHTML
-Actually functional HTML Language Server (and Templating Language Library).
+HTML Language Server and Templating Language Library
 
-**NOTE: SuperHTML is still incomplete, some features are missing and looking of somebody to implement them :^)**  
-*And there's also bugs, waiting for people to report them as Issues :^)*
 
 ## HTML Language Server
-The Super CLI Tool offers syntax checking and autoformatting features for HTML files.
+The Super CLI Tool offers **syntax checking** and **autoformatting** features for HTML files.
+
+The tool can be used either directly (for example by running it on save), or through a LSP client implementation.
 
 ```
 $ super
@@ -36,7 +36,7 @@ As an example, HTML allows for closing some tags implicitly. For example the fol
 </ul>
 ```
 
-This will still be reported as an error by SuperHTML because otherwise the following snippet would have to be considered correct (while it's much probably a typo):
+This will still be reported as an error by SuperHTML because otherwise the following snippet would have to be considered correct (while it's most probably a typo):
 
 ```html
 <h1>Title<h1>
@@ -115,11 +115,27 @@ After:
 
 ### Editor support
 #### VSCode
-1. Download a prebuilt version of `super` from the Releases section (or build it yourself).
-2. Put `super` in your `PATH`.
+1. Download a prebuilt version of `superhtml` from the Releases section (or build it yourself).
+2. Put `superhtml` in your `PATH`.
 3. Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/items?itemName=LorisCro.super). 
 
-#### Flow
+#### Helix
+Add to your `.config/helix/languages.toml`:
+```toml
+[language-server.superhtml-lsp]
+command = "superhtml"
+args = ["lsp"]
+
+[[language]]
+name = "html"
+scope = "source.html"
+roots = []
+file-types = ["html"]
+language-servers = [ "superhtml-lsp" ]
+```
+See https://helix-editor.com for more information on how to add new language servers.
+
+#### [Flow](https://github.com/neurocyte/flow)
 Already defaults to using SuperHTML, just add the executable to your `PATH`.
 
 #### Other editors
@@ -128,7 +144,7 @@ Follow your editor specific intructions on how to define a new Language Server f
 *(Also feel free to contribute more specific intructions to this readme / add files under the `editors/` subdirectory).*
 
 ## Templating Language Library
-SuperHTML is not only an LSP but also an HTML templating language. More on that soon.
+SuperHTML is also a HTML templating language. More on that soon.
 
 ## Contributing
 SuperHTML tracks the latest Zig release (0.13.0 at the moment of writing). 

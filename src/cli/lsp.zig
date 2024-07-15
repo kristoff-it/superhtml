@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const lsp = @import("lsp");
 const types = lsp.types;
@@ -276,16 +277,13 @@ pub const Handler = struct {
         log.debug("format request!!", .{});
 
         const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
-
         if (doc.html.errors.len != 0) {
             return null;
         }
 
         log.debug("format!!", .{});
 
-        var buf = std.ArrayList(u8).init(self.gpa);
-        errdefer buf.deinit();
-
+        var buf = std.ArrayList(u8).init(arena);
         try doc.html.render(doc.src, buf.writer());
 
         const edits = try lsp.diff.edits(
@@ -295,9 +293,11 @@ pub const Handler = struct {
             .@"utf-8",
         );
 
-        self.gpa.free(doc.src);
-        doc.src = try buf.toOwnedSlice();
-        try doc.reparse(self.gpa);
+        if (builtin.mode == .Debug) {
+            if (std.mem.eql(u8, buf.items, doc.src)) {
+                std.debug.assert(edits.items.len == 0);
+            }
+        }
 
         return edits.items;
     }
