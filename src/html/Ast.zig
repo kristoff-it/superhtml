@@ -556,10 +556,11 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                             try w.writeAll("  ");
                         }
                     }
-                    switch (current.kind) {
-                        else => {},
-                        .element => indentation += 1,
-                    }
+                }
+
+                switch (current.kind) {
+                    else => {},
+                    .element => indentation += 1,
                 }
             },
             .exit => {
@@ -574,10 +575,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     current,
                 });
 
-                if (pre == 0) switch (current.kind) {
+                switch (current.kind) {
                     else => {},
                     .element => indentation -= 1,
-                };
+                }
 
                 const open_was_vertical = std.ascii.isWhitespace(src[current.open.end]);
 

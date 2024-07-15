@@ -35,9 +35,9 @@ test "afl++ fuzz cases" {
     };
 
     for (cases) |c| {
-        std.debug.print("test: \n\n{s}\n\n", .{c});
+        // std.debug.print("test: \n\n{s}\n\n", .{c});
         const ast = try super.html.Ast.init(std.testing.allocator, c, .html);
         defer ast.deinit(std.testing.allocator);
-        ast.debug(c);
+        // ast.debug(c);
     }
 }

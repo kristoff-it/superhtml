@@ -78,6 +78,6 @@ pub const Span = struct {
 
 test {
     _ = @import("html.zig");
-    // _ = @import("Ast.zig");
+    _ = @import("Ast.zig");
     // _ = @import("template.zig");
 }

@@ -1,12 +1,12 @@
 # SuperHTML LSP VSCode Extension
 
-This extension gives you reasonable diagnostics and autoformatting on HTML files.
+This extension gives you diagnostics and autoformatting for HTML files.
 
 ![](../../.github/vscode-autoformat.gif)
 
-**NOTE: you will need to get the `super` CLI tool and have it available in your PATH (or set the path manually in your VSCode settings)!**
+**NOTE: you will need to get the `superhtml` CLI tool and have it available in your PATH (or set the path manually in your VSCode settings)!**
 
-For prebuilt binaries and more info: https://github.com/kristoff-it/super-html
+For prebuilt binaries and more info: https://github.com/kristoff-it/superhtml
 
 
 ## Diagnostics
