@@ -143,21 +143,20 @@ pub fn build(b: *std.Build) !void {
     });
     wasm.dependOn(&target_output.step);
 
-    const super_fuzz_name = b.fmt("superfuzz{s}", .{target.result.exeFileExt()});
-    const super_fuzz = b.addObject(.{
-        .name = super_fuzz_name,
-        .root_source_file = b.path("src/fuzz.zig"),
+    const afl_fuzz_name = b.fmt("superfuzz-afl{s}", .{target.result.exeFileExt()});
+    const afl_fuzz = b.addObject(.{
+        .name = afl_fuzz_name,
+        .root_source_file = b.path("src/fuzz/afl.zig"),
         // .target = b.resolveTargetQuery(.{ .cpu_model = .baseline }),
         .target = target,
         .optimize = .Debug,
         .single_threaded = true,
     });
 
-    super_fuzz.root_module.addImport("super", super);
-
-    super_fuzz.root_module.stack_check = false; // not linking with compiler-rt
-    super_fuzz.root_module.link_libc = true; // afl runtime depends on libc
-    _ = super_fuzz.getEmittedBin(); // hack around build system bug
+    afl_fuzz.root_module.addImport("super", super);
+    afl_fuzz.root_module.stack_check = false; // not linking with compiler-rt
+    afl_fuzz.root_module.link_libc = true; // afl runtime depends on libc
+    _ = afl_fuzz.getEmittedBin(); // hack around build system bug
 
     const afl_clang_fast_path = b.findProgram(
         &.{ "afl-clang-fast", "afl-clang" },
@@ -167,17 +166,27 @@ pub fn build(b: *std.Build) !void {
             &.{},
     ) catch "afl-clang-fast";
 
-    const fuzz = b.step("fuzz", "Generate an executable to fuzz html/Parser");
+    const fuzz = b.step("fuzz", "Generate an executable for AFL++ (persistent mode)");
     const run_afl_clang_fast = b.addSystemCommand(&.{
         afl_clang_fast_path,
         "-o",
     });
-    // run_afl_clang_fast.setEnvironmentVariable("AFL_NO_FORKSRV", "1");
 
-    const prog_exe = run_afl_clang_fast.addOutputFileArg(super_fuzz_name);
-    run_afl_clang_fast.addFileArg(b.path("src/fuzz.c"));
-    run_afl_clang_fast.addFileArg(super_fuzz.getEmittedLlvmBc());
-    fuzz.dependOn(&b.addInstallBinFile(prog_exe, super_fuzz_name).step);
+    const prog_exe = run_afl_clang_fast.addOutputFileArg(afl_fuzz_name);
+    run_afl_clang_fast.addFileArg(b.path("src/fuzz/afl.c"));
+    run_afl_clang_fast.addFileArg(afl_fuzz.getEmittedLlvmBc());
+    fuzz.dependOn(&b.addInstallBinFile(prog_exe, afl_fuzz_name).step);
+
+    const super_fuzz = b.addExecutable(.{
+        .name = "superfuzz",
+        .root_source_file = b.path("src/fuzz.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .single_threaded = true,
+    });
+
+    super_fuzz.root_module.addImport("super", super);
+    fuzz.dependOn(&b.addInstallArtifact(super_fuzz, .{}).step);
 
     const fuzz_tests = b.addTest(.{
         .root_source_file = b.path("src/fuzz.zig"),

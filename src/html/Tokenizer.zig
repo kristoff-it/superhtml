@@ -411,7 +411,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
     deferred: ?Token = null,
 } {
     while (true) {
-        log.debug("{any}", .{self.state});
+        // log.debug("at char: {any}", .{self.state});
         switch (self.state) {
             .text => |state| {
                 if (!self.consume(src)) {
@@ -1386,6 +1386,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         );
                         if (is_script) {
                             self.state = .{ .before_attribute_name = tag };
+                            log.debug("111111", .{});
                             if (trimmedText(
                                 state.data_start,
                                 state.tag_start,
@@ -1436,6 +1437,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 },
                             };
 
+                            log.debug("222222", .{});
                             if (trimmedText(
                                 state.data_start,
                                 state.tag_start,
@@ -1474,6 +1476,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         );
                         if (is_script) {
                             self.state = .data;
+                            log.debug("3333333", .{});
                             if (trimmedText(
                                 state.data_start,
                                 state.tag_start,
@@ -1566,8 +1569,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                     // U+003C LESS-THAN SIGN (<)
                     // Switch to the script data escaped less-than sign state.
-                    '<' => self.state = .{
-                        .script_data_escaped_less_than_sign = state,
+                    '<' => {
+                        var new = state;
+                        new.tag_start = self.idx - 1;
+                        self.state = .{
+                            .script_data_escaped_less_than_sign = new,
+                        };
                     },
                     // U+0000 NULL
                     // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
@@ -1662,8 +1669,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '-' => {},
                     // U+003C LESS-THAN SIGN (<)
                     // Switch to the script data escaped less-than sign state.
-                    '<' => self.state = .{
-                        .script_data_escaped_less_than_sign = state,
+                    '<' => {
+                        var new = state;
+                        new.tag_start = self.idx - 1;
+                        self.state = .{
+                            .script_data_escaped_less_than_sign = new,
+                        };
                     },
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the script data state. Emit a U+003E GREATER-THAN SIGN character token.
@@ -1720,6 +1731,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-end-tag-open-state
             .script_data_escaped_end_tag_open => |state| {
                 if (!self.consume(src)) {
+                    self.idx -= 1;
                     self.state = .{ .script_data_escaped = state };
                 } else switch (self.current) {
                     // ASCII alpha
@@ -1769,6 +1781,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         );
                         if (is_script) {
                             self.state = .{ .before_attribute_name = tag };
+                            log.debug("555555", .{});
                             if (trimmedText(
                                 state.data_start,
                                 state.tag_start,
@@ -1812,6 +1825,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 },
                             };
 
+                            log.debug("aaaaaaa", .{});
                             if (trimmedText(
                                 state.data_start,
                                 state.tag_start,
@@ -1851,6 +1865,10 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         );
                         if (is_script) {
                             self.state = .data;
+                            log.debug("zzzzzz {any} '{s}'", .{
+                                tag,
+                                tag.span.slice(src),
+                            });
                             if (trimmedText(
                                 state.data_start,
                                 state.tag_start,
@@ -1859,6 +1877,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 return .{
                                     .token = .{ .text = txt },
                                     .deferred = .{ .tag = tag },
+                                    // .deferred2 = .{ .tag = tag },
                                 };
                             } else {
                                 return .{ .token = .{ .tag = tag } };
@@ -1955,8 +1974,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                     // U+003C LESS-THAN SIGN (<)
                     // Switch to the script data double escaped less-than sign state. Emit a U+003C LESS-THAN SIGN character token.
-                    '<' => self.state = .{
-                        .script_data_double_escaped_less_than_sign = state,
+                    '<' => {
+                        var new = state;
+                        new.tag_start = self.idx - 1;
+                        self.state = .{
+                            .script_data_double_escaped_less_than_sign = new,
+                        };
                     },
                     // U+0000 NULL
                     // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
@@ -2003,8 +2026,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     },
                     // U+003C LESS-THAN SIGN (<)
                     // Switch to the script data double escaped less-than sign state. Emit a U+003C LESS-THAN SIGN character token.
-                    '<' => self.state = .{
-                        .script_data_double_escaped_less_than_sign = state,
+                    '<' => {
+                        var new = state;
+                        new.tag_start = self.idx - 1;
+                        self.state = .{
+                            .script_data_double_escaped_less_than_sign = new,
+                        };
                     },
                     // U+0000 NULL
                     // This is an unexpected-null-character parse error. Switch to the script data double escaped state. Emit a U+FFFD REPLACEMENT CHARACTER character token.
@@ -2052,8 +2079,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '-' => {},
                     // U+003C LESS-THAN SIGN (<)
                     // Switch to the script data double escaped less-than sign state. Emit a U+003C LESS-THAN SIGN character token.
-                    '<' => self.state = .{
-                        .script_data_double_escaped_less_than_sign = state,
+                    '<' => {
+                        var new = state;
+                        new.tag_start = self.idx - 1;
+                        self.state = .{
+                            .script_data_double_escaped_less_than_sign = new,
+                        };
                     },
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the script data state. Emit a U+003E GREATER-THAN SIGN character token.

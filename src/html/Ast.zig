@@ -397,9 +397,10 @@ pub fn init(
                             break :blk name_span.slice(tag_src);
                         };
 
-                        log.debug("matching cn: {s} tag: {s}", .{
+                        log.debug("matching cn: {s} tag: {s}\n{any}", .{
                             current_name,
                             tag.name.slice(src),
+                            tag.span.range(src),
                         });
 
                         std.debug.assert(!current.isClosed());
@@ -408,7 +409,6 @@ pub fn init(
                             tag.name.slice(src),
                         )) {
                             if (std.ascii.eqlIgnoreCase(current_name, "svg")) svg_lvl -= 1;
-
                             current.close = tag.span;
                             var cur = original_current;
                             while (cur != current) {
@@ -771,7 +771,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                                 .language = ast.language,
                                 .return_attrs = true,
                             };
-                            const tag = current.close.slice(src);
+                            const tag = current.open.slice(src);
                             log.debug("retokenize {s}\n", .{tag});
                             break :blk tt.getName(tag).?.slice(tag);
                         };
