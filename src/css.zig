@@ -1,7 +1,7 @@
 pub const Tokenizer = @import("css/Tokenizer.zig");
-pub const Stylesheet = @import("css/Stylesheet.zig");
+pub const Ast = @import("css/Ast.zig");
 
 test {
     _ = Tokenizer;
-    _ = Stylesheet;
+    _ = Ast;
 }
