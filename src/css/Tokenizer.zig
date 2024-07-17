@@ -1,17 +1,11 @@
 const std = @import("std");
 
 const Tokenizer = @import("Tokenizer.zig");
+const root = @import("../root.zig");
+const Span = root.Span;
 
 idx: u32 = 0,
 current: u8 = undefined,
-
-pub const Span = struct {
-    start: u32,
-    end: u32,
-    pub fn slice(self: Span, src: []const u8) []const u8 {
-        return src[self.start..self.end];
-    }
-};
 
 pub const Token = union(enum) {
     ident: Span,

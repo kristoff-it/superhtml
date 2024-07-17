@@ -1,5 +1,7 @@
 const std = @import("std");
 const Tokenizer = @import("Tokenizer.zig");
+const root = @import("../root.zig");
+const Span = root.Span;
 
 const Ast = @This();
 
@@ -18,18 +20,18 @@ pub const Rule = union(enum) {
                 element_name: ?ElementName,
 
                 pub const ElementName = union(enum) {
-                    name: Tokenizer.Span,
+                    name: Span,
                     all,
                 };
             };
         };
 
         pub const Declaration = struct {
-            property: Tokenizer.Span,
+            property: Span,
             value: Expression,
 
             pub const Expression = union(enum) {
-                keyword: Tokenizer.Span,
+                keyword: Span,
             };
         };
 
