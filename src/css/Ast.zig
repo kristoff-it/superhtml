@@ -23,7 +23,22 @@ pub const Rule = union(enum) {
                     name: Span,
                     all,
                 };
+
+                pub fn render(self: Simple, src: []const u8, out_stream: anytype) !void {
+                    if (self.element_name) |element_name| {
+                        switch (element_name) {
+                            .name => |name| _ = try out_stream.write(name.slice(src)),
+                            .all => _ = try out_stream.write("*"),
+                        }
+                    }
+                }
             };
+
+            pub fn render(self: Selector, src: []const u8, out_stream: anytype) !void {
+                switch (self) {
+                    inline else => |sel| try sel.render(src, out_stream),
+                }
+            }
         };
 
         pub const Declaration = struct {
@@ -32,12 +47,46 @@ pub const Rule = union(enum) {
 
             pub const Expression = union(enum) {
                 keyword: Span,
+
+                pub fn render(self: Expression, src: []const u8, out_stream: anytype) !void {
+                    switch (self) {
+                        .keyword => |keyword| _ = try out_stream.write(keyword.slice(src)),
+                    }
+                }
             };
+
+            pub fn render(self: Declaration, src: []const u8, out_stream: anytype) !void {
+                _ = try out_stream.write(self.property.slice(src));
+                _ = try out_stream.write(": ");
+                try self.value.render(src, out_stream);
+            }
         };
 
         pub fn deinit(self: Style, allocator: std.mem.Allocator) void {
             allocator.free(self.selectors);
             allocator.free(self.declarations);
+        }
+
+        pub fn render(self: Style, src: []const u8, out_stream: anytype, depth: usize) !void {
+            for (0..depth) |_| _ = try out_stream.write("    ");
+            for (self.selectors, 0..) |selector, i| {
+                if (i != 0) {
+                    _ = try out_stream.write(", ");
+                }
+
+                try selector.render(src, out_stream);
+            }
+
+            _ = try out_stream.write(" {\n");
+
+            for (self.declarations) |declaration| {
+                for (0..depth + 1) |_| _ = try out_stream.write("    ");
+                try declaration.render(src, out_stream);
+                _ = try out_stream.write(";\n");
+            }
+
+            for (0..depth) |_| _ = try out_stream.write("    ");
+            _ = try out_stream.write("}");
         }
     };
 
@@ -46,6 +95,13 @@ pub const Rule = union(enum) {
     pub fn deinit(self: Rule, allocator: std.mem.Allocator) void {
         switch (self) {
             .style => |style| style.deinit(allocator),
+            .at => @panic("TODO"),
+        }
+    }
+
+    pub fn render(self: Rule, src: []const u8, out_stream: anytype, depth: usize) !void {
+        switch (self) {
+            .style => |style| try style.render(src, out_stream, depth),
             .at => @panic("TODO"),
         }
     }
@@ -81,6 +137,41 @@ const State = struct {
         return token;
     }
 };
+
+const Formatter = struct {
+    ast: Ast,
+    src: []const u8,
+
+    pub fn format(
+        f: Formatter,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        out_stream: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        try f.ast.render(f.src, out_stream);
+    }
+};
+
+pub fn formatter(self: Ast, src: []const u8) Formatter {
+    return .{
+        .ast = self,
+        .src = src,
+    };
+}
+
+pub fn render(self: Ast, src: []const u8, out_stream: anytype) !void {
+    for (self.rules, 0..) |rule, i| {
+        if (i != 0) {
+            _ = try out_stream.write("\n\n");
+        }
+
+        try rule.render(src, out_stream, 0);
+        _ = try out_stream.write("\n");
+    }
+}
 
 pub fn init(allocator: std.mem.Allocator, src: []const u8) error{OutOfMemory}!Ast {
     if (src.len > std.math.maxInt(u32)) @panic("too long");
@@ -220,37 +311,21 @@ pub fn deinit(self: Ast, allocator: std.mem.Allocator) void {
 
 test {
     const src =
+        \\   p {
+        \\color
+        \\ : red
+        \\   ;}
+    ;
+
+    const expected =
         \\p {
         \\    color: red;
         \\}
+        \\
     ;
 
     const ast = try Ast.init(std.testing.allocator, src);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectEqualDeep(Ast{
-        .rules = &.{
-            .{
-                .style = .{
-                    .selectors = &.{
-                        .{
-                            .simple = .{
-                                .element_name = .{
-                                    .name = .{ .start = 0, .end = 1 },
-                                },
-                            },
-                        },
-                    },
-                    .declarations = &.{
-                        .{
-                            .property = .{ .start = 8, .end = 13 },
-                            .value = .{
-                                .keyword = .{ .start = 15, .end = 18 },
-                            },
-                        },
-                    },
-                },
-            },
-        },
-    }, ast);
+    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(src)});
 }
