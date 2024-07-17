@@ -169,7 +169,6 @@ pub fn render(self: Ast, src: []const u8, out_stream: anytype) !void {
         }
 
         try rule.render(src, out_stream, 0);
-        _ = try out_stream.write("\n");
     }
 }
 
@@ -321,7 +320,6 @@ test {
         \\p {
         \\    color: red;
         \\}
-        \\
     ;
 
     const ast = try Ast.init(std.testing.allocator, src);
