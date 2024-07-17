@@ -22,6 +22,7 @@ pub const std_options: std.Options = .{
 };
 
 var lsp_mode = false;
+
 pub fn panic(
     msg: []const u8,
     trace: ?*std.builtin.StackTrace,
@@ -52,7 +53,7 @@ pub fn panic(
     std.process.exit(1);
 }
 
-pub const Command = enum { fmt, lsp, help };
+pub const Command = enum { fmt, lsp, help, version };
 
 pub fn main() !void {
     var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -76,6 +77,7 @@ pub fn main() !void {
         .fmt => fmt_exe.run(gpa, args[2..]),
         .lsp => lsp_exe.run(gpa, args[2..]),
         .help => fatalHelp(),
+        .version => printVersion(),
     } catch |err| fatal("unexpected error: {s}\n", .{@errorName(err)});
 }
 
@@ -88,15 +90,21 @@ fn oom() noreturn {
     fatal("oom\n", .{});
 }
 
+fn printVersion() noreturn {
+    std.debug.print("{s}\n", .{version});
+    std.process.exit(0);
+}
+
 fn fatalHelp() noreturn {
     fatal(
         \\Usage: super COMMAND [OPTIONS]
         \\
-        \\Commands: 
+        \\Commands:
         // \\  check        Check HTML documents for syntax errors
         \\  fmt          Format HTML documents
         \\  lsp          Start the Super LSP
         \\  help         Show this menu and exit
+        \\  version      Print Super's version and exit
         \\
         \\General Options:
         \\  --help, -h   Print command specific usage
