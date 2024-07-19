@@ -3,11 +3,12 @@ const std = @import("std");
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const mode = .{ .target = target, .optimize = optimize };
 
-    const scripty = b.dependency("scripty", mode);
-    const super = b.addModule("super", .{ .root_source_file = b.path("src/root.zig") });
-    super.addImport("scripty", scripty.module("scripty"));
+    const scripty = b.dependency("scripty", .{});
+    const superhtml = b.addModule("superhtml", .{
+        .root_source_file = b.path("src/root.zig"),
+    });
+    superhtml.addImport("scripty", scripty.module("scripty"));
 
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/root.zig"),
@@ -17,7 +18,7 @@ pub fn build(b: *std.Build) !void {
         // .filter = "nesting",
     });
 
-    unit_tests.root_module.addImport("super", super);
+    unit_tests.root_module.addImport("superhtml", superhtml);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
@@ -40,7 +41,7 @@ pub fn build(b: *std.Build) !void {
     const folders = b.dependency("known-folders", .{});
     const lsp = b.dependency("zig-lsp-kit", .{});
 
-    super_cli.root_module.addImport("super", super);
+    super_cli.root_module.addImport("superhtml", superhtml);
     super_cli.root_module.addImport(
         "known-folders",
         folders.module("known-folders"),
@@ -56,13 +57,13 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(super_cli);
 
     const super_cli_check = b.addExecutable(.{
-        .name = "super",
+        .name = "superhtml",
         .root_source_file = b.path("src/cli.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    super_cli_check.root_module.addImport("super", super);
+    super_cli_check.root_module.addImport("superhtml", superhtml);
     super_cli_check.root_module.addImport(
         "known-folders",
         folders.module("known-folders"),
@@ -87,22 +88,13 @@ pub fn build(b: *std.Build) !void {
         const release_target = b.resolveTargetQuery(t);
 
         const super_exe_release = b.addExecutable(.{
-            .name = "super",
+            .name = "superhtml",
             .root_source_file = b.path("src/cli.zig"),
             .target = release_target,
             .optimize = .ReleaseFast,
         });
 
-        const release_mode = .{ .target = release_target, .optimize = .ReleaseFast };
-
-        const scripty_release = b.dependency("scripty", release_mode);
-
-        const super_release = b.addModule("super", .{
-            .root_source_file = b.path("src/root.zig"),
-        });
-
-        super_release.addImport("scripty", scripty_release.module("scripty"));
-        super_exe_release.root_module.addImport("super", super_release);
+        super_exe_release.root_module.addImport("superhtml", superhtml);
         super_exe_release.root_module.addImport(
             "known-folders",
             folders.module("known-folders"),
@@ -133,7 +125,7 @@ pub fn build(b: *std.Build) !void {
         .link_libc = false,
     });
 
-    super_wasm_lsp.root_module.addImport("super", super);
+    super_wasm_lsp.root_module.addImport("superhtml", superhtml);
     super_wasm_lsp.root_module.addImport("lsp", lsp.module("lsp"));
     super_wasm_lsp.root_module.addOptions("build_options", options);
 
@@ -153,7 +145,7 @@ pub fn build(b: *std.Build) !void {
         .single_threaded = true,
     });
 
-    afl_fuzz.root_module.addImport("super", super);
+    afl_fuzz.root_module.addImport("superhtml", superhtml);
     afl_fuzz.root_module.stack_check = false; // not linking with compiler-rt
     afl_fuzz.root_module.link_libc = true; // afl runtime depends on libc
     _ = afl_fuzz.getEmittedBin(); // hack around build system bug
@@ -185,8 +177,19 @@ pub fn build(b: *std.Build) !void {
         .single_threaded = true,
     });
 
-    super_fuzz.root_module.addImport("super", super);
+    super_fuzz.root_module.addImport("superhtml", superhtml);
     fuzz.dependOn(&b.addInstallArtifact(super_fuzz, .{}).step);
+
+    const supergen = b.addExecutable(.{
+        .name = "supergen",
+        .root_source_file = b.path("src/fuzz/astgen.zig"),
+        .target = target,
+        .optimize = .Debug,
+        .single_threaded = true,
+    });
+
+    supergen.root_module.addImport("superhtml", superhtml);
+    fuzz.dependOn(&b.addInstallArtifact(supergen, .{}).step);
 
     const fuzz_tests = b.addTest(.{
         .root_source_file = b.path("src/fuzz.zig"),
@@ -196,7 +199,7 @@ pub fn build(b: *std.Build) !void {
         // .filter = "nesting",
     });
 
-    fuzz_tests.root_module.addImport("super", super);
+    fuzz_tests.root_module.addImport("superhtml", superhtml);
     const run_fuzz_tests = b.addRunArtifact(fuzz_tests);
     test_step.dependOn(&run_fuzz_tests.step);
 }

@@ -1,18 +1,104 @@
 const std = @import("std");
-const super = @import("super");
+const super = @import("superhtml");
+const astgen = @import("astgen.zig");
 
 pub const std_options = .{ .log_level = .err };
 
+const mem = std.mem;
+
+// const toggle_me = std.mem.backend_can_use_eql_bytes;
+// comptime {
+//     std.debug.assert(toggle_me == false);
+// }
+
 var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
-export fn zig_fuzz_test(buf: [*]u8, len: isize) void {
+export fn zig_fuzz_test_direct(buf: [*]u8, len: isize) void {
     const gpa = gpa_impl.allocator();
     const src = buf[0..@intCast(len)];
 
-    const ast = super.html.Ast.init(gpa, src, .html) catch unreachable;
-    defer ast.deinit(gpa);
+    const html_ast = super.html.Ast.init(gpa, src, .superhtml) catch unreachable;
+    defer html_ast.deinit(gpa);
 
-    if (ast.errors.len == 0) {
-        try ast.render(src, std.io.null_writer);
+    if (html_ast.errors.len == 0) {
+        const super_ast = super.Ast.init(gpa, html_ast, src) catch unreachable;
+        defer super_ast.deinit(gpa);
+    }
+
+    // if (html_ast.errors.len == 0) {
+    //     var out = std.ArrayList(u8).init(gpa);
+    //     defer out.deinit();
+    //     html_ast.render(src, out.writer()) catch unreachable;
+
+    //     eqlIgnoreWhitespace(src, out.items);
+
+    //     var full_circle = std.ArrayList(u8).init(gpa);
+    //     defer full_circle.deinit();
+    //     html_ast.render(out.items, full_circle.writer()) catch unreachable;
+
+    //     std.debug.assert(std.mem.eql(u8, out.items, full_circle.items));
+
+    //     const super_ast = super.Ast.init(gpa, html_ast, src) catch unreachable;
+    //     defer super_ast.deinit(gpa);
+    // }
+
+}
+
+export fn zig_fuzz_test_astgen(buf: [*]u8, len: isize) void {
+    const gpa = gpa_impl.allocator();
+    const astgen_src = buf[0..@intCast(len)];
+
+    const clamp: u32 = @min(2, astgen_src.len);
+    const src = astgen.build(gpa, astgen_src[0..clamp]) catch unreachable;
+    defer gpa.free(src);
+
+    const html_ast = super.html.Ast.init(gpa, src, .superhtml) catch unreachable;
+    defer html_ast.deinit(gpa);
+
+    std.debug.assert(html_ast.errors.len == 0);
+
+    const super_ast = super.Ast.init(gpa, html_ast, src) catch unreachable;
+    defer super_ast.deinit(gpa);
+
+    // if (html_ast.errors.len == 0) {
+    //     var out = std.ArrayList(u8).init(gpa);
+    //     defer out.deinit();
+    //     html_ast.render(src, out.writer()) catch unreachable;
+
+    //     eqlIgnoreWhitespace(src, out.items);
+
+    //     var full_circle = std.ArrayList(u8).init(gpa);
+    //     defer full_circle.deinit();
+    //     html_ast.render(out.items, full_circle.writer()) catch unreachable;
+
+    //     std.debug.assert(std.mem.eql(u8, out.items, full_circle.items));
+
+    //     const super_ast = super.Ast.init(gpa, html_ast, src) catch unreachable;
+    //     defer super_ast.deinit(gpa);
+    // }
+}
+
+fn eqlIgnoreWhitespace(a: []const u8, b: []const u8) void {
+    var i: u32 = 0;
+    var j: u32 = 0;
+
+    while (i < a.len) : (i += 1) {
+        const a_byte = a[i];
+        if (std.ascii.isWhitespace(a_byte)) continue;
+        while (j < b.len) : (j += 1) {
+            const b_byte = b[j];
+            if (std.ascii.isWhitespace(b_byte)) continue;
+
+            if (a_byte != b_byte) {
+                const a_span: super.Span = .{ .start = i, .end = i + 1 };
+                const b_span: super.Span = .{ .start = j, .end = j + 1 };
+                std.debug.panic("mismatch! {c} != {c} \na = {any}\nb={any}\n", .{
+                    a_byte,
+                    b_byte,
+                    a_span.range(a),
+                    b_span.range(b),
+                });
+            }
+        }
     }
 }
 

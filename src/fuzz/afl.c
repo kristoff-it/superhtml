@@ -12,18 +12,19 @@
 #pragma clang optimize off
 #pragma GCC            optimize("O0")
 
-void zig_fuzz_test(unsigned char *, ssize_t);
+void zig_fuzz_test_direct(unsigned char *, ssize_t);
+void zig_fuzz_test_astgen(unsigned char *, ssize_t);
+
+__AFL_FUZZ_INIT();
 
 int main(int argc, char **argv) {
 
-  ssize_t len;                              
-  unsigned char buf[4096]; 
-  
   __AFL_INIT();
+  unsigned char *buf = __AFL_FUZZ_TESTCASE_BUF;
 
   while (__AFL_LOOP(UINT_MAX)) {
-    len = read(0, buf, 4096);
-    zig_fuzz_test(buf, len);
+    int len = __AFL_FUZZ_TESTCASE_LEN;
+    zig_fuzz_test_astgen(buf, len);
   }
 
   return 0;

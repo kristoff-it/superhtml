@@ -1,5 +1,5 @@
 const std = @import("std");
-const super = @import("super");
+const super = @import("superhtml");
 
 const FileType = enum { html, super };
 

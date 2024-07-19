@@ -1,16 +1,15 @@
 const Ast = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const html = @import("html.zig");
 const HtmlNode = html.Ast.Node;
 const Span = @import("root.zig").Span;
-const errors = @import("errors.zig");
-const ErrWriter = errors.ErrWriter;
 
 const log = std.log.scoped(.ast);
 
 src: []const u8,
-extends_idx: u32 = 0,
+extends_idx: u32,
 interface: std.StringArrayHashMapUnmanaged(u32),
 blocks: std.StringHashMapUnmanaged(u32),
 nodes: []const Node,
@@ -22,12 +21,19 @@ const Error = struct {
         bad_attr,
         late_else,
         late_loop,
-        var_no_value,
-        id_no_value,
+        missing_attribute_value,
+        loop_must_be_first_attr,
         loop_no_value,
+        block_cannot_be_inlined,
         block_missing_id,
+        already_branching,
+        id_under_loop,
         extend_without_template_attr,
+        top_level_super,
+        super_wants_no_attributes,
+        block_with_scripted_id,
         super_parent_element_missing_id,
+        template_interface_id_collision,
         missing_template_value,
         unexpected_extend,
         unscripted_var,
@@ -79,7 +85,7 @@ pub const Node = struct {
     }
 
     pub fn idAttr(node: Node) html.Tokenizer.Attr {
-        assert(@src(), node.kind.hasId());
+        std.debug.assert(node.kind.hasId());
         return node.id_template_parentid;
     }
     pub fn idValue(node: Node) html.Tokenizer.Attr.Value {
@@ -87,41 +93,41 @@ pub const Node = struct {
     }
 
     pub fn templateAttr(node: Node) html.Tokenizer.Attr {
-        assert(@src(), node.kind == .extend);
+        std.debug.assert(node.kind == .extend);
         return node.id_template_parentid;
     }
     pub fn templateValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.templateAttr().value().?;
+        return node.templateAttr().value.?;
     }
 
     pub fn branchingAttr(node: Node) ScriptedAttr {
-        assert(@src(), node.kind.branching() != .none);
+        std.debug.assert(node.kind.branching() != .none);
         return node.if_else_loop;
     }
     pub fn loopAttr(node: Node) ScriptedAttr {
-        assert(@src(), node.kind.branching() == .loop or node.kind.branching() == .inloop);
+        std.debug.assert(node.kind.branching() == .loop or node.kind.branching() == .inloop);
         return node.if_else_loop;
     }
     pub fn loopValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.loopAttr().attr.value().?;
+        return node.loopAttr().attr.value.?;
     }
     pub fn ifAttr(node: Node) ScriptedAttr {
-        assert(@src(), node.kind.branching() == .@"if");
+        std.debug.assert(node.kind.branching() == .@"if");
         return node.if_else_loop;
     }
     pub fn ifValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.ifAttr().attr.value().?;
+        return node.ifAttr().attr.value.?;
     }
     pub fn elseAttr(node: Node) ScriptedAttr {
-        assert(@src(), node.kind.branching() == .@"else");
+        std.debug.assert(node.kind.branching() == .@"else");
         return node.if_else_loop;
     }
     pub fn varAttr(node: Node) ScriptedAttr {
-        assert(@src(), node.kind.output() == .@"var");
+        std.debug.assert(node.kind.output() == .@"var");
         return node.var_ctx;
     }
     pub fn varValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.varAttr().attr.value().?;
+        return node.varAttr().attr.value.?;
     }
 
     pub fn debugName(node: Node, src: []const u8) []const u8 {
@@ -374,24 +380,23 @@ pub const Node = struct {
         }
     };
 
-    pub const SuperBlock = struct {
-        elem: HtmlNode,
+    pub const Block = struct {
+        parent_tag_name: Span,
         id_value: html.Tokenizer.Attr.Value,
     };
 
-    pub fn superBlock(node: Node, html_ast: html.Ast) SuperBlock {
-        assert(@src(), node.kind.role() == .super);
+    pub fn superBlock(node: Node, src: []const u8, html_ast: html.Ast) Block {
+        std.debug.assert(node.kind.role() == .super);
         const id_value = node.id_template_parentid.value.?;
+        const elem_idx = node.elem(html_ast).parent_idx;
+        const parent = html_ast.nodes[elem_idx];
+
+        const it = parent.startTagIterator(src, html_ast.language);
 
         return .{
-            // TODO: review this weird navigation pattern
-            .elem = html_ast.parent(node.elem(html_ast)).?,
+            .parent_tag_name = it.name_span,
             .id_value = id_value,
         };
-    }
-
-    pub fn cursor(node: *const Node) SuperCursor {
-        return SuperCursor.init(node);
     }
 
     pub fn debug(
@@ -438,12 +443,12 @@ pub const Node = struct {
             try w.print(" {s}", .{node.templateAttr().span().slice(src)});
         } else if (node.kind == .super) {
             try w.print(" ->#{s}", .{
-                node.superBlock(html_ast).id_value.span.slice(src),
+                node.superBlock(src, html_ast).id_value.span.slice(src),
             });
         }
 
         if (ast.child(node)) |ch| {
-            // assert(@src(), ch.parent == node);
+            // std.debug.assert( ch.parent == node);
             try w.print("\n", .{});
             try ch.debugInternal(src, html_ast, ast, w, lvl + 1);
             for (0..lvl) |_| try w.print("    ", .{});
@@ -451,8 +456,8 @@ pub const Node = struct {
         try w.print(")\n", .{});
 
         if (ast.next(node)) |sibling| {
-            // assert(@src(), sibling.prev == node);
-            // assert(@src(), sibling.parent == node.parent);
+            // std.debug.assert( sibling.prev == node);
+            // std.debug.assert( sibling.parent == node.parent);
             try sibling.debugInternal(src, html_ast, ast, w, lvl);
         }
     }
@@ -463,7 +468,7 @@ pub fn scripted_attrs(ast: Ast, node: Node) []Node.ScriptedAttr {
     return ast.scripted_attrs[span.start..span.end];
 }
 
-fn at(ast: Ast, idx: u32) ?Node {
+pub fn at(ast: Ast, idx: u32) ?Node {
     if (idx == 0) return null;
     return ast.nodes[idx];
 }
@@ -474,6 +479,10 @@ pub fn child(ast: Ast, n: Node) ?Node {
 
 pub fn next(ast: Ast, n: Node) ?Node {
     return ast.at(n.next_idx);
+}
+
+pub fn cursor(ast: Ast, idx: u32) Cursor {
+    return Cursor.init(ast, idx);
 }
 
 pub fn childrenCount(ast: Ast, node: Node) usize {
@@ -496,7 +505,10 @@ pub fn init(
     html_ast: html.Ast,
     src: []const u8,
 ) error{OutOfMemory}!Ast {
-    std.debug.assert(html_ast.language == .superhtml);
+    std.debug.assert(
+        html_ast.language == .superhtml or
+            html_ast.language == .xml,
+    );
 
     var p: Parser = .{
         .src = src,
@@ -506,14 +518,14 @@ pub fn init(
 
     try p.nodes.append(gpa, .{ .kind = .root, .elem_idx = 0, .depth = 0 });
 
-    var cursor = p.html.cursor(0);
+    var cur = p.html.cursor(0);
 
     var node_idx: u32 = 0;
     var low_mark: u32 = 1;
     var seen_non_comment_elems = false;
-    while (cursor.next()) |html_node| {
-        const html_node_idx = cursor.idx;
-        const depth = cursor.depth;
+    while (cur.next()) |html_node| {
+        const html_node_idx = cur.idx;
+        const depth = cur.depth;
 
         switch (html_node.kind) {
             .element,
@@ -553,7 +565,9 @@ pub fn init(
             .super, .element => {},
             .extend => {
                 // sets block mode
-                assert(@src(), p.extends_idx == 0);
+                std.debug.assert(p.extends_idx == 0);
+                std.debug.assert(new_node_idx == 1);
+
                 p.extends_idx = new_node_idx;
             },
             .block => {
@@ -605,7 +619,7 @@ pub fn init(
 
         const node = &p.nodes.items[node_idx];
         if (low_mark <= node.depth) {
-            assert(@src(), p.next(node.*) == null);
+            std.debug.assert(p.next(node.*) == null);
             node.next_idx = new_node_idx;
             new_node.parent_idx = node.parent_idx;
         } else {
@@ -624,7 +638,7 @@ pub fn init(
             }
         }
 
-        try p.validateNodeInTree(new_node.*);
+        try p.validateNodeInTree(gpa, new_node.*);
 
         node_idx = new_node_idx;
         low_mark = new_node.depth + 1;
@@ -637,6 +651,7 @@ pub fn init(
         .scripted_attrs = try p.scripted_attrs.toOwnedSlice(gpa),
         .interface = p.interface,
         .blocks = p.blocks,
+        .extends_idx = p.extends_idx,
     };
 }
 
@@ -695,15 +710,15 @@ const Parser = struct {
             .depth = depth,
         };
 
-        assert(@src(), depth > 0);
+        std.debug.assert(depth > 0);
         const block_context = block_mode and depth == 1;
         if (block_context) tmp_result.kind = .block;
 
         // used to detect when a block is missing an id
         var seen_id_attr = false;
 
-        var start_tag = elem.startTag(p.src, .superhtml);
-        const tag_name = start_tag.name_span;
+        var start_it = elem.startTagIterator(p.src, p.html.language);
+        const tag_name = start_it.name_span;
 
         // is it a special tag
         {
@@ -740,7 +755,7 @@ const Parser = struct {
                         // );
                     }
 
-                    const template_attr = start_tag.next(p.src) orelse {
+                    const template_attr = start_it.next(p.src) orelse {
                         try p.errors.append(gpa, .{
                             .kind = .extend_without_template_attr,
                             .main_location = tag_name,
@@ -773,7 +788,7 @@ const Parser = struct {
 
                     tmp_result.id_template_parentid = template_attr;
 
-                    if (start_tag.next(p.src)) |a| {
+                    if (start_it.next(p.src)) |a| {
                         try p.errors.append(gpa, .{
                             .kind = .bad_attr,
                             .main_location = a.name,
@@ -790,7 +805,11 @@ const Parser = struct {
                     else => unreachable,
                     .element => .super,
                     .block => {
-                        @panic("TODO");
+                        try p.errors.append(gpa, .{
+                            .kind = .top_level_super,
+                            .main_location = tag_name,
+                        });
+                        return null;
                         // return p.reportError(
                         //     tag_name,
                         //     "bad_super_tag",
@@ -805,16 +824,24 @@ const Parser = struct {
                     },
                 };
 
-                if (start_tag.next(p.src)) |a| {
-                    _ = a;
-                    @panic("TODO: explain that super can't have attrs");
+                while (start_it.next(p.src)) |a| {
+                    try p.errors.append(gpa, .{
+                        .kind = .super_wants_no_attributes,
+                        .main_location = a.span(),
+                    });
                 }
 
                 //The immediate parent must have an id
-                const pr = p.html.parent(tmp_result.elem(p.html)).?;
+                const pr = p.html.parent(tmp_result.elem(p.html)) orelse {
+                    try p.errors.append(gpa, .{
+                        .kind = .top_level_super,
+                        .main_location = tag_name,
+                    });
+                    return null;
+                };
 
-                var parent_start_tag = pr.startTag(p.src, .superhtml);
-                while (parent_start_tag.next(p.src)) |attr| {
+                var parent_start_it = pr.startTagIterator(p.src, p.html.language);
+                while (parent_start_it.next(p.src)) |attr| {
                     if (is(attr.name.slice(p.src), "id")) {
                         const value = attr.value orelse return null;
                         const gop = try p.interface.getOrPut(
@@ -822,7 +849,10 @@ const Parser = struct {
                             value.span.slice(p.src),
                         );
                         if (gop.found_existing) {
-                            @panic("TODO: explain that the interface of this template has a collision");
+                            try p.errors.append(gpa, .{
+                                .kind = .template_interface_id_collision,
+                                .main_location = value.span,
+                            });
                         }
 
                         tmp_result.id_template_parentid = attr;
@@ -835,7 +865,7 @@ const Parser = struct {
                 } else {
                     try p.errors.append(gpa, .{
                         .kind = .super_parent_element_missing_id,
-                        .main_location = parent_start_tag.name_span,
+                        .main_location = parent_start_it.name_span,
                     });
                     return null;
                     // p.reportError(
@@ -866,7 +896,7 @@ const Parser = struct {
             .start = @intCast(p.scripted_attrs.items.len),
             .end = @intCast(p.scripted_attrs.items.len),
         };
-        while (start_tag.next(p.src)) |attr| : (last_attr_end = attr.span().end) {
+        while (start_it.next(p.src)) |attr| : (last_attr_end = attr.span().end) {
             const name = attr.name;
             const name_string = name.slice(p.src);
 
@@ -927,7 +957,7 @@ const Parser = struct {
 
                 const value = attr.value orelse {
                     try p.errors.append(gpa, .{
-                        .kind = .id_no_value,
+                        .kind = .missing_attribute_value,
                         .main_location = name,
                     });
                     return null;
@@ -939,7 +969,12 @@ const Parser = struct {
                 if (std.mem.indexOfScalar(u8, maybe_code, '$') != null) {
                     switch (tmp_result.kind.role()) {
                         .root, .extend, .super_block, .super => unreachable,
-                        .block => @panic("TODO: explain blocks can't have scripted id attrs"),
+                        .block => {
+                            try p.errors.append(gpa, .{
+                                .kind = .block_with_scripted_id,
+                                .main_location = value.span,
+                            });
+                        },
                         .element => {},
                     }
                 } else {
@@ -967,7 +1002,7 @@ const Parser = struct {
 
                 continue;
             }
-            if (is(name_string, "debug")) {
+            if (builtin.mode == .Debug and is(name_string, "debug")) {
                 log.debug("\nfound debug attribute", .{});
                 log.debug("\n{s}\n", .{name.slice(p.src)});
                 name.debug(p.src);
@@ -1064,7 +1099,7 @@ const Parser = struct {
                     //     ,
                     // );
                     try p.errors.append(gpa, .{
-                        .kind = .var_no_value,
+                        .kind = .missing_attribute_value,
                         .main_location = name,
                     });
                     break :blk "";
@@ -1262,8 +1297,12 @@ const Parser = struct {
                     .element_id_inloop,
                     .element_id_inloop_var,
                     .element_id_inloop_ctx,
-                    => {
-                        @panic("TODO: explain why these blocks can't have an else attr");
+                    => blk: {
+                        try p.errors.append(gpa, .{
+                            .kind = .already_branching,
+                            .main_location = name,
+                        });
+                        break :blk tmp_result.kind;
                     },
 
                     .root,
@@ -1280,7 +1319,6 @@ const Parser = struct {
                         .kind = .late_else,
                         .main_location = name,
                     });
-                    // @panic("TODO: explain that else must be the first attr");
                 }
                 if (attr.value) |v| {
                     try p.errors.append(gpa, .{
@@ -1307,7 +1345,6 @@ const Parser = struct {
                         .kind = .late_loop,
                         .main_location = name,
                     });
-                    // @panic("TODO: explain that loop must be the first attr");
                 }
 
                 tmp_result.kind = switch (tmp_result.kind) {
@@ -1351,9 +1388,13 @@ const Parser = struct {
                     .element_id_inloop,
                     .element_id_inloop_var,
                     .element_id_inloop_ctx,
-                    => {
+                    => blk: {
                         // TODO: some of these cases should be unreachable
-                        @panic("TODO: explain why these blocks can't have an loop attr");
+                        try p.errors.append(gpa, .{
+                            .kind = .already_branching,
+                            .main_location = name,
+                        });
+                        break :blk tmp_result.kind;
                     },
 
                     .root,
@@ -1372,7 +1413,6 @@ const Parser = struct {
                         .kind = .loop_no_value,
                         .main_location = name,
                     });
-                    // @panic("TODO: explain that loop must have a value");
                     break :blk "";
                 };
 
@@ -1393,7 +1433,10 @@ const Parser = struct {
             // inline-loop
             if (is(name_string, "inline-loop")) {
                 if (last_attr_end != tag_name.end) {
-                    @panic("TODO: explain that loop must be the first attr");
+                    try p.errors.append(gpa, .{
+                        .kind = .loop_must_be_first_attr,
+                        .main_location = name,
+                    });
                 }
 
                 tmp_result.kind = switch (tmp_result.kind) {
@@ -1434,8 +1477,12 @@ const Parser = struct {
                     .element_id_inloop,
                     .element_id_inloop_var,
                     .element_id_inloop_ctx,
-                    => {
-                        @panic("TODO: explain why these blocks can't have an inline-loop attr");
+                    => blk: {
+                        try p.errors.append(gpa, .{
+                            .kind = .block_cannot_be_inlined,
+                            .main_location = name,
+                        });
+                        break :blk tmp_result.kind;
                     },
 
                     .root,
@@ -1444,6 +1491,13 @@ const Parser = struct {
                     .block,
                     .block_var,
                     .block_ctx,
+                    => blk: {
+                        try p.errors.append(gpa, .{
+                            .kind = .block_cannot_be_inlined,
+                            .main_location = name,
+                        });
+                        break :blk tmp_result.kind;
+                    },
                     // never discovered yet
                     .super_block,
                     .super_block_ctx,
@@ -1451,7 +1505,11 @@ const Parser = struct {
                 };
 
                 const value = attr.value orelse {
-                    @panic("TODO: explain that loop must have a value");
+                    try p.errors.append(gpa, .{
+                        .kind = .missing_attribute_value,
+                        .main_location = name,
+                    });
+                    return null;
                 };
 
                 //TODO: implement unescape
@@ -1515,7 +1573,7 @@ const Parser = struct {
         return new_node;
     }
 
-    fn validateNodeInTree(p: Parser, node: Node) !void {
+    fn validateNodeInTree(p: *Parser, gpa: std.mem.Allocator, node: Node) !void {
         // NOTE: This function should only validate rules that require
         //       having inserted the node in the tree. anything that
         //       can be tested sooner should go in self.buildNode().
@@ -1615,7 +1673,10 @@ const Parser = struct {
             while (maybe_parent) |par| : (maybe_parent = p.parent(par)) switch (par.kind.branching()) {
                 else => continue,
                 .loop, .inloop => {
-                    @panic("TODO");
+                    try p.errors.append(gpa, .{
+                        .kind = .id_under_loop,
+                        .main_location = node.idAttr().name,
+                    });
                     // p.reportError(
                     //     node.idAttr().name,
                     //     "id_under_loop",
@@ -1681,44 +1742,6 @@ const Parser = struct {
         // }
     }
 };
-
-fn fatal(self: Ast, comptime msg: []const u8, args: anytype) errors.Fatal {
-    return errors.fatal(self.err, msg, args);
-}
-
-fn reportError(
-    self: Ast,
-    span: Span,
-    comptime error_code: []const u8,
-    comptime title: []const u8,
-    comptime msg: []const u8,
-) errors.Fatal {
-    return errors.report(
-        self.err,
-        self.template_name,
-        self.template_path,
-        span,
-        self.src,
-        error_code,
-        title,
-        msg,
-    );
-}
-
-fn diagnostic(
-    self: Ast,
-    comptime note_line: []const u8,
-    span: Span,
-) !void {
-    return errors.diagnostic(
-        self.err,
-        self.template_name,
-        self.template_path,
-        note_line,
-        span,
-        self.src,
-    );
-}
 
 fn is(str1: []const u8, str2: []const u8) bool {
     return std.ascii.eqlIgnoreCase(str1, str2);
@@ -2004,60 +2027,66 @@ test "super" {
     try std.testing.expectEqual(cex, tree.childrenCount(tree.child(r).?));
 }
 // TODO: get rid of this once stack traces on arm64 work again
-fn assert(loc: std.builtin.SourceLocation, condition: bool) void {
-    if (!condition) {
-        std.debug.print("assertion error in {s} at {s}:{}:{}\n", .{
-            loc.fn_name,
-            loc.file,
-            loc.line,
-            loc.column,
-        });
-        std.process.exit(1);
-    }
-}
+// fn assert(loc: std.builtin.SourceLocation, condition: bool) void {
+//     if (!condition) {
+//         std.debug.print("assertion error in {s} at {s}:{}:{}\n", .{
+//             loc.fn_name,
+//             loc.file,
+//             loc.line,
+//             loc.column,
+//         });
+//         std.process.exit(1);
+//     }
+// }
 
-pub const SuperCursor = struct {
-    depth: usize,
-    current: *const Node,
+pub const Cursor = struct {
     skip_children_of_current_node: bool = false,
+    current_idx: u32,
+    depth: usize,
+    ast: Ast,
 
-    pub fn init(node: *const Node) SuperCursor {
-        return .{ .depth = 0, .current = node };
+    pub fn init(ast: Ast, idx: u32) Cursor {
+        return .{ .depth = 0, .current_idx = idx, .ast = ast };
     }
-    pub fn skipChildrenOfCurrentNode(self: *SuperCursor) void {
-        self.skip_children_of_current_node = true;
+
+    pub fn skipChildrenOfCurrentNode(c: *Cursor) void {
+        c.skip_children_of_current_node = true;
     }
-    pub fn next(self: *SuperCursor) ?*const Node {
-        if (self.skip_children_of_current_node) {
-            self.skip_children_of_current_node = false;
+    pub fn next(c: *Cursor) ?Node {
+        const current = c.ast.nodes[c.current_idx];
+        if (c.skip_children_of_current_node) {
+            c.skip_children_of_current_node = false;
         } else {
-            if (self.current.child) |ch| {
-                self.depth += 1;
-                self.current = ch;
+            if (current.first_child_idx != 0) {
+                const ch = c.ast.at(current.first_child_idx);
+                c.depth += 1;
+                c.current_idx = current.first_child_idx;
                 return ch;
             }
         }
 
-        if (self.depth == 0) return null;
+        if (c.depth == 0) return null;
 
-        if (self.current.next) |sb| {
-            self.current = sb;
+        if (current.next_idx != 0) {
+            const sb = c.ast.at(current.next_idx);
+            c.current_idx = current.next_idx;
             return sb;
         }
 
-        self.depth -= 1;
-        if (self.depth == 0) return null;
+        c.depth -= 1;
+        if (c.depth == 0) return null;
 
-        const parent = self.current.parent.?;
-        if (parent.next) |un| {
-            self.current = un;
+        const parent = c.ast.nodes[current.parent_idx];
+        if (parent.next_idx != 0) {
+            const un = c.ast.at(parent.next_idx);
+            c.current_idx = parent.next_idx;
             return un;
         }
 
         return null;
     }
 
-    pub fn reset(self: *SuperCursor, node: *const Node) void {
-        self.* = SuperCursor.init(node);
+    pub fn reset(c: *Cursor, idx: u32) void {
+        c.* = Cursor.init(c.ast, idx);
     }
 };

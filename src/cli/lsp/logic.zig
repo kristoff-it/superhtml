@@ -1,7 +1,9 @@
 const std = @import("std");
 const lsp = @import("lsp");
-const super = @import("super");
-const Handler = @import("../lsp.zig").Handler;
+const super = @import("superhtml");
+const lsp_namespace = @import("../lsp.zig");
+const Handler = lsp_namespace.Handler;
+const getRange = lsp_namespace.getRange;
 const Document = @import("Document.zig");
 
 const log = std.log.scoped(.ziggy_lsp);
@@ -76,12 +78,4 @@ pub fn loadFile(
     );
 
     defer self.gpa.free(msg);
-}
-
-pub fn getRange(span: super.Span, src: []const u8) lsp.types.Range {
-    const r = span.range(src);
-    return .{
-        .start = .{ .line = r.start.row, .character = r.start.col },
-        .end = .{ .line = r.end.row, .character = r.end.col },
-    };
 }

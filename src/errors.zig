@@ -34,17 +34,17 @@ pub fn report(
     template_path: []const u8,
     bad_node: Span,
     src: []const u8,
-    comptime error_code: []const u8,
+    error_code: []const u8,
     comptime title: []const u8,
     comptime msg: []const u8,
 ) Fatal {
     try header(writer, title, msg);
-    const error_line = comptime "[" ++ error_code ++ "]";
     try diagnostic(
         writer,
         template_name,
         template_path,
-        error_line,
+        true,
+        error_code,
         bad_node,
         src,
     );
@@ -55,7 +55,8 @@ pub fn diagnostic(
     writer: ErrWriter,
     template_name: []const u8,
     template_path: []const u8,
-    comptime note_line: []const u8,
+    bracket_line: bool,
+    note_line: []const u8,
     span: Span,
     src: []const u8,
 ) error{ErrIO}!void {
@@ -82,13 +83,15 @@ pub fn diagnostic(
 
     writer.print(
         \\
-        \\{s}
+        \\{s}{s}{s}
         \\({s}) {s}:{}:{}:
         \\    {s}
         \\    {s}
         \\
     , .{
+        if (bracket_line) "[" else "",
         note_line,
+        if (bracket_line) "]" else "",
         template_name,
         template_path,
         pos.start.row,

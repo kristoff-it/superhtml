@@ -2,7 +2,7 @@ const Document = @This();
 
 const std = @import("std");
 const assert = std.debug.assert;
-const super = @import("super");
+const super = @import("superhtml");
 
 const log = std.log.scoped(.lsp_document);
 

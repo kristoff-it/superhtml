@@ -182,6 +182,7 @@ pub const Token = union(enum) {
         pub fn isVoid(st: @This(), src: []const u8, language: Language) bool {
             std.debug.assert(st.name.end != 0);
 
+            if (language == .xml) return false;
             if (language == .superhtml) {
                 if (super_void_tag_names.has(st.name.slice(src))) {
                     return true;
@@ -298,11 +299,11 @@ const State = union(enum) {
     },
     after_attribute_name: struct {
         tag: Token.Tag,
-        name: Span,
+        attribute_name: Span,
     },
     before_attribute_value: struct {
         tag: Token.Tag,
-        name: Span,
+        attribute_name: Span,
         equal_sign: u32,
     },
     attribute_value: AttributeValueState,
@@ -411,7 +412,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
     deferred: ?Token = null,
 } {
     while (true) {
-        // log.debug("at char: {any}", .{self.state});
+        log.debug("at char: {any}", .{self.state});
         switch (self.state) {
             .text => |state| {
                 if (!self.consume(src)) {
@@ -2189,7 +2190,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     self.state = .{
                         .after_attribute_name = .{
                             .tag = state,
-                            .name = .{ .start = 0, .end = 0 },
+                            .attribute_name = .{ .start = 0, .end = 0 },
                         },
                     };
                 } else switch (self.current) {
@@ -2217,7 +2218,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .{
                             .after_attribute_name = .{
                                 .tag = state,
-                                .name = .{ .start = 0, .end = 0 },
+                                .attribute_name = .{ .start = 0, .end = 0 },
                             },
                         };
                     },
@@ -2261,7 +2262,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     self.state = .{
                         .after_attribute_name = .{
                             .tag = state.tag,
-                            .name = .{
+                            .attribute_name = .{
                                 .start = state.name_start,
                                 .end = self.idx,
                             },
@@ -2281,7 +2282,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .{
                             .after_attribute_name = .{
                                 .tag = state.tag,
-                                .name = .{
+                                .attribute_name = .{
                                     .start = state.name_start,
                                     .end = self.idx,
                                 },
@@ -2295,7 +2296,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .before_attribute_value = .{
                             .tag = state.tag,
                             .equal_sign = self.idx - 1,
-                            .name = .{
+                            .attribute_name = .{
                                 .start = state.name_start,
                                 .end = self.idx - 1,
                             },
@@ -2370,15 +2371,15 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
 
                         // here, in > and in EOF there could be no attr name
                         // to return.
-                        if (state.name.len() > 0) {
+                        if (state.attribute_name.len() > 0) {
                             tag.attr_count += 1;
                         }
                         self.state = .{ .self_closing_start_tag = tag };
-                        if (self.return_attrs and state.name.len() > 0) {
+                        if (self.return_attrs and state.attribute_name.len() > 0) {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name = state.name,
+                                        .name = state.attribute_name,
                                         .value = null,
                                     },
                                 },
@@ -2391,7 +2392,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .{
                             .before_attribute_value = .{
                                 .tag = state.tag,
-                                .name = state.name,
+                                .attribute_name = state.attribute_name,
                                 .equal_sign = self.idx - 1,
                             },
                         };
@@ -2399,22 +2400,25 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the data state. Emit the current tag token.
                     '>' => {
+                        // if this trips, then if end == 0 we need to
+                        // set tag.name.end ourselves.
+                        std.debug.assert(state.tag.name.end != 0);
+
                         var tag = state.tag;
                         tag.span.end = self.idx;
-                        tag.name.end = self.idx;
 
                         // here, in / and in EOF there could be no attr name
                         // to return.
-                        if (state.name.len() > 0) {
+                        if (state.attribute_name.len() > 0) {
                             tag.attr_count += 1;
                         }
 
                         self.state = .data;
-                        if (self.return_attrs and state.name.len() > 0) {
+                        if (self.return_attrs and state.attribute_name.len() > 0) {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name = state.name,
+                                        .name = state.attribute_name,
                                         .value = null,
                                     },
                                 },
@@ -2426,7 +2430,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Anything else
                     // Start a new attribute in the current tag token. Set that attribute name and value to the empty string. Reconsume in the attribute name state.
                     else => {
-                        std.debug.assert(state.name.len() != 0);
+                        std.debug.assert(state.attribute_name.len() != 0);
 
                         self.idx -= 1;
                         var tag = state.tag;
@@ -2443,7 +2447,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             return .{
                                 .token = .{
                                     .attr = .{
-                                        .name = state.name,
+                                        .name = state.attribute_name,
                                         .value = null,
                                     },
                                 },
@@ -2459,7 +2463,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     self.state = .{
                         .attribute_value_unquoted = .{
                             .tag = state.tag,
-                            .name = state.name,
+                            .name = state.attribute_name,
                             .value_start = self.idx,
                         },
                     };
@@ -2475,7 +2479,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '"' => self.state = .{
                         .attribute_value = .{
                             .tag = state.tag,
-                            .name = state.name,
+                            .name = state.attribute_name,
                             .quote = .double,
                             .value_start = self.idx,
                         },
@@ -2485,7 +2489,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '\'' => self.state = .{
                         .attribute_value = .{
                             .tag = state.tag,
-                            .name = state.name,
+                            .name = state.attribute_name,
                             .quote = .single,
                             .value_start = self.idx,
                         },
@@ -2519,7 +2523,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .{
                             .attribute_value_unquoted = .{
                                 .tag = state.tag,
-                                .name = state.name,
+                                .name = state.attribute_name,
                                 .value_start = self.idx,
                             },
                         };
@@ -2703,7 +2707,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .attr = .{
                                         .name = state.name,
                                         .value = .{
-                                            .quote = .single,
+                                            .quote = .none,
                                             .span = .{
                                                 .start = state.value_start,
                                                 .end = self.idx - 1,

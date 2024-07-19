@@ -1,11 +1,15 @@
-// const interpreter = @import("interpreter.zig");
+const interpreter = @import("interpreter.zig");
 const std = @import("std");
 pub const html = @import("html.zig");
 pub const Ast = @import("Ast.zig");
-// pub const SuperVM = interpreter.SuperVM;
-// pub const Exception = interpreter.Exception;
+pub const SuperVM = interpreter.SuperVM;
+pub const Exception = interpreter.Exception;
 
-pub const Language = enum { html, superhtml };
+pub const Language = enum {
+    html,
+    superhtml,
+    xml,
+};
 pub const max_size = 4 * 1024 * 1024 * 1024;
 
 const Range = struct {
@@ -69,6 +73,17 @@ pub const Span = struct {
         } else src.len - 1;
 
         return .{ .line = src[s..e], .start = s };
+    }
+
+    pub fn getName(span: Span, full_src: []const u8, language: Language) Span {
+        var temp_tok: html.Tokenizer = .{
+            .language = language,
+            .return_attrs = true,
+            .idx = span.start,
+        };
+
+        const src = full_src[0..span.end];
+        return temp_tok.getName(src).?;
     }
 
     pub fn debug(span: Span, src: []const u8) void {

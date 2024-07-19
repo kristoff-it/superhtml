@@ -6,7 +6,7 @@ const types = lsp.types;
 const offsets = lsp.offsets;
 const ResultType = lsp.server.ResultType;
 const Message = lsp.server.Message;
-const super = @import("super");
+const super = @import("superhtml");
 const Document = @import("lsp/Document.zig");
 const version = @import("../cli.zig").version;
 
@@ -273,7 +273,7 @@ pub const Handler = struct {
         self: Handler,
         arena: std.mem.Allocator,
         request: types.DocumentFormattingParams,
-    ) !?[]types.TextEdit {
+    ) !?[]const types.TextEdit {
         log.debug("format request!!", .{});
 
         const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
@@ -290,7 +290,7 @@ pub const Handler = struct {
             arena,
             doc.src,
             buf.items,
-            .@"utf-8",
+            self.offset_encoding,
         );
 
         if (builtin.mode == .Debug) {
@@ -343,3 +343,11 @@ pub const Handler = struct {
         log.warn("received response from client with id '{s}' that has no handler!", .{id});
     }
 };
+
+pub fn getRange(span: super.Span, src: []const u8) lsp.types.Range {
+    const r = span.range(src);
+    return .{
+        .start = .{ .line = r.start.row, .character = r.start.col },
+        .end = .{ .line = r.end.row, .character = r.end.col },
+    };
+}

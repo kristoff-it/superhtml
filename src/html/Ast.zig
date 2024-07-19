@@ -116,7 +116,7 @@ pub const Node = struct {
         }
     };
 
-    pub fn startTag(n: Node, src: []const u8, language: Language) TagIterator {
+    pub fn startTagIterator(n: Node, src: []const u8, language: Language) TagIterator {
         var t: Tokenizer = .{
             .language = language,
             .idx = n.open.start,
@@ -252,7 +252,7 @@ pub fn init(
                     const node_kind: Node.Kind = switch (tag.kind) {
                         else => unreachable,
                         .start_self => blk: {
-                            if (svg_lvl == 0) {
+                            if (svg_lvl == 0 and language != .xml) {
                                 try errors.append(.{
                                     .tag = .{
                                         .ast = .html_elements_cant_self_close,
@@ -268,7 +268,10 @@ pub fn init(
                             .element,
                     };
 
-                    if (std.ascii.eqlIgnoreCase(tag.name.slice(src), "svg")) svg_lvl += 1;
+                    const name = tag.name.slice(src);
+                    if (std.ascii.eqlIgnoreCase(tag.name.slice(src), "svg")) {
+                        svg_lvl += 1;
+                    }
 
                     var new: Node = .{ .kind = node_kind, .open = tag.span };
                     switch (current.direction()) {
@@ -288,11 +291,10 @@ pub fn init(
                     try nodes.append(new);
                     current = &nodes.items[current_idx];
 
-                    const name = tag.name.slice(src);
                     if (std.ascii.eqlIgnoreCase("script", name)) {
                         tokenizer.gotoScriptData();
-                    } else if (rcdata_names.has(name)) {
-                        tokenizer.gotoRcData(name);
+                        // } else if (rcdata_names.has(name)) {
+                        //     tokenizer.gotoRcData(name);
                     } else if (rawtext_names.has(name)) {
                         tokenizer.gotoRawText(name);
                     } else if (unsupported_names.has(name)) {
@@ -397,18 +399,14 @@ pub fn init(
                             break :blk name_span.slice(tag_src);
                         };
 
-                        log.debug("matching cn: {s} tag: {s}\n{any}", .{
-                            current_name,
-                            tag.name.slice(src),
-                            tag.span.range(src),
-                        });
-
                         std.debug.assert(!current.isClosed());
                         if (std.ascii.eqlIgnoreCase(
                             current_name,
                             tag.name.slice(src),
                         )) {
-                            if (std.ascii.eqlIgnoreCase(current_name, "svg")) svg_lvl -= 1;
+                            if (std.ascii.eqlIgnoreCase(current_name, "svg")) {
+                                svg_lvl -= 1;
+                            }
                             current.close = tag.span;
                             var cur = original_current;
                             while (cur != current) {
@@ -536,6 +534,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
     // var last_open_was_vertical = false;
     var pre: u32 = 0;
     while (true) {
+        log.debug("looping, ind: {}, dir: {s}", .{
+            indentation,
+            @tagName(direction),
+        });
         switch (direction) {
             .enter => {
                 log.debug("rendering enter ({}): {s} {any}", .{
@@ -544,13 +546,16 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     // current.open.slice(src),
                     current,
                 });
+
                 const maybe_ws = src[last_rbracket..current.open.start];
+                log.debug("maybe_ws = '{s}'", .{maybe_ws});
                 if (pre > 0) {
                     try w.writeAll(maybe_ws);
                 } else {
                     const vertical = maybe_ws.len > 0;
 
                     if (vertical) {
+                        log.debug("adding a newline", .{});
                         try w.writeAll("\n");
                         for (0..indentation) |_| {
                             try w.writeAll("  ");
@@ -608,10 +613,17 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             .text => {
                 std.debug.assert(direction == .enter);
 
-                try w.writeAll(current.open.slice(src));
+                const txt = current.open.slice(src);
+                log.debug("text = '{s}', txt.len = {} src start = '{s}'", .{
+                    txt,
+                    txt.len,
+                    src[0..10],
+                });
+                try w.writeAll(txt);
                 last_rbracket = current.open.end;
 
                 if (current.next_idx != 0) {
+                    log.debug("text next: {}", .{current.next_idx});
                     current = ast.nodes[current.next_idx];
                 } else {
                     current = ast.nodes[current.parent_idx];
@@ -1088,6 +1100,20 @@ test "spans" {
         \\    <span>World</span>
         \\  </body>
         \\</html>
+    ;
+
+    const ast = try Ast.init(std.testing.allocator, case, .html);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+}
+test "arrow span" {
+    const case =
+        \\<a href="$if.permalink()">← <span var="$if.title"></span></a>
+    ;
+    const expected =
+        \\<a href="$if.permalink()">←
+        \\  <span var="$if.title"></span></a>
     ;
 
     const ast = try Ast.init(std.testing.allocator, case, .html);
