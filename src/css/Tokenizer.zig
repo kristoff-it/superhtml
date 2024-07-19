@@ -18,8 +18,8 @@ pub const Token = union(enum) {
     bad_url: Span,
     delim: u32,
     number: Span,
-    percentage, // TODO
-    dimension, // TODO
+    percentage: Span,
+    dimension: Dimension,
     cdo: u32,
     cdc: u32,
     colon: u32,
@@ -32,6 +32,11 @@ pub const Token = union(enum) {
     open_curly: u32,
     close_curly: u32,
 
+    pub const Dimension = struct {
+        number: Span,
+        unit: Span,
+    };
+
     pub fn span(self: Token) Span {
         return switch (self) {
             .ident,
@@ -42,14 +47,16 @@ pub const Token = union(enum) {
             .bad_string,
             .url,
             .bad_url,
-            => |s| s,
+            .number,
             .percentage,
+            => |s| s,
             .dimension,
-            => @panic("TODO"),
+            => |d| .{ .start = d.number.start, .end = d.unit.end },
             .cdo,
             => |i| .{ .start = i, .end = i + 4 },
             .cdc,
             => |i| .{ .start = i, .end = i + 3 },
+            .delim,
             .colon,
             .semicolon,
             .comma,
@@ -105,6 +112,20 @@ fn isIdentChar(char: u8) bool {
     };
 }
 
+// https://www.w3.org/TR/css-syntax-3/#check-if-three-code-points-would-start-an-ident-sequence
+fn next3WouldStartIdent(self: *Tokenizer, src: []const u8) bool {
+    if (self.idx + 2 >= src.len) return false;
+
+    const chars = src[self.idx .. self.idx + 3];
+
+    // TODO: Support escape sequences
+    return switch (chars[0]) {
+        '-' => isIdentStartChar(chars[1]) or chars[1] == '-',
+        '\\' => @panic("TODO"),
+        else => isIdentStartChar(chars[0]),
+    };
+}
+
 // https://www.w3.org/TR/css-syntax-3/#consume-token
 pub fn next(self: *Tokenizer, src: []const u8) ?Token {
     if (self.consume(src)) {
@@ -120,14 +141,33 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
                 return self.next(src);
             },
             '"' => @panic("TODO"),
-            '#' => @panic("TODO"),
+            '#' => {
+                // TODO: Support escape sequeces
+
+                if (self.peek(src) != null and isIdentChar(self.peek(src).?)) {
+                    var token = .{ .hash = self.identSequence(src) };
+                    token.hash.start -= 1;
+                    return token;
+                } else {
+                    return .{ .delim = self.idx - 1 };
+                }
+            },
             '\'' => @panic("TODO"),
             '(' => @panic("TODO"),
             ')' => @panic("TODO"),
             '+' => @panic("TODO"),
-            ',' => @panic("TODO"),
+            ',' => return .{ .comma = self.idx - 1 },
             '-' => @panic("TODO"),
-            '.' => @panic("TODO"),
+            '.' => {
+                if (self.peek(src)) |char| {
+                    switch (char) {
+                        '0'...'9' => @panic("TODO"),
+                        else => {},
+                    }
+                }
+
+                return .{ .delim = self.idx - 1 };
+            },
             ':' => return .{ .colon = self.idx - 1 },
             ';' => return .{ .semicolon = self.idx - 1 },
             '<' => @panic("TODO"),
@@ -137,12 +177,15 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
             ']' => @panic("TODO"),
             '{' => return .{ .open_curly = self.idx - 1 },
             '}' => return .{ .close_curly = self.idx - 1 },
-            '0'...'9' => @panic("TODO"),
+            '0'...'9' => {
+                self.reconsume(src);
+                return self.numeric(src);
+            },
             else => |c| if (isIdentStartChar(c)) {
                 self.reconsume(src);
                 return self.identLike(src);
             } else {
-                @panic("TODO");
+                return .{ .delim = self.idx - 1 };
             },
         }
     } else {
@@ -180,6 +223,50 @@ fn identLike(self: *Tokenizer, src: []const u8) Token {
         @panic("TODO");
     } else {
         return .{ .ident = span };
+    }
+}
+
+// https://www.w3.org/TR/css-syntax-3/#consume-a-numeric-token
+fn numeric(self: *Tokenizer, src: []const u8) Token {
+    const start = self.idx;
+
+    if (self.peek(src)) |c| {
+        if (c == '+' or c == '-') {
+            std.debug.assert(self.consume(src));
+        }
+    }
+
+    while (self.peek(src)) |c| {
+        switch (c) {
+            '0'...'9' => std.debug.assert(self.consume(src)),
+            else => break,
+        }
+    }
+
+    // TODO: Support fractional part (e.g. 1.2)
+
+    // TODO: Support exponents
+
+    if (self.next3WouldStartIdent(src)) {
+        const num_end = self.idx;
+
+        const unit = self.identSequence(src);
+
+        return .{
+            .dimension = .{
+                .number = .{ .start = start, .end = num_end },
+                .unit = unit,
+            },
+        };
+    } else if (self.peek(src) != null and self.peek(src).? == '%') {
+        std.debug.assert(self.consume(src));
+        return .{
+            .percentage = .{ .start = start, .end = self.idx },
+        };
+    } else {
+        return .{
+            .number = .{ .start = start, .end = self.idx },
+        };
     }
 }
 
