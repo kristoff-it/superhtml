@@ -5,13 +5,16 @@ const Span = root.Span;
 
 const Ast = @This();
 
-pub const Rule = union(enum) {
-    style: Style,
-    at: At,
+pub const Rule = struct {
+    type: union(enum) {
+        style: Style,
+        at: At,
+    },
+    next: ?u32,
 
     pub const Style = struct {
-        selectors: []const Selector,
-        declarations: []const Declaration,
+        selectors: Span,
+        declarations: Span,
         multiline_decl: bool,
 
         pub const Selector = union(enum) {
@@ -19,7 +22,7 @@ pub const Rule = union(enum) {
 
             pub const Simple = struct {
                 element_name: ?ElementName,
-                specifiers: []const Specifier,
+                specifiers: Span,
 
                 pub const ElementName = union(enum) {
                     name: Span,
@@ -33,11 +36,7 @@ pub const Rule = union(enum) {
                     pseudo, // TODO
                 };
 
-                pub fn deinit(self: Simple, allocator: std.mem.Allocator) void {
-                    allocator.free(self.specifiers);
-                }
-
-                pub fn render(self: Simple, src: []const u8, out_stream: anytype) !void {
+                pub fn render(self: Simple, ast: Ast, src: []const u8, out_stream: anytype) !void {
                     if (self.element_name) |element_name| {
                         switch (element_name) {
                             .name => |name| _ = try out_stream.write(name.slice(src)),
@@ -45,7 +44,7 @@ pub const Rule = union(enum) {
                         }
                     }
 
-                    for (self.specifiers) |specifier| {
+                    for (ast.specifiers[self.specifiers.start..self.specifiers.end]) |specifier| {
                         switch (specifier) {
                             .hash => |hash| try out_stream.print("#{s}", .{hash.slice(src)}),
                             .class => |class| try out_stream.print(".{s}", .{class.slice(src)}),
@@ -56,103 +55,32 @@ pub const Rule = union(enum) {
                 }
             };
 
-            pub fn deinit(self: Selector, allocator: std.mem.Allocator) void {
+            pub fn render(self: Selector, ast: Ast, src: []const u8, out_stream: anytype) !void {
                 switch (self) {
-                    inline else => |sel| sel.deinit(allocator),
-                }
-            }
-
-            pub fn render(self: Selector, src: []const u8, out_stream: anytype) !void {
-                switch (self) {
-                    inline else => |sel| try sel.render(src, out_stream),
+                    inline else => |sel| try sel.render(ast, src, out_stream),
                 }
             }
         };
 
         pub const Declaration = struct {
             property: Span,
-            value: []const Expression,
-
-            pub const Expression = union(enum) {
-                keyword: Span,
-                rgb3: Rgb3,
-                rgb6: Rgb6,
-                dimension: Dimension,
-
-                pub const Rgb3 = struct {
-                    r: u4,
-                    g: u4,
-                    b: u4,
-                };
-
-                pub const Rgb6 = struct {
-                    r: u8,
-                    g: u8,
-                    b: u8,
-                };
-
-                pub const Dimension = struct {
-                    number: f32,
-                    unit: Unit,
-
-                    pub const Unit = enum {
-                        px,
-                    };
-                };
-
-                pub fn render(self: Expression, src: []const u8, out_stream: anytype) !void {
-                    switch (self) {
-                        .keyword => |keyword| {
-                            _ = try out_stream.write(keyword.slice(src));
-                        },
-                        .rgb3 => |rgb3| {
-                            try out_stream.print("#{x:0>1}{x:0>1}{x:0>1}", .{ rgb3.r, rgb3.g, rgb3.b });
-                        },
-                        .rgb6 => |rgb6| {
-                            try out_stream.print("#{x:0>2}{x:0>2}{x:0>2}", .{ rgb6.r, rgb6.g, rgb6.b });
-                        },
-                        .dimension => |dimension| {
-                            try out_stream.print("{d}{s}", .{ dimension.number, @tagName(dimension.unit) });
-                        },
-                    }
-                }
-            };
-
-            pub fn deinit(self: Declaration, allocator: std.mem.Allocator) void {
-                allocator.free(self.value);
-            }
+            value: Span,
 
             pub fn render(self: Declaration, src: []const u8, out_stream: anytype) !void {
                 _ = try out_stream.write(self.property.slice(src));
-                _ = try out_stream.write(":");
-                for (self.value) |expression| {
-                    _ = try out_stream.write(" ");
-                    try expression.render(src, out_stream);
-                }
+                _ = try out_stream.write(": ");
+                _ = try out_stream.write(self.value.slice(src));
             }
         };
 
-        pub fn deinit(self: Style, allocator: std.mem.Allocator) void {
-            for (self.selectors) |selector| {
-                selector.deinit(allocator);
-            }
-
-            for (self.declarations) |declaration| {
-                declaration.deinit(allocator);
-            }
-
-            allocator.free(self.selectors);
-            allocator.free(self.declarations);
-        }
-
-        pub fn render(self: Style, src: []const u8, out_stream: anytype, depth: usize) !void {
+        pub fn render(self: Style, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) !void {
             for (0..depth) |_| _ = try out_stream.write("    ");
-            for (self.selectors, 0..) |selector, i| {
+            for (ast.selectors[self.selectors.start..self.selectors.end], 0..) |selector, i| {
                 if (i != 0) {
                     _ = try out_stream.write(", ");
                 }
 
-                try selector.render(src, out_stream);
+                try selector.render(ast, src, out_stream);
             }
 
             _ = try out_stream.write(" {");
@@ -160,7 +88,7 @@ pub const Rule = union(enum) {
             if (self.multiline_decl) {
                 _ = try out_stream.write("\n");
 
-                for (self.declarations) |declaration| {
+                for (ast.declarations[self.declarations.start..self.declarations.end]) |declaration| {
                     for (0..depth + 1) |_| _ = try out_stream.write("    ");
                     try declaration.render(src, out_stream);
                     _ = try out_stream.write(";\n");
@@ -169,7 +97,7 @@ pub const Rule = union(enum) {
                 for (0..depth) |_| _ = try out_stream.write("    ");
             } else {
                 _ = try out_stream.write(" ");
-                for (self.declarations, 0..) |declaration, i| {
+                for (ast.declarations[self.declarations.start..self.declarations.end], 0..) |declaration, i| {
                     if (i != 0) _ = try out_stream.write("; ");
                     try declaration.render(src, out_stream);
                 }
@@ -182,28 +110,29 @@ pub const Rule = union(enum) {
 
     pub const At = struct {};
 
-    pub fn deinit(self: Rule, allocator: std.mem.Allocator) void {
-        switch (self) {
-            .style => |style| style.deinit(allocator),
-            .at => @panic("TODO"),
-        }
-    }
-
-    pub fn render(self: Rule, src: []const u8, out_stream: anytype, depth: usize) !void {
-        switch (self) {
-            .style => |style| try style.render(src, out_stream, depth),
+    pub fn render(self: Rule, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) !void {
+        switch (self.type) {
+            .style => |style| try style.render(ast, src, out_stream, depth),
             .at => @panic("TODO"),
         }
     }
 };
 
+first_rule: u32,
 rules: []const Rule,
+selectors: []const Rule.Style.Selector,
+declarations: []const Rule.Style.Declaration,
+specifiers: []const Rule.Style.Selector.Simple.Specifier,
 
 const State = struct {
     allocator: std.mem.Allocator,
     tokenizer: Tokenizer,
     src: []const u8,
     reconsumed: ?Tokenizer.Token,
+    rules: std.ArrayListUnmanaged(Rule),
+    selectors: std.ArrayListUnmanaged(Rule.Style.Selector),
+    declarations: std.ArrayListUnmanaged(Rule.Style.Declaration),
+    specifiers: std.ArrayListUnmanaged(Rule.Style.Selector.Simple.Specifier),
 
     fn consume(self: *State) ?Tokenizer.Token {
         if (self.reconsumed) |tok| {
@@ -253,12 +182,17 @@ pub fn formatter(self: Ast, src: []const u8) Formatter {
 }
 
 pub fn render(self: Ast, src: []const u8, out_stream: anytype) !void {
-    for (self.rules, 0..) |rule, i| {
-        if (i != 0) {
+    var first = true;
+    var rule = self.rules[self.first_rule];
+    while (true) {
+        if (!first) {
             _ = try out_stream.write("\n\n");
         }
+        first = false;
 
-        try rule.render(src, out_stream, 0);
+        try rule.render(self, src, out_stream, 0);
+
+        rule = self.rules[rule.next orelse break];
     }
 }
 
@@ -270,16 +204,26 @@ pub fn init(allocator: std.mem.Allocator, src: []const u8) error{OutOfMemory}!As
         .tokenizer = .{},
         .src = src,
         .reconsumed = null,
+        .rules = .{},
+        .selectors = .{},
+        .declarations = .{},
+        .specifiers = .{},
     };
 
+    const first_rule = try parseRules(&state);
+
     return .{
-        .rules = try parseRules(&state),
+        .first_rule = first_rule,
+        .rules = try state.rules.toOwnedSlice(allocator),
+        .selectors = try state.selectors.toOwnedSlice(allocator),
+        .declarations = try state.declarations.toOwnedSlice(allocator),
+        .specifiers = try state.specifiers.toOwnedSlice(allocator),
     };
 }
 
-fn parseRules(s: *State) ![]const Rule {
-    var rules = std.ArrayList(Rule).init(s.allocator);
-    defer rules.deinit();
+fn parseRules(s: *State) !u32 {
+    var last_rule: ?u32 = null;
+    var first_rule: ?u32 = null;
 
     while (true) {
         if (s.consume()) |token| {
@@ -291,33 +235,39 @@ fn parseRules(s: *State) ![]const Rule {
                     s.reconsume(token);
 
                     const rule = .{
-                        .style = try parseStyleRule(s),
+                        .type = .{
+                            .style = try parseStyleRule(s),
+                        },
+                        .next = null,
                     };
 
-                    try rules.append(rule);
+                    try s.rules.append(s.allocator, rule);
+
+                    if (first_rule == null) first_rule = @intCast(s.rules.items.len - 1);
+
+                    if (last_rule) |idx| {
+                        s.rules.items[idx].next = @intCast(s.rules.items.len - 1);
+                    }
+
+                    last_rule = @intCast(s.rules.items.len - 1);
                 },
             }
         } else break;
     }
 
-    return try rules.toOwnedSlice();
+    return first_rule orelse @panic("TODO");
 }
 
 fn parseStyleRule(s: *State) !Rule.Style {
-    var selectors = std.ArrayList(Rule.Style.Selector).init(s.allocator);
-    defer selectors.deinit();
-
-    var declarations = std.ArrayList(Rule.Style.Declaration).init(s.allocator);
-    defer declarations.deinit();
-
-    try selectors.append(try parseSelector(s));
+    try s.selectors.append(s.allocator, try parseSelector(s));
+    const sel_start = s.selectors.items.len - 1;
 
     while (true) {
         if (s.consume()) |token| {
             if (token == .comma) {
                 if (s.peek() != null and s.peek().? == .open_curly) break;
 
-                try selectors.append(try parseSelector(s));
+                try s.selectors.append(s.allocator, try parseSelector(s));
             } else {
                 s.reconsume(token);
                 break;
@@ -336,7 +286,8 @@ fn parseStyleRule(s: *State) !Rule.Style {
         @panic("TODO");
     }
 
-    try declarations.append(try parseDeclaration(s));
+    try s.declarations.append(s.allocator, parseDeclaration(s));
+    const decl_start = s.declarations.items.len - 1;
 
     var multiline_decl = false;
 
@@ -348,7 +299,7 @@ fn parseStyleRule(s: *State) !Rule.Style {
                     break;
                 }
 
-                try declarations.append(try parseDeclaration(s));
+                try s.declarations.append(s.allocator, parseDeclaration(s));
             } else {
                 s.reconsume(token);
                 break;
@@ -368,8 +319,8 @@ fn parseStyleRule(s: *State) !Rule.Style {
     }
 
     return .{
-        .selectors = try selectors.toOwnedSlice(),
-        .declarations = try declarations.toOwnedSlice(),
+        .selectors = .{ .start = @intCast(sel_start), .end = @intCast(s.selectors.items.len) },
+        .declarations = .{ .start = @intCast(decl_start), .end = @intCast(s.declarations.items.len) },
         .multiline_decl = multiline_decl,
     };
 }
@@ -382,7 +333,7 @@ fn parseSelector(s: *State) !Rule.Style.Selector {
     };
 }
 
-fn parseDeclaration(s: *State) !Rule.Style.Declaration {
+fn parseDeclaration(s: *State) Rule.Style.Declaration {
     const property = if (s.consume()) |token| switch (token) {
         .ident => |ident| ident,
         else => @panic("TODO"),
@@ -399,15 +350,14 @@ fn parseDeclaration(s: *State) !Rule.Style.Declaration {
 
     return .{
         .property = property,
-        .value = try parseDeclarationValue(s),
+        .value = parseDeclarationValue(s),
     };
 }
 
 fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
     var element_name: ?Rule.Style.Selector.Simple.ElementName = null;
 
-    var specifiers = std.ArrayList(Rule.Style.Selector.Simple.Specifier).init(s.allocator);
-    defer specifiers.deinit();
+    const spec_start = s.specifiers.items.len;
 
     if (s.consume()) |token| {
         switch (token) {
@@ -426,7 +376,7 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
                 .hash => |hash| {
                     var span = hash;
                     span.start += 1;
-                    try specifiers.append(.{ .hash = span });
+                    try s.specifiers.append(s.allocator, .{ .hash = span });
                 },
                 .delim => |delim| switch (s.src[delim]) {
                     '.' => {
@@ -434,7 +384,7 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
                         if (name_token != .ident) @panic("TODO");
                         const name = name_token.ident;
 
-                        try specifiers.append(.{ .class = name });
+                        try s.specifiers.append(s.allocator, .{ .class = name });
                     },
                     else => @panic("TODO"),
                 },
@@ -450,103 +400,47 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
         }
     }
 
-    if (element_name == null and specifiers.items.len == 0) {
+    const spec_end = s.specifiers.items.len;
+
+    if (element_name == null and spec_start == spec_end) {
         @panic("TODO");
     }
 
     return .{
         .element_name = element_name,
-        .specifiers = try specifiers.toOwnedSlice(),
+        .specifiers = .{ .start = @intCast(spec_start), .end = @intCast(spec_end) },
     };
 }
 
-fn parseDeclarationValue(s: *State) ![]const Rule.Style.Declaration.Expression {
-    var value = std.ArrayList(Rule.Style.Declaration.Expression).init(s.allocator);
-    defer value.deinit();
+fn parseDeclarationValue(s: *State) Span {
+    var start: ?u32 = null;
+    var end: u32 = undefined;
 
     while (s.peek()) |token| {
         switch (token) {
             .semicolon, .close_curly => break,
             else => {
-                try value.append(try parseDeclarationExpression(s));
-            },
-        }
-    }
-
-    if (value.items.len == 0) {
-        @panic("TODO");
-    }
-
-    return try value.toOwnedSlice();
-}
-
-fn parseDeclarationExpression(s: *State) !Rule.Style.Declaration.Expression {
-    // TODO: Support operators
-
-    if (s.consume()) |token| {
-        switch (token) {
-            .number => @panic("TODO"),
-            .percentage => @panic("TODO"),
-            .dimension => |dimension| {
-                return .{
-                    .dimension = .{
-                        .number = std.fmt.parseFloat(f32, dimension.number.slice(s.src)) catch @panic("TODO"),
-                        .unit = unit: {
-                            inline for (std.meta.fields(Rule.Style.Declaration.Expression.Dimension.Unit)) |field| {
-                                if (std.mem.eql(u8, dimension.unit.slice(s.src), field.name)) {
-                                    break :unit @enumFromInt(field.value);
-                                }
-                            }
-
-                            @panic("TODO");
-                        },
-                    },
-                };
-            },
-            .string => @panic("TODO"),
-            .ident => |ident| return .{ .keyword = ident },
-            .url => @panic("TODO"),
-            .hash => |hash| {
-                const slice = hash.slice(s.src)[1..];
-
-                for (slice) |char| {
-                    switch (char) {
-                        '0'...'9', 'a'...'f', 'A'...'F' => {},
-                        else => @panic("TODO"),
-                    }
+                std.debug.assert(s.consume() != null);
+                if (start == null) {
+                    start = token.span().start;
                 }
-
-                return switch (slice.len) {
-                    6 => .{
-                        .rgb6 = .{
-                            .r = std.fmt.parseUnsigned(u8, slice[0..2], 16) catch unreachable,
-                            .g = std.fmt.parseUnsigned(u8, slice[2..4], 16) catch unreachable,
-                            .b = std.fmt.parseUnsigned(u8, slice[4..6], 16) catch unreachable,
-                        },
-                    },
-                    3 => .{
-                        .rgb3 = .{
-                            .r = std.fmt.parseUnsigned(u4, slice[0..1], 16) catch unreachable,
-                            .g = std.fmt.parseUnsigned(u4, slice[1..2], 16) catch unreachable,
-                            .b = std.fmt.parseUnsigned(u4, slice[2..3], 16) catch unreachable,
-                        },
-                    },
-                    else => @panic("TODO"),
-                };
+                end = token.span().end;
             },
-            .function => @panic("TODO"),
-            else => @panic("TODO"),
         }
-    } else {
+    }
+
+    if (start == null) {
         @panic("TODO");
+    } else {
+        return .{ .start = start.?, .end = end };
     }
 }
 
 pub fn deinit(self: Ast, allocator: std.mem.Allocator) void {
-    for (self.rules) |rule| {
-        rule.deinit(allocator);
-    }
     allocator.free(self.rules);
+    allocator.free(self.selectors);
+    allocator.free(self.declarations);
+    allocator.free(self.specifiers);
 }
 
 test "simple stylesheet" {
