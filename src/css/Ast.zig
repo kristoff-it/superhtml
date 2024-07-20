@@ -5,10 +5,14 @@ const Span = root.Span;
 
 const Ast = @This();
 
+const at_rules = &.{
+    .{ .name = "media", .func = parseMediaRule },
+};
+
 pub const Rule = struct {
     type: union(enum) {
         style: Style,
-        at: At,
+        media: Media,
     },
     next: ?u32,
 
@@ -33,7 +37,7 @@ pub const Rule = struct {
                     hash: Span,
                     class: Span,
                     attrib, // TODO
-                    pseudo, // TODO
+                    pseudo: Span,
                 };
 
                 pub fn render(self: Simple, ast: Ast, src: []const u8, out_stream: anytype) !void {
@@ -49,7 +53,7 @@ pub const Rule = struct {
                             .hash => |hash| try out_stream.print("#{s}", .{hash.slice(src)}),
                             .class => |class| try out_stream.print(".{s}", .{class.slice(src)}),
                             .attrib => @panic("TODO"),
-                            .pseudo => @panic("TODO"),
+                            .pseudo => |pseudo| try out_stream.print(":{s}", .{pseudo.slice(src)}),
                         }
                     }
                 }
@@ -108,21 +112,62 @@ pub const Rule = struct {
         }
     };
 
-    pub const At = struct {};
+    pub const Media = struct {
+        queries: Span,
+        first_rule: ?u32,
 
-    pub fn render(self: Rule, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) !void {
+        pub fn render(self: Media, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) !void {
+            for (0..depth) |_| _ = try out_stream.write("    ");
+
+            _ = try out_stream.write("@media ");
+
+            for (ast.media_queries[self.queries.start..self.queries.end], 0..) |query, i| {
+                if (i != 0) {
+                    _ = try out_stream.write(", ");
+                }
+
+                _ = try out_stream.write(query.slice(src));
+            }
+
+            _ = try out_stream.write(" {");
+
+            if (self.first_rule) |first_rule| {
+                _ = try out_stream.write("\n");
+
+                var first = true;
+                var rule = ast.rules[first_rule];
+                while (true) {
+                    if (!first) {
+                        _ = try out_stream.write("\n\n");
+                    }
+                    first = false;
+
+                    try rule.render(ast, src, out_stream, depth + 1);
+
+                    rule = ast.rules[rule.next orelse break];
+                }
+                _ = try out_stream.write("\n");
+            }
+
+            for (0..depth) |_| _ = try out_stream.write("    ");
+            _ = try out_stream.write("}");
+        }
+    };
+
+    pub fn render(self: Rule, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) anyerror!void {
         switch (self.type) {
             .style => |style| try style.render(ast, src, out_stream, depth),
-            .at => @panic("TODO"),
+            .media => |media| try media.render(ast, src, out_stream, depth),
         }
     }
 };
 
-first_rule: u32,
+first_rule: ?u32,
 rules: []const Rule,
 selectors: []const Rule.Style.Selector,
 declarations: []const Rule.Style.Declaration,
 specifiers: []const Rule.Style.Selector.Simple.Specifier,
+media_queries: []const Span,
 
 const State = struct {
     allocator: std.mem.Allocator,
@@ -133,6 +178,7 @@ const State = struct {
     selectors: std.ArrayListUnmanaged(Rule.Style.Selector),
     declarations: std.ArrayListUnmanaged(Rule.Style.Declaration),
     specifiers: std.ArrayListUnmanaged(Rule.Style.Selector.Simple.Specifier),
+    media_queries: std.ArrayListUnmanaged(Span),
 
     fn consume(self: *State) ?Tokenizer.Token {
         if (self.reconsumed) |tok| {
@@ -183,7 +229,7 @@ pub fn formatter(self: Ast, src: []const u8) Formatter {
 
 pub fn render(self: Ast, src: []const u8, out_stream: anytype) !void {
     var first = true;
-    var rule = self.rules[self.first_rule];
+    var rule = self.rules[self.first_rule orelse return];
     while (true) {
         if (!first) {
             _ = try out_stream.write("\n\n");
@@ -208,9 +254,14 @@ pub fn init(allocator: std.mem.Allocator, src: []const u8) error{OutOfMemory}!As
         .selectors = .{},
         .declarations = .{},
         .specifiers = .{},
+        .media_queries = .{},
     };
 
     const first_rule = try parseRules(&state);
+
+    if (state.consume()) |_| {
+        @panic("TODO");
+    }
 
     return .{
         .first_rule = first_rule,
@@ -218,19 +269,45 @@ pub fn init(allocator: std.mem.Allocator, src: []const u8) error{OutOfMemory}!As
         .selectors = try state.selectors.toOwnedSlice(allocator),
         .declarations = try state.declarations.toOwnedSlice(allocator),
         .specifiers = try state.specifiers.toOwnedSlice(allocator),
+        .media_queries = try state.media_queries.toOwnedSlice(allocator),
     };
 }
 
-fn parseRules(s: *State) !u32 {
+fn parseRules(s: *State) error{OutOfMemory}!?u32 {
     var last_rule: ?u32 = null;
     var first_rule: ?u32 = null;
 
     while (true) {
         if (s.consume()) |token| {
             switch (token) {
+                .close_curly => {
+                    s.reconsume(token);
+                    break;
+                },
                 .cdo => @panic("TODO"),
                 .cdc => @panic("TODO"),
-                .at_keyword => @panic("TODO"),
+                .at_keyword => |at_keyword| {
+                    const name = at_keyword.slice(s.src)[1..];
+
+                    inline for (at_rules) |at_rule| {
+                        if (std.ascii.eqlIgnoreCase(name, at_rule.name)) {
+                            s.reconsume(token);
+
+                            const rule = .{
+                                .type = @unionInit(
+                                    @TypeOf(@as(Rule, undefined).type),
+                                    at_rule.name,
+                                    try at_rule.func(s),
+                                ),
+                                .next = null,
+                            };
+
+                            try s.rules.append(s.allocator, rule);
+                        } else {
+                            @panic("TODO");
+                        }
+                    }
+                },
                 else => {
                     s.reconsume(token);
 
@@ -242,20 +319,77 @@ fn parseRules(s: *State) !u32 {
                     };
 
                     try s.rules.append(s.allocator, rule);
-
-                    if (first_rule == null) first_rule = @intCast(s.rules.items.len - 1);
-
-                    if (last_rule) |idx| {
-                        s.rules.items[idx].next = @intCast(s.rules.items.len - 1);
-                    }
-
-                    last_rule = @intCast(s.rules.items.len - 1);
                 },
             }
+
+            if (first_rule == null) first_rule = @intCast(s.rules.items.len - 1);
+
+            if (last_rule) |idx| {
+                s.rules.items[idx].next = @intCast(s.rules.items.len - 1);
+            }
+
+            last_rule = @intCast(s.rules.items.len - 1);
         } else break;
     }
 
-    return first_rule orelse @panic("TODO");
+    return first_rule;
+}
+
+fn parseMediaRule(s: *State) !Rule.Media {
+    const keyword = s.consume();
+    std.debug.assert(keyword != null);
+    std.debug.assert(keyword.? == .at_keyword);
+    std.debug.assert(std.ascii.eqlIgnoreCase(keyword.?.at_keyword.slice(s.src), "@media"));
+
+    var first_query: ?u32 = null;
+    var current_query: ?Span = null;
+    while (true) {
+        if (s.consume()) |token| {
+            switch (token) {
+                inline .comma, .open_curly => {
+                    try s.media_queries.append(s.allocator, current_query orelse @panic("TODO"));
+
+                    if (first_query == null) {
+                        first_query = @intCast(s.media_queries.items.len - 1);
+                    }
+
+                    switch (token) {
+                        .comma => current_query = null,
+                        .open_curly => break,
+                        else => unreachable,
+                    }
+                },
+                else => {
+                    if (current_query == null) {
+                        current_query = token.span();
+                    } else {
+                        current_query.?.end = token.span().end;
+                    }
+                },
+            }
+        } else {
+            @panic("TODO");
+        }
+    }
+
+    const first_rule = try parseRules(s);
+
+    if (s.consume()) |token| {
+        switch (token) {
+            .close_curly => {},
+            else => @panic("TODO"),
+        }
+    } else {
+        @panic("TODO");
+    }
+
+    return .{
+        .queries = .{
+            .start = first_query orelse @panic("TODO"),
+            .end = @intCast(s.media_queries.items.len),
+        },
+        .first_rule = first_rule,
+    };
 }
 
 fn parseStyleRule(s: *State) !Rule.Style {
@@ -389,7 +523,17 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
                     else => @panic("TODO"),
                 },
                 .open_square => @panic("TODO"),
-                .colon => @panic("TODO"),
+                .colon => {
+                    if (s.consume()) |t| {
+                        switch (t) {
+                            .ident => |ident| {
+                                try s.specifiers.append(s.allocator, .{ .pseudo = ident });
+                            },
+                            .function => @panic("TODO"),
+                            else => @panic("TODO"),
+                        }
+                    } else @panic("TODO");
+                },
                 else => {
                     s.reconsume(token);
                     break;
@@ -441,6 +585,7 @@ pub fn deinit(self: Ast, allocator: std.mem.Allocator) void {
     allocator.free(self.selectors);
     allocator.free(self.declarations);
     allocator.free(self.specifiers);
+    allocator.free(self.media_queries);
 }
 
 test "simple stylesheet" {
@@ -471,6 +616,76 @@ test "full example" {
         \\}
         \\
         \\* { color: #fff }
+        \\
+        \\@media foo, bar, baz {
+        \\    p {
+        \\        display: none;
+        \\    }
+        \\}
+    ;
+
+    const ast = try Ast.init(std.testing.allocator, src);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+}
+
+test "example.org" {
+    const src =
+        \\body {
+        \\    background-color: #f0f0f2;
+        \\    margin: 0;
+        \\    padding: 0;
+        \\    font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        \\}
+        \\
+        \\div {
+        \\    width: 600px;
+        \\    margin: 5em auto;
+        \\    padding: 2em;
+        \\    background-color: #fdfdff;
+        \\    border-radius: 0.5em;
+        \\    box-shadow: 2px 3px 7px 2px rgba(0,0,0,0.02);
+        \\}
+        \\
+        \\a:link, a:visited {
+        \\    color: #38488f;
+        \\    text-decoration: none;
+        \\}
+        \\
+        \\@media (max-width: 700px) {
+        \\    div {
+        \\        margin: 0 auto;
+        \\        width: auto;
+        \\    }
+        \\}
+    ;
+
+    const ast = try Ast.init(std.testing.allocator, src);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+}
+
+test "media queries" {
+    const src =
+        \\@media foo, (something very long), bar {
+        \\    p {
+        \\        display: none;
+        \\    }
+        \\}
+        \\
+        \\@media foo {
+        \\    .red {
+        \\        color: red;
+        \\    }
+        \\
+        \\    .blue {
+        \\        color: blue;
+        \\    }
+        \\}
+        \\
+        \\@media foo {}
     ;
 
     const ast = try Ast.init(std.testing.allocator, src);

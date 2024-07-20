@@ -113,7 +113,7 @@ fn isIdentChar(char: u8) bool {
 }
 
 // https://www.w3.org/TR/css-syntax-3/#check-if-three-code-points-would-start-an-ident-sequence
-fn next3WouldStartIdent(self: *Tokenizer, src: []const u8) bool {
+fn wouldStartIdent(self: *Tokenizer, src: []const u8) bool {
     if (self.idx + 2 >= src.len) return false;
 
     const chars = src[self.idx .. self.idx + 3];
@@ -124,6 +124,52 @@ fn next3WouldStartIdent(self: *Tokenizer, src: []const u8) bool {
         '\\' => @panic("TODO"),
         else => isIdentStartChar(chars[0]),
     };
+}
+
+// https://www.w3.org/TR/css-syntax-3/#check-if-three-code-points-would-start-a-number
+fn wouldStartNumber(self: *Tokenizer, src: []const u8) bool {
+    if (self.peek(src)) |first| {
+        switch (first) {
+            '+', '-' => {
+                std.debug.assert(self.consume(src));
+                defer self.reconsume(src);
+
+                if (self.peek(src)) |second| {
+                    switch (second) {
+                        '0'...'9' => return true,
+                        '.' => {
+                            std.debug.assert(self.consume(src));
+                            defer self.reconsume(src);
+
+                            if (self.peek(src)) |third| {
+                                switch (third) {
+                                    '0'...'9' => return true,
+                                    else => {},
+                                }
+                            }
+                        },
+                        else => {},
+                    }
+                }
+
+                return false;
+            },
+            '.' => {
+                std.debug.assert(self.consume(src));
+                defer self.reconsume(src);
+
+                return if (self.peek(src)) |second|
+                    switch (second) {
+                        '0'...'9' => true,
+                        else => false,
+                    }
+                else
+                    false;
+            },
+            '0'...'9' => return true,
+            else => return false,
+        }
+    } else return false;
 }
 
 // https://www.w3.org/TR/css-syntax-3/#consume-token
@@ -140,7 +186,7 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
 
                 return self.next(src);
             },
-            '"' => @panic("TODO"),
+            '"' => return self.string(src),
             '#' => {
                 // TODO: Support escape sequeces
 
@@ -153,11 +199,36 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
                 }
             },
             '\'' => @panic("TODO"),
-            '(' => @panic("TODO"),
-            ')' => @panic("TODO"),
+            '(' => return .{ .open_paren = self.idx - 1 },
+            ')' => return .{ .close_paren = self.idx - 1 },
             '+' => @panic("TODO"),
             ',' => return .{ .comma = self.idx - 1 },
-            '-' => @panic("TODO"),
+            '-' => {
+                if (self.wouldStartNumber(src)) {
+                    @panic("TODO");
+                }
+
+                if (self.peek(src)) |first| {
+                    std.debug.assert(self.consume(src));
+
+                    if (self.peek(src)) |second| {
+                        if (first == '-' and second == '>') {
+                            std.debug.assert(self.consume(src));
+
+                            return .{ .cdc = self.idx - 3 };
+                        }
+                    }
+
+                    self.reconsume(src);
+                }
+
+                if (self.wouldStartIdent(src)) {
+                    self.reconsume(src);
+                    return self.identLike(src);
+                }
+
+                return .{ .delim = self.idx - 1 };
+            },
             '.' => {
                 if (self.peek(src)) |char| {
                     switch (char) {
@@ -171,7 +242,14 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
             ':' => return .{ .colon = self.idx - 1 },
             ';' => return .{ .semicolon = self.idx - 1 },
             '<' => @panic("TODO"),
-            '@' => @panic("TODO"),
+            '@' => {
+                if (self.wouldStartIdent(src)) {
+                    const name = self.identSequence(src);
+                    return .{ .at_keyword = .{ .start = name.start - 1, .end = name.end } };
+                } else {
+                    return .{ .delim = self.idx - 1 };
+                }
+            },
             '[' => @panic("TODO"),
             '\\' => @panic("TODO"),
             ']' => @panic("TODO"),
@@ -220,7 +298,8 @@ fn identLike(self: *Tokenizer, src: []const u8) Token {
     {
         @panic("TODO");
     } else if (self.peek(src) != null and self.peek(src).? == '(') {
-        @panic("TODO");
+        std.debug.assert(self.consume(src));
+        return .{ .function = .{ .start = span.start, .end = self.idx } };
     } else {
         return .{ .ident = span };
     }
@@ -243,11 +322,30 @@ fn numeric(self: *Tokenizer, src: []const u8) Token {
         }
     }
 
-    // TODO: Support fractional part (e.g. 1.2)
+    if (self.peek(src)) |dot| {
+        if (dot == '.') {
+            std.debug.assert(self.consume(src));
+            if (self.peek(src)) |digit| {
+                switch (digit) {
+                    '0'...'9' => {
+                        std.debug.assert(self.consume(src));
+
+                        while (self.peek(src)) |c| {
+                            switch (c) {
+                                '0'...'9' => std.debug.assert(self.consume(src)),
+                                else => break,
+                            }
+                        }
+                    },
+                    else => self.reconsume(src),
+                }
+            } else self.reconsume(src);
+        }
+    }
 
     // TODO: Support exponents
 
-    if (self.next3WouldStartIdent(src)) {
+    if (self.wouldStartIdent(src)) {
         const num_end = self.idx;
 
         const unit = self.identSequence(src);
@@ -267,6 +365,29 @@ fn numeric(self: *Tokenizer, src: []const u8) Token {
         return .{
             .number = .{ .start = start, .end = self.idx },
         };
+    }
+}
+
+fn string(self: *Tokenizer, src: []const u8) Token {
+    const ending = self.current;
+    const start = self.idx - 1;
+
+    while (true) {
+        if (self.consume(src)) {
+            switch (self.current) {
+                '\n' => @panic("TODO"),
+                '\\' => @panic("TODO"),
+                else => {
+                    if (self.current == ending) {
+                        return .{
+                            .string = .{ .start = start, .end = self.idx },
+                        };
+                    }
+                },
+            }
+        } else {
+            @panic("TODO");
+        }
     }
 }
 
