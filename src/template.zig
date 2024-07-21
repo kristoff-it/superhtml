@@ -619,22 +619,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                 .{},
             ) catch |err| switch (err) {
                 error.WantResource => {
-                    const ext = script_vm.getResourceDescriptor();
-                    switch (ext) {
-                        else => @panic("TODO"),
-                        .loop => |frame_idx| {
-                            if (frame_idx == 0) {
-                                script_vm.insertResource(.{
-                                    .err = "already at the topmost $loop value",
-                                });
-                            } else {
-                                const iter = tpl.eval_frames.items[frame_idx].loop_iter;
-                                script_vm.insertResource(.{
-                                    .iterator_element = iter.loop,
-                                });
-                            }
-                        },
-                    }
+                    tpl.giveResource(script_vm);
                     continue;
                 },
                 else => return error.Fatal,
@@ -679,15 +664,17 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             code_span: Span,
         ) errors.Fatal!ScriptyVM.Result {
             tpl.setContext(script_ctx);
-            const result = script_vm.run(
+            const result = while (true) break script_vm.run(
                 tpl.arena,
                 script_ctx,
                 code_span.slice(tpl.src),
                 .{},
-            ) catch |err| {
-                std.debug.panic("TODO: handle scripty vm error: {s}", .{
-                    @errorName(err),
-                });
+            ) catch |err| switch (err) {
+                error.WantResource => {
+                    tpl.giveResource(script_vm);
+                    continue;
+                },
+                else => return error.Fatal,
             };
 
             return result;
@@ -702,16 +689,17 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             code_span: Span,
         ) errors.Fatal!Value {
             tpl.setContext(script_ctx);
-
-            const result = script_vm.run(
+            const result = while (true) break script_vm.run(
                 tpl.arena,
                 script_ctx,
                 code_span.slice(tpl.src),
                 .{},
-            ) catch |err| {
-                std.debug.panic("TODO: handle scripty vm error: {s}", .{
-                    @errorName(err),
-                });
+            ) catch |err| switch (err) {
+                error.WantResource => {
+                    tpl.giveResource(script_vm);
+                    continue;
+                },
+                else => return error.Fatal,
             };
 
             switch (result.value) {
@@ -757,15 +745,17 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         ) errors.Fatal!Value.Iterator {
             tpl.setContext(script_ctx);
 
-            const result = script_vm.run(
+            const result = while (true) break script_vm.run(
                 tpl.arena,
                 script_ctx,
                 code_span.slice(tpl.src),
                 .{},
-            ) catch |err| {
-                std.debug.panic("TODO: handle scripty vm error: {s}", .{
-                    @errorName(err),
-                });
+            ) catch |err| switch (err) {
+                error.WantResource => {
+                    tpl.giveResource(script_vm);
+                    continue;
+                },
+                else => return error.Fatal,
             };
 
             switch (result.value) {
@@ -837,6 +827,25 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             );
         }
 
+        pub fn giveResource(tpl: Template, script_vm: *ScriptyVM) void {
+            const ext = script_vm.getResourceDescriptor();
+            switch (ext) {
+                else => @panic("TODO"),
+                .loop => |frame_idx| {
+                    if (frame_idx == 0) {
+                        script_vm.insertResource(.{
+                            .err = "already at the topmost $loop value",
+                        });
+                    } else {
+                        const iter = tpl.eval_frames.items[frame_idx].loop_iter;
+                        script_vm.insertResource(.{
+                            .iterator_element = iter.loop,
+                        });
+                    }
+                },
+            }
+        }
+
         pub fn setContext(tpl: Template, script_ctx: *Context) void {
             script_ctx.loop = if (tpl.top_loop_idx == 0) null else blk: {
                 const iter = tpl.eval_frames.items[tpl.top_loop_idx].loop_iter;
@@ -848,42 +857,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                 const cond = tpl.eval_frames.items[tpl.top_if_idx].if_condition;
                 break :blk cond.if_result;
             };
-
-            // const current_eval_frame = &tpl.eval_frames.items[tpl.eval_frames.items.len - 1];
-            // // loop
-            // const loop = switch (current_eval_frame.*) {
-            //     .loop_iter => |li| li.loop,
-            //     else => null,
-            // };
-
-            // const old_loop = script_ctx.loop;
-            // script_ctx.loop = if (loop) |l| .{ .iterator_element = l } else null;
-            // defer script_ctx.loop = old_loop;
-            // // if
-            // const if_value = switch (current_eval_frame.*) {
-            //     .if_condition => |ic| ic.if_result,
-            //     else => null,
-            // };
-
-            // const old_if = script_ctx.@"if";
-            // script_ctx.@"if" = if_value;
-            // defer script_ctx.@"if" = old_if;
         }
     };
 }
-
-// TODO: get rid of this once stack traces on arm64 work again
-// fn assert(loc: std.builtin.SourceLocation, condition: bool) void {
-//     if (!condition) {
-//         std.debug.print("assertion error in {s} at {s}:{}:{}\n", .{
-//             loc.fn_name,
-//             loc.file,
-//             loc.line,
-//             loc.column,
-//         });
-//         std.process.exit(1);
-//     }
-// }
 
 fn is(str1: []const u8, str2: []const u8) bool {
     return std.ascii.eqlIgnoreCase(str1, str2);
