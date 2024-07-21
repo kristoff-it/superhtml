@@ -136,10 +136,10 @@ pub fn build(b: *std.Build) !void {
     wasm.dependOn(&target_output.step);
 
     const afl_fuzz_name = b.fmt("superfuzz-afl{s}", .{target.result.exeFileExt()});
-    const afl_fuzz = b.addObject(.{
+    const afl_fuzz = b.addStaticLibrary(.{
         .name = afl_fuzz_name,
         .root_source_file = b.path("src/fuzz/afl.zig"),
-        // .target = b.resolveTargetQuery(.{ .cpu_model = .baseline }),
+        // .target = b.resolveTargetQuery(.{ .ofmt = .c }),
         .target = target,
         .optimize = .Debug,
         .single_threaded = true,
@@ -158,7 +158,7 @@ pub fn build(b: *std.Build) !void {
             &.{},
     ) catch "afl-clang-fast";
 
-    const fuzz = b.step("fuzz", "Generate an executable for AFL++ (persistent mode)");
+    const fuzz = b.step("fuzz", "Generate an executable for AFL++ (persistent mode) plus extra tooling");
     const run_afl_clang_fast = b.addSystemCommand(&.{
         afl_clang_fast_path,
         "-o",
@@ -166,6 +166,8 @@ pub fn build(b: *std.Build) !void {
 
     const prog_exe = run_afl_clang_fast.addOutputFileArg(afl_fuzz_name);
     run_afl_clang_fast.addFileArg(b.path("src/fuzz/afl.c"));
+    // run_afl_clang_fast.addFileArg(afl_fuzz.getEmittedBin());
+    // run_afl_clang_fast.addArg("-I/Users/kristoff/zig/0.13.0/files/lib/");
     run_afl_clang_fast.addFileArg(afl_fuzz.getEmittedLlvmBc());
     fuzz.dependOn(&b.addInstallBinFile(prog_exe, afl_fuzz_name).step);
 

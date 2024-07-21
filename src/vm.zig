@@ -3,12 +3,13 @@ const scripty = @import("scripty");
 const errors = @import("errors.zig");
 const template = @import("template.zig");
 
-const Span = @import("root.zig").Span;
+const root = @import("root.zig");
+const utils = root.utils;
+const Span = root.Span;
 const html = @import("html.zig");
 const Ast = @import("Ast.zig");
 const Node = Ast.Node;
 const SuperTemplate = template.SuperTemplate;
-const ScriptyVM = scripty.ScriptyVM;
 
 const log = std.log.scoped(.supervm);
 
@@ -25,7 +26,7 @@ pub const Exception = error{
     OutIO,
 };
 
-pub fn SuperVM(comptime Context: type, comptime Value: type) type {
+pub fn VM(comptime Context: type, comptime Value: type) type {
     return struct {
         arena: std.mem.Allocator,
         content_name: []const u8,
@@ -36,7 +37,7 @@ pub fn SuperVM(comptime Context: type, comptime Value: type) type {
         quota: usize = 100,
         templates: std.ArrayListUnmanaged(Template) = .{},
         ctx: *Context,
-        scripty_vm: ScriptyVM(Context, Value) = .{},
+        scripty_vm: ScriptyVM = .{},
 
         // discovering templates state
         seen_templates: std.StringHashMapUnmanaged(struct {
@@ -44,11 +45,12 @@ pub fn SuperVM(comptime Context: type, comptime Value: type) type {
             idx: usize,
         }) = .{},
 
+        const ScriptyVM = scripty.VM(Context, Value, utils.ResourceDescriptor);
         const OutWriter = std.io.BufferedWriter(4096, std.fs.File.Writer).Writer;
         const ErrWriter = errors.ErrWriter;
         const Self = @This();
 
-        pub const Template = SuperTemplate(Context, Value, OutWriter);
+        pub const Template = SuperTemplate(ScriptyVM, OutWriter);
         pub const State = union(enum) {
             init: TemplateCartridge,
             discovering_templates,
@@ -130,7 +132,7 @@ pub fn SuperVM(comptime Context: type, comptime Value: type) type {
 
         // Call this function to report an evaluation trace when the caller
         // failed to fetch a requested resource (eg templates, snippets, ...)
-        pub fn resourceFetchError(vm: *Self, error_code: []const u8) void {
+        pub fn reportResourceFetchError(vm: *Self, error_code: []const u8) void {
             std.debug.assert(vm.state == .want_template);
             const wanted = vm.state.want_template;
             const t = vm.templates.items[vm.templates.items.len - 1];
@@ -150,8 +152,6 @@ pub fn SuperVM(comptime Context: type, comptime Value: type) type {
         pub fn run(vm: *Self) Exception!void {
             if (vm.state == .fatal) return error.Fatal;
 
-            // This is where we catch unhandled errors and move the machine
-            // state to .fatal
             vm.runInternal() catch |err| {
                 switch (err) {
                     error.OutOfMemory,
@@ -183,25 +183,38 @@ pub fn SuperVM(comptime Context: type, comptime Value: type) type {
             while (vm.quota > 0) : (vm.quota -= 1) {
                 const t = &vm.templates.items[idx];
 
-                const continuation = t.eval(&vm.scripty_vm, vm.ctx, vm.out, vm.err) catch |err| switch (err) {
+                const continuation = t.eval(
+                    &vm.scripty_vm,
+                    vm.ctx,
+                    vm.out,
+                    vm.err,
+                ) catch |err| switch (err) {
                     error.OutOfMemory,
                     error.OutIO,
                     error.ErrIO,
-                    => |e| return e,
-                    error.Fatal,
-                    error.FatalShowInterface,
-                    => {
-                        if (err == error.FatalShowInterface) {
-                            try vm.templates.items[idx + 1].showInterface(vm.err);
-                        }
-                        return fatalTrace(vm.content_name, vm.templates.items[0 .. idx + 1], vm.err);
+                    => |e| {
+                        return e;
+                    },
+                    error.Fatal => {
+                        return fatalTrace(
+                            vm.content_name,
+                            vm.templates.items[0 .. idx + 1],
+                            vm.err,
+                        );
+                    },
+                    error.FatalShowInterface => {
+                        try vm.templates.items[idx + 1].showInterface(vm.err);
+                        return fatalTrace(
+                            vm.content_name,
+                            vm.templates.items[0 .. idx + 1],
+                            vm.err,
+                        );
                     },
                 };
 
                 switch (continuation) {
                     .super_idx => |s| {
-                        //programming error:
-                        //layout acting like it has <super> in it
+                        // loaded layouts have no super tags in them
                         std.debug.assert(idx != 0);
                         idx -= 1;
 
@@ -275,7 +288,7 @@ pub fn SuperVM(comptime Context: type, comptime Value: type) type {
                 const current = &vm.templates.items[current_idx];
                 const ext = &current.ast.nodes[current.ast.extends_idx];
 
-                _ = current.eval_frame.pop();
+                _ = current.eval_frames.pop();
                 const template_value = ext.templateValue();
                 //TODO: unescape
                 const template_name = template_value.span.slice(current.src);

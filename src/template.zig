@@ -9,7 +9,7 @@ const Node = Ast.Node;
 
 const log = std.log.scoped(.supertemplate);
 
-pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutWriter: type) type {
+pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
     return struct {
         arena: std.mem.Allocator,
         name: []const u8,
@@ -21,11 +21,15 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
         print_end: u32,
         role: Role,
 
-        // Template-wide analysis
-        eval_frame: std.ArrayListUnmanaged(EvalFrame) = .{},
+        eval_frames: std.ArrayListUnmanaged(EvalFrame) = .{},
+        // index in eval_frame to a IfCondition frame
+        top_if_idx: u32 = 0,
+        // index in eval_frame to a LoopIter frame
+        top_loop_idx: u32 = 0,
 
-        const Self = @This();
-        const ScriptyVM = scripty.ScriptyVM(Context, Value);
+        const Template = @This();
+        const Value = ScriptyVM.Value;
+        const Context = ScriptyVM.Context;
         const EvalFrame = union(enum) {
             if_condition: IfCondition,
             loop_condition: LoopCondition,
@@ -35,6 +39,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
             const LoopIter = struct {
                 cursor: Ast.Cursor,
                 loop: Value.IterElement,
+                // up_idx: u32,
             };
 
             const LoopCondition = struct {
@@ -60,20 +65,21 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                 cursor: Ast.Cursor,
                 // eval result
                 if_result: ?Value,
+                up_idx: u32,
             };
         };
 
         const Role = enum { layout, template };
 
-        pub fn superBlock(tpl: Self, idx: u32) Ast.Node.Block {
+        pub fn superBlock(tpl: Template, idx: u32) Ast.Node.Block {
             return tpl.ast.nodes[idx].superBlock(tpl.src, tpl.html);
         }
 
-        pub fn startTag(tpl: Self, idx: u32) Span {
+        pub fn startTag(tpl: Template, idx: u32) Span {
             return tpl.ast.nodes[idx].elem(tpl.html).open;
         }
 
-        pub fn getName(tpl: Self, idx: u32) Span {
+        pub fn getName(tpl: Template, idx: u32) Span {
             const span = tpl.startTag(idx);
             return span.getName(tpl.src, tpl.html.language);
         }
@@ -86,8 +92,8 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
             html_ast: html.Ast,
             ast: Ast,
             role: Role,
-        ) !Self {
-            var t: Self = .{
+        ) !Template {
+            var t: Template = .{
                 .arena = arena,
                 .path = path,
                 .name = name,
@@ -97,17 +103,17 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                 .role = role,
                 .print_end = @intCast(src.len),
             };
-            try t.eval_frame.append(arena, .{
+            try t.eval_frames.append(arena, .{
                 .default = t.ast.cursor(0),
             });
             return t;
         }
 
-        pub fn finalCheck(tpl: Self) void {
+        pub fn finalCheck(tpl: Template) void {
             std.debug.assert(tpl.print_cursor == tpl.print_end);
         }
 
-        pub fn showBlocks(tpl: Self, err_writer: errors.ErrWriter) error{ErrIO}!void {
+        pub fn showBlocks(tpl: Template, err_writer: errors.ErrWriter) error{ErrIO}!void {
             var found_first = false;
             var it = tpl.ast.blocks.iterator();
             while (it.next()) |kv| {
@@ -136,7 +142,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
             err_writer.print("\n", .{}) catch return error.ErrIO;
         }
 
-        pub fn showInterface(tpl: Self, err_writer: errors.ErrWriter) error{ErrIO}!void {
+        pub fn showInterface(tpl: Template, err_writer: errors.ErrWriter) error{ErrIO}!void {
             var found_first = false;
             var it = tpl.ast.interface.iterator();
             while (it.next()) |kv| {
@@ -165,7 +171,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
         }
 
         pub fn activateBlock(
-            tpl: *Self,
+            tpl: *Template,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             super_id: []const u8,
@@ -173,7 +179,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
             err_writer: errors.ErrWriter,
         ) errors.FatalOOM!void {
             std.debug.assert(tpl.ast.extends_idx != 0);
-            std.debug.assert(tpl.eval_frame.items.len == 0);
+            std.debug.assert(tpl.eval_frames.items.len == 0);
 
             const block_idx = tpl.ast.blocks.get(super_id).?;
             const block = tpl.ast.nodes[block_idx];
@@ -182,7 +188,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                 block_idx,
                 block.elem(tpl.html).open.slice(tpl.src),
             });
-            try tpl.eval_frame.append(tpl.arena, .{
+            try tpl.eval_frames.append(tpl.arena, .{
                 .default = tpl.ast.cursor(block_idx),
             });
 
@@ -221,7 +227,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                                     },
                                     .element => {
                                         tpl.print_cursor = elem.close.start;
-                                        const frame = &tpl.eval_frame.items[0];
+                                        const frame = &tpl.eval_frames.items[0];
                                         frame.default.skipChildrenOfCurrentNode();
                                     },
                                 }
@@ -259,31 +265,39 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
         pub const Continuation = union(enum) {
             // A <super> was found, contains relative id
             super_idx: u32,
+            // Done executing the template.
             end,
         };
 
         pub fn eval(
-            tpl: *Self,
+            tpl: *Template,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             writer: OutWriter,
             err_writer: errors.ErrWriter,
         ) errors.FatalShowOOM!Continuation {
-            std.debug.assert(tpl.eval_frame.items.len > 0);
-            outer: while (tpl.eval_frame.items.len > 0) {
-                const current_context = &tpl.eval_frame.items[tpl.eval_frame.items.len - 1];
-                switch (current_context.*) {
+            std.debug.assert(tpl.eval_frames.items.len > 0);
+            outer: while (tpl.eval_frames.items.len > 0) {
+                const cur_frame_idx = tpl.eval_frames.items.len - 1;
+                // necessary to avoid pointer invalidation afterwards
+                try tpl.eval_frames.ensureTotalCapacity(tpl.arena, 1);
+                const cur_frame = &tpl.eval_frames.items[cur_frame_idx];
+                switch (cur_frame.*) {
                     .default, .loop_iter, .if_condition => {},
                     .loop_condition => |*l| {
                         if (l.iter.next(tpl.arena)) |n| {
                             var cursor_copy = l.cursor_ptr.*;
                             cursor_copy.depth = 0;
-                            try tpl.eval_frame.append(tpl.arena, .{
+                            var new = n.iter_elem;
+                            new._up_idx = tpl.top_loop_idx;
+                            tpl.eval_frames.appendAssumeCapacity(.{
                                 .loop_iter = .{
                                     .cursor = cursor_copy,
-                                    .loop = n.iter_elem,
+                                    .loop = new,
+                                    // .up_idx = tpl.top_loop_idx,
                                 },
                             });
+                            tpl.top_loop_idx = @intCast(tpl.eval_frames.items.len - 1);
                             tpl.print_cursor = l.print_loop_body;
                             tpl.print_end = l.print_loop_body_end;
                             l.index += 1;
@@ -305,12 +319,12 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                             tpl.print_cursor = l.print_loop_body_end;
                             tpl.print_end = l.print_end;
                             l.cursor_ptr.skipChildrenOfCurrentNode();
-                            _ = tpl.eval_frame.pop();
+                            _ = tpl.eval_frames.pop();
                             continue;
                         }
                     },
                 }
-                const cur = switch (current_context.*) {
+                const cur = switch (cur_frame.*) {
                     .default => |*d| d,
                     .loop_iter => |*li| &li.cursor,
                     .if_condition => |*ic| &ic.cursor,
@@ -361,7 +375,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                                 value.span,
                             );
 
-                            try tpl.eval_frame.append(tpl.arena, .{
+                            try tpl.eval_frames.append(tpl.arena, .{
                                 .loop_condition = .{
                                     .inloop_idx = cur.current_idx,
                                     .print_loop_body = tpl.print_cursor,
@@ -395,7 +409,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                                 value.span,
                             );
 
-                            try tpl.eval_frame.append(tpl.arena, .{
+                            try tpl.eval_frames.append(tpl.arena, .{
                                 .loop_condition = .{
                                     .print_loop_body = tpl.print_cursor,
                                     .print_loop_body_end = node.elem(tpl.html).close.start,
@@ -444,11 +458,13 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                                             .if_condition = .{
                                                 .cursor = cur.*,
                                                 .if_result = Value.from(tpl.arena, o),
+                                                .up_idx = tpl.top_if_idx,
                                             },
                                         };
+                                        tpl.top_if_idx = @intCast(tpl.eval_frames.items.len);
 
                                         new_frame.if_condition.cursor.depth = 0;
-                                        try tpl.eval_frame.append(
+                                        try tpl.eval_frames.append(
                                             tpl.arena,
                                             new_frame,
                                         );
@@ -563,10 +579,18 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                     }
                 }
 
-                if (tpl.eval_frame.popOrNull()) |ctx| {
-                    if (ctx == .if_condition) continue;
-                    // finalization
-                    std.debug.assert(ctx != .loop_condition);
+                if (tpl.eval_frames.popOrNull()) |frame| {
+                    switch (frame) {
+                        .default => {},
+                        .loop_iter => |li| {
+                            tpl.top_loop_idx = li.loop._up_idx;
+                        },
+                        .if_condition => |ic| {
+                            tpl.top_if_idx = ic.up_idx;
+                            continue;
+                        },
+                        .loop_condition => unreachable,
+                    }
                     writer.writeAll(
                         tpl.src[tpl.print_cursor..tpl.print_end],
                     ) catch return error.OutIO;
@@ -579,45 +603,41 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
         }
 
         fn evalVar(
-            tpl: *Self,
+            tpl: *Template,
             err_writer: errors.ErrWriter,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             script_attr_name: Span,
             code_span: Span,
         ) errors.Fatal!Value {
-            const current_eval_frame = &tpl.eval_frame.items[tpl.eval_frame.items.len - 1];
-            const loop = switch (current_eval_frame.*) {
-                .loop_iter => |li| li.loop,
-                else => null,
-            };
+            tpl.setContext(script_ctx);
 
-            const old_loop = script_ctx.loop;
-            script_ctx.loop = if (loop) |l| .{ .iterator_element = l } else null;
-            defer script_ctx.loop = old_loop;
-            // if (loop) |l| switch (l.it) {
-            //     .string => std.debug.print("loop it.string = `{s}`\n", .{l.it.string}),
-            // };
-
-            // if
-            const if_value = switch (current_eval_frame.*) {
-                .if_condition => |ic| ic.if_result,
-                else => null,
-            };
-            const old_if = script_ctx.@"if";
-            script_ctx.@"if" = if_value;
-            defer script_ctx.@"if" = old_if;
-
-            // const diag: script.Interpreter.Diagnostics = .{};
-            const result = script_vm.run(
+            const result = while (true) break script_vm.run(
                 tpl.arena,
                 script_ctx,
                 code_span.slice(tpl.src),
                 .{},
-            ) catch |err| {
-                std.debug.panic("TODO: handle scripty vm error: {s}", .{
-                    @errorName(err),
-                });
+            ) catch |err| switch (err) {
+                error.WantResource => {
+                    const ext = script_vm.getResourceDescriptor();
+                    switch (ext) {
+                        else => @panic("TODO"),
+                        .loop => |frame_idx| {
+                            if (frame_idx == 0) {
+                                script_vm.insertResource(.{
+                                    .err = "already at the topmost $loop value",
+                                });
+                            } else {
+                                const iter = tpl.eval_frames.items[frame_idx].loop_iter;
+                                script_vm.insertResource(.{
+                                    .iterator_element = iter.loop,
+                                });
+                            }
+                        },
+                    }
+                    continue;
+                },
+                else => return error.Fatal,
             };
 
             switch (result.value) {
@@ -653,34 +673,12 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
             return result.value;
         }
         fn evalAttr(
-            tpl: *Self,
+            tpl: *Template,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             code_span: Span,
         ) errors.Fatal!ScriptyVM.Result {
-            const current_eval_frame = &tpl.eval_frame.items[tpl.eval_frame.items.len - 1];
-            const loop = switch (current_eval_frame.*) {
-                .loop_iter => |li| li.loop,
-                else => null,
-            };
-
-            const old_loop = script_ctx.loop;
-            script_ctx.loop = if (loop) |l| .{ .iterator_element = l } else null;
-            defer script_ctx.loop = old_loop;
-            // if (loop) |l| switch (l.it) {
-            //     .string => std.debug.print("loop it.string = `{s}`\n", .{l.it.string}),
-            // };
-
-            // if
-            const if_value = switch (current_eval_frame.*) {
-                .if_condition => |ic| ic.if_result,
-                else => null,
-            };
-            const old_if = script_ctx.@"if";
-            script_ctx.@"if" = if_value;
-            defer script_ctx.@"if" = old_if;
-
-            // const diag: script.Interpreter.Diagnostics = .{};
+            tpl.setContext(script_ctx);
             const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
@@ -696,34 +694,15 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
         }
 
         fn evalIf(
-            tpl: *Self,
+            tpl: *Template,
             err_writer: errors.ErrWriter,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             script_attr_name: Span,
             code_span: Span,
         ) errors.Fatal!Value {
-            const current_eval_frame = &tpl.eval_frame.items[tpl.eval_frame.items.len - 1];
-            // loop
-            const loop = switch (current_eval_frame.*) {
-                .loop_iter => |li| li.loop,
-                else => null,
-            };
+            tpl.setContext(script_ctx);
 
-            const old_loop = script_ctx.loop;
-            script_ctx.loop = if (loop) |l| .{ .iterator_element = l } else null;
-            defer script_ctx.loop = old_loop;
-            // if
-            const if_value = switch (current_eval_frame.*) {
-                .if_condition => |ic| ic.if_result,
-                else => null,
-            };
-
-            const old_if = script_ctx.@"if";
-            script_ctx.@"if" = if_value;
-            defer script_ctx.@"if" = old_if;
-            // std.debug.print("({s}) evalIf if: {any}\n", .{ self.name, script_ctx });
-            // const diag: script.Interpreter.Diagnostics = .{};
             const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
@@ -769,15 +748,15 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
         }
 
         fn evalLoop(
-            tpl: *Self,
+            tpl: *Template,
             err_writer: errors.ErrWriter,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             script_attr_name: Span,
             code_span: Span,
         ) errors.Fatal!Value.Iterator {
+            tpl.setContext(script_ctx);
 
-            // const diag: script.Interpreter.Diagnostics = .{};
             const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
@@ -821,7 +800,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
         }
 
         pub fn reportError(
-            self: Self,
+            self: Template,
             err_writer: errors.ErrWriter,
             bad_node: Span,
             error_code: []const u8,
@@ -841,7 +820,7 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
         }
 
         pub fn diagnostic(
-            tpl: Self,
+            tpl: Template,
             err_writer: errors.ErrWriter,
             bracket: bool,
             note_line: []const u8,
@@ -856,6 +835,39 @@ pub fn SuperTemplate(comptime Context: type, comptime Value: type, comptime OutW
                 bad_node,
                 tpl.src,
             );
+        }
+
+        pub fn setContext(tpl: Template, script_ctx: *Context) void {
+            script_ctx.loop = if (tpl.top_loop_idx == 0) null else blk: {
+                const iter = tpl.eval_frames.items[tpl.top_loop_idx].loop_iter;
+                break :blk .{
+                    .iterator_element = iter.loop,
+                };
+            };
+            script_ctx.@"if" = if (tpl.top_if_idx == 0) null else blk: {
+                const cond = tpl.eval_frames.items[tpl.top_if_idx].if_condition;
+                break :blk cond.if_result;
+            };
+
+            // const current_eval_frame = &tpl.eval_frames.items[tpl.eval_frames.items.len - 1];
+            // // loop
+            // const loop = switch (current_eval_frame.*) {
+            //     .loop_iter => |li| li.loop,
+            //     else => null,
+            // };
+
+            // const old_loop = script_ctx.loop;
+            // script_ctx.loop = if (loop) |l| .{ .iterator_element = l } else null;
+            // defer script_ctx.loop = old_loop;
+            // // if
+            // const if_value = switch (current_eval_frame.*) {
+            //     .if_condition => |ic| ic.if_result,
+            //     else => null,
+            // };
+
+            // const old_if = script_ctx.@"if";
+            // script_ctx.@"if" = if_value;
+            // defer script_ctx.@"if" = old_if;
         }
     };
 }

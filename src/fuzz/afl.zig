@@ -47,7 +47,7 @@ export fn zig_fuzz_test_astgen(buf: [*]u8, len: isize) void {
     const gpa = gpa_impl.allocator();
     const astgen_src = buf[0..@intCast(len)];
 
-    const clamp: u32 = @min(2, astgen_src.len);
+    const clamp: u32 = @min(20, astgen_src.len);
     const src = astgen.build(gpa, astgen_src[0..clamp]) catch unreachable;
     defer gpa.free(src);
 

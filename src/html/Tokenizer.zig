@@ -108,9 +108,10 @@ pub const Attr = struct {
 
     pub fn span(attr: Attr) Span {
         if (attr.value) |v| {
+            const quote: u32 = if (v.quote == .none) 0 else 1;
             return .{
                 .start = attr.name.start,
-                .end = v.span.end,
+                .end = v.span.end + quote,
             };
         }
 

@@ -1,9 +1,32 @@
-const interpreter = @import("interpreter.zig");
+const vm = @import("vm.zig");
 const std = @import("std");
 pub const html = @import("html.zig");
 pub const Ast = @import("Ast.zig");
-pub const SuperVM = interpreter.SuperVM;
-pub const Exception = interpreter.Exception;
+pub const VM = vm.VM;
+pub const Exception = vm.Exception;
+
+pub const utils = struct {
+    pub const ResourceDescriptor = union(enum) { @"if": u32, loop: u32 };
+    pub fn loopUpFunction(comptime Value: type) fn (
+        Value.IterElement,
+        std.mem.Allocator,
+        []const Value,
+        *ResourceDescriptor,
+    ) error{ OutOfMemory, WantResource }!Value {
+        return struct {
+            pub fn up(
+                v: Value.IterElement,
+                _: std.mem.Allocator,
+                args: []const Value,
+                ext: *ResourceDescriptor,
+            ) error{ OutOfMemory, WantResource }!Value {
+                if (args.len != 0) return .{ .err = "'up' wants 0 arguments" };
+                ext.* = .{ .loop = v._up_idx };
+                return error.WantResource;
+            }
+        }.up;
+    }
+};
 
 pub const Language = enum {
     html,

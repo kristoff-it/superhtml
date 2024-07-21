@@ -26,6 +26,7 @@ const Error = struct {
         loop_no_value,
         block_cannot_be_inlined,
         block_missing_id,
+        duplicate_id_value,
         already_branching,
         id_under_loop,
         extend_without_template_attr,
@@ -518,8 +519,10 @@ pub fn init(
 
     try p.nodes.append(gpa, .{ .kind = .root, .elem_idx = 0, .depth = 0 });
 
-    var cur = p.html.cursor(0);
+    var seen_ids: std.StringHashMapUnmanaged(Span) = .{};
+    defer seen_ids.deinit(gpa);
 
+    var cur = p.html.cursor(0);
     var node_idx: u32 = 0;
     var low_mark: u32 = 1;
     var seen_non_comment_elems = false;
@@ -556,6 +559,7 @@ pub fn init(
             html_node_idx,
             depth,
             seen_non_comment_elems,
+            &seen_ids,
         ) orelse continue;
         const new_node_idx: u32 = @intCast(p.nodes.items.len - 1);
 
@@ -700,7 +704,7 @@ const Parser = struct {
         elem_idx: u32,
         depth: u32,
         seen_non_comment_elems: bool,
-        // id_map: std.StringHashMapUnmanaged(Span),
+        seen_ids: *std.StringHashMapUnmanaged(Span),
     ) !?*Node {
         const elem = p.html.nodes[elem_idx];
 
@@ -979,22 +983,14 @@ const Parser = struct {
                     }
                 } else {
                     // we can only statically analyze non-scripted ids
+                    const gop = try seen_ids.getOrPut(gpa, maybe_code);
 
-                    // TODO: implement this in a way that can account for branching
-
-                    // const id_str = value.unquote(self.html);
-                    // const gop = id_map.getOrPut(gpa, id_str) catch oom();
-                    // if (gop.found_existing) {
-                    //     return errors.report(
-                    //         template_name,
-                    //         template_path,
-                    //         attr.node,
-                    //         self.html,
-                    //         "DUPLICATE ID",
-                    //         \\TODO: explain
-                    //         ,
-                    //     );
-                    // }
+                    if (gop.found_existing) {
+                        try p.errors.append(gpa, .{
+                            .kind = .duplicate_id_value,
+                            .main_location = value.span,
+                        });
+                    }
                 }
 
                 tmp_result.id_template_parentid = attr;
@@ -1668,10 +1664,17 @@ const Parser = struct {
         }
 
         // nodes under a loop can't have ids
+        log.debug("before", .{});
         if (node.kind.hasId()) {
+            log.debug("here", .{});
             var maybe_parent = p.parent(node);
             while (maybe_parent) |par| : (maybe_parent = p.parent(par)) switch (par.kind.branching()) {
-                else => continue,
+                else => {
+                    log.debug("testing '{s}'", .{
+                        par.elem(p.html).open.slice(p.src),
+                    });
+                    continue;
+                },
                 .loop, .inloop => {
                     try p.errors.append(gpa, .{
                         .kind = .id_under_loop,

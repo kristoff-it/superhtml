@@ -22,7 +22,7 @@ General Options:
 
 ### Diagnostics
 
-<img src=".github/vscode.png" width="70%">
+![](.github/vscode.png)
 
 This language server is stricter than the HTML spec whenever it would prevent potential human errors from being reported.
 
@@ -43,7 +43,7 @@ This will still be reported as an error by SuperHTML because otherwise the follo
 ```
 
 ### Autoformatting
-<img src=".github/vscode-autoformat.gif" width="70%">
+![](.github/vscode-autoformat.gif")
 
 The autoformatter has two main ways of interacting with it in order to request for horizontal / vertical alignment.
 
