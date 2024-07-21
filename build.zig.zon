@@ -11,10 +11,14 @@
             .hash = "12209cde192558f8b3dc098ac2330fc2a14fdd211c5433afd33085af75caa9183147",
         },
         .scripty = .{
-            .path = "../scripty",
-            // .url = "git+https://github.com/kristoff-it/scripty#ee2c6ae13d27d37d60e23779751f6ce7fc2203b4",
-            // .hash = "1220886cea755b179a445978e24cd7fa77a3887a20ffe0596d1ff0bd4c29eb36be20",
+            .url = "git+https://github.com/kristoff-it/scripty#329e496043476254b6dd0990457cdbcee5c18191",
+            .hash = "1220165019c862f801952d1529b990ec72de3d3b53c3a81be23500b1a10cac7266c2",
         },
     },
-    .paths = .{"."},
+    .paths = .{
+        "LICENSE",
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
 }
