@@ -37,7 +37,8 @@ pub const Rule = struct {
                     hash: Span,
                     class: Span,
                     attrib, // TODO
-                    pseudo: Span,
+                    pseudo_class: Span,
+                    pseudo_element: Span,
                 };
 
                 pub fn render(self: Simple, ast: Ast, src: []const u8, out_stream: anytype) !void {
@@ -53,7 +54,8 @@ pub const Rule = struct {
                             .hash => |hash| try out_stream.print("#{s}", .{hash.slice(src)}),
                             .class => |class| try out_stream.print(".{s}", .{class.slice(src)}),
                             .attrib => @panic("TODO"),
-                            .pseudo => |pseudo| try out_stream.print(":{s}", .{pseudo.slice(src)}),
+                            .pseudo_class => |pseudo_class| try out_stream.print(":{s}", .{pseudo_class.slice(src)}),
+                            .pseudo_element => |pseudo_element| try out_stream.print("::{s}", .{pseudo_element.slice(src)}),
                         }
                     }
                 }
@@ -162,6 +164,19 @@ pub const Rule = struct {
     }
 };
 
+pub const Error = struct {
+    tag: Tag,
+    loc: Span,
+
+    pub const Tag = enum {
+        invalid_at_rule,
+        expected_open_curly,
+        expected_close_curly,
+        expected_media_query,
+    };
+};
+
+errors: []const Error,
 first_rule: ?u32,
 rules: []const Rule,
 selectors: []const Rule.Style.Selector,
@@ -174,6 +189,7 @@ const State = struct {
     tokenizer: Tokenizer,
     src: []const u8,
     reconsumed: ?Tokenizer.Token,
+    errors: std.ArrayListUnmanaged(Error),
     rules: std.ArrayListUnmanaged(Rule),
     selectors: std.ArrayListUnmanaged(Rule.Style.Selector),
     declarations: std.ArrayListUnmanaged(Rule.Style.Declaration),
@@ -250,6 +266,7 @@ pub fn init(allocator: std.mem.Allocator, src: []const u8) error{OutOfMemory}!As
         .tokenizer = .{},
         .src = src,
         .reconsumed = null,
+        .errors = .{},
         .rules = .{},
         .selectors = .{},
         .declarations = .{},
@@ -264,6 +281,7 @@ pub fn init(allocator: std.mem.Allocator, src: []const u8) error{OutOfMemory}!As
     }
 
     return .{
+        .errors = try state.errors.toOwnedSlice(allocator),
         .first_rule = first_rule,
         .rules = try state.rules.toOwnedSlice(allocator),
         .selectors = try state.selectors.toOwnedSlice(allocator),
@@ -289,22 +307,64 @@ fn parseRules(s: *State) error{OutOfMemory}!?u32 {
                 .at_keyword => |at_keyword| {
                     const name = at_keyword.slice(s.src)[1..];
 
-                    inline for (at_rules) |at_rule| {
-                        if (std.ascii.eqlIgnoreCase(name, at_rule.name)) {
-                            s.reconsume(token);
+                    match: {
+                        inline for (at_rules) |at_rule| {
+                            if (std.ascii.eqlIgnoreCase(name, at_rule.name)) {
+                                s.reconsume(token);
 
-                            const rule = .{
-                                .type = @unionInit(
-                                    @TypeOf(@as(Rule, undefined).type),
-                                    at_rule.name,
-                                    try at_rule.func(s),
-                                ),
-                                .next = null,
-                            };
+                                const rule = .{
+                                    .type = @unionInit(
+                                        @TypeOf(@as(Rule, undefined).type),
+                                        at_rule.name,
+                                        try at_rule.func(s),
+                                    ),
+                                    .next = null,
+                                };
 
-                            try s.rules.append(s.allocator, rule);
-                        } else {
-                            @panic("TODO");
+                                try s.rules.append(s.allocator, rule);
+
+                                if (first_rule == null) first_rule = @intCast(s.rules.items.len - 1);
+
+                                if (last_rule) |idx| {
+                                    s.rules.items[idx].next = @intCast(s.rules.items.len - 1);
+                                }
+
+                                last_rule = @intCast(s.rules.items.len - 1);
+
+                                break :match;
+                            }
+                        }
+
+                        try s.errors.append(s.allocator, .{
+                            .tag = .invalid_at_rule,
+                            .loc = at_keyword,
+                        });
+
+                        // Do our best to skip the invalid rule
+                        var curly_depth: usize = 0;
+                        var past_block = false;
+                        while (true) {
+                            if (curly_depth == 0 and past_block) break;
+
+                            if (s.consume()) |t| {
+                                switch (t) {
+                                    .semicolon => {
+                                        if (curly_depth == 0) {
+                                            break;
+                                        }
+                                    },
+                                    .open_curly => {
+                                        curly_depth += 1;
+                                        past_block = true;
+                                    },
+                                    .close_curly => {
+                                        if (curly_depth > 0) {
+                                            curly_depth -= 1;
+                                        }
+                                    },
+                                    else => {},
+                                }
+                            } else break;
                         }
                     }
                 },
@@ -319,16 +379,16 @@ fn parseRules(s: *State) error{OutOfMemory}!?u32 {
                     };
 
                     try s.rules.append(s.allocator, rule);
+
+                    if (first_rule == null) first_rule = @intCast(s.rules.items.len - 1);
+
+                    if (last_rule) |idx| {
+                        s.rules.items[idx].next = @intCast(s.rules.items.len - 1);
+                    }
+
+                    last_rule = @intCast(s.rules.items.len - 1);
                 },
             }
-
-            if (first_rule == null) first_rule = @intCast(s.rules.items.len - 1);
-
-            if (last_rule) |idx| {
-                s.rules.items[idx].next = @intCast(s.rules.items.len - 1);
-            }
-
-            last_rule = @intCast(s.rules.items.len - 1);
         } else break;
     }
 
@@ -347,10 +407,17 @@ fn parseMediaRule(s: *State) !Rule.Media {
         if (s.consume()) |token| {
             switch (token) {
                 inline .comma, .open_curly => {
-                    try s.media_queries.append(s.allocator, current_query orelse @panic("TODO"));
+                    if (current_query) |q| {
+                        try s.media_queries.append(s.allocator, q);
 
-                    if (first_query == null) {
-                        first_query = @intCast(s.media_queries.items.len - 1);
+                        if (first_query == null) {
+                            first_query = @intCast(s.media_queries.items.len - 1);
+                        }
+                    } else {
+                        try s.errors.append(s.allocator, .{
+                            .tag = .expected_media_query,
+                            .loc = token.span(),
+                        });
                     }
 
                     switch (token) {
@@ -377,7 +444,12 @@ fn parseMediaRule(s: *State) !Rule.Media {
     if (s.consume()) |token| {
         switch (token) {
             .close_curly => {},
-            else => @panic("TODO"),
+            else => {
+                try s.errors.append(s.allocator, .{
+                    .tag = .expected_close_curly,
+                    .loc = token.span(),
+                });
+            },
         }
     } else {
         @panic("TODO");
@@ -414,7 +486,12 @@ fn parseStyleRule(s: *State) !Rule.Style {
     if (s.consume()) |token| {
         switch (token) {
             .open_curly => {},
-            else => @panic("TODO"),
+            else => {
+                try s.errors.append(s.allocator, .{
+                    .tag = .expected_open_curly,
+                    .loc = token.span(),
+                });
+            },
         }
     } else {
         @panic("TODO");
@@ -446,7 +523,12 @@ fn parseStyleRule(s: *State) !Rule.Style {
     if (s.consume()) |token| {
         switch (token) {
             .close_curly => {},
-            else => @panic("TODO"),
+            else => {
+                try s.errors.append(s.allocator, .{
+                    .tag = .expected_close_curly,
+                    .loc = token.span(),
+                });
+            },
         }
     } else {
         @panic("TODO");
@@ -527,12 +609,26 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
                     if (s.consume()) |t| {
                         switch (t) {
                             .ident => |ident| {
-                                try s.specifiers.append(s.allocator, .{ .pseudo = ident });
+                                try s.specifiers.append(s.allocator, .{ .pseudo_class = ident });
                             },
                             .function => @panic("TODO"),
+                            .colon => {
+                                if (s.consume()) |name_tok| {
+                                    switch (name_tok) {
+                                        .ident => |ident| {
+                                            try s.specifiers.append(s.allocator, .{ .pseudo_element = ident });
+                                        },
+                                        else => @panic("TODO"),
+                                    }
+                                } else {
+                                    @panic("TODO");
+                                }
+                            },
                             else => @panic("TODO"),
                         }
-                    } else @panic("TODO");
+                    } else {
+                        @panic("TODO");
+                    }
                 },
                 else => {
                     s.reconsume(token);
@@ -581,6 +677,7 @@ fn parseDeclarationValue(s: *State) Span {
 }
 
 pub fn deinit(self: Ast, allocator: std.mem.Allocator) void {
+    allocator.free(self.errors);
     allocator.free(self.rules);
     allocator.free(self.selectors);
     allocator.free(self.declarations);
@@ -605,7 +702,16 @@ test "simple stylesheet" {
     const ast = try Ast.init(std.testing.allocator, src);
     defer ast.deinit(std.testing.allocator);
 
+    try std.testing.expect(ast.errors.len == 0);
     try std.testing.expectFmt(expected, "{s}", .{ast.formatter(src)});
+}
+
+test "empty" {
+    const ast = try Ast.init(std.testing.allocator, "");
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expect(ast.errors.len == 0);
+    try std.testing.expectFmt("", "{s}", .{ast.formatter("")});
 }
 
 test "full example" {
@@ -627,6 +733,7 @@ test "full example" {
     const ast = try Ast.init(std.testing.allocator, src);
     defer ast.deinit(std.testing.allocator);
 
+    try std.testing.expect(ast.errors.len == 0);
     try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
 }
 
@@ -664,6 +771,7 @@ test "example.org" {
     const ast = try Ast.init(std.testing.allocator, src);
     defer ast.deinit(std.testing.allocator);
 
+    try std.testing.expect(ast.errors.len == 0);
     try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
 }
 
@@ -691,5 +799,54 @@ test "media queries" {
     const ast = try Ast.init(std.testing.allocator, src);
     defer ast.deinit(std.testing.allocator);
 
+    try std.testing.expect(ast.errors.len == 0);
+    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+}
+
+test "invalid at rule" {
+    const src =
+        \\@hello foo {
+        \\    .red {
+        \\        color: red;
+        \\    }
+        \\
+        \\    .blue {
+        \\        color: blue;
+        \\    }
+        \\}
+        \\
+        \\@foo bar;
+        \\
+        \\.green {
+        \\    color: green;
+        \\}
+    ;
+
+    const ast = try Ast.init(std.testing.allocator, src);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualDeep(&[_]Error{
+        .{
+            .tag = .invalid_at_rule,
+            .loc = .{ .start = 0, .end = 6 },
+        },
+        .{
+            .tag = .invalid_at_rule,
+            .loc = .{ .start = 93, .end = 97 },
+        },
+    }, ast.errors);
+}
+
+test "pseudo-classes and pseudo-elements" {
+    const src =
+        \\a:hover::after {
+        \\    content: "Hello";
+        \\}
+    ;
+
+    const ast = try Ast.init(std.testing.allocator, src);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expect(ast.errors.len == 0);
     try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
 }
