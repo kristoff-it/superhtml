@@ -1,6 +1,7 @@
 const vm = @import("vm.zig");
 const std = @import("std");
 pub const html = @import("html.zig");
+pub const css = @import("css.zig");
 pub const Ast = @import("Ast.zig");
 pub const VM = vm.VM;
 pub const Exception = vm.Exception;
