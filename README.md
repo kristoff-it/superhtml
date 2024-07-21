@@ -43,7 +43,7 @@ This will still be reported as an error by SuperHTML because otherwise the follo
 ```
 
 ### Autoformatting
-![](.github/vscode-autoformat.gif")
+![](.github/vscode-autoformat.gif)
 
 The autoformatter has two main ways of interacting with it in order to request for horizontal / vertical alignment.
 
