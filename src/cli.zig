@@ -6,8 +6,6 @@ const logging = @import("cli/logging.zig");
 const fmt_exe = @import("cli/fmt.zig");
 const lsp_exe = @import("cli/lsp.zig");
 
-pub const version = "0.1.4";
-
 pub const known_folders_config = .{
     .xdg_force_default = true,
     .xdg_on_mac = true,
@@ -91,7 +89,7 @@ fn oom() noreturn {
 }
 
 fn printVersion() noreturn {
-    std.debug.print("{s}\n", .{version});
+    std.debug.print("{s}\n", .{build_options.version});
     std.process.exit(0);
 }
 

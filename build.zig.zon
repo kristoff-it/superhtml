@@ -1,6 +1,6 @@
 .{
     .name = "superhtml",
-    .version = "0.1.0",
+    .version = "0.4.0",
     .dependencies = .{
         .@"zig-lsp-kit" = .{
             .url = "git+https://github.com/kristoff-it/zig-lsp-kit#b4bf61d7fbf9cf7cfdb6f01b211947d2de3e42fd",
@@ -13,6 +13,10 @@
         .scripty = .{
             .url = "git+https://github.com/kristoff-it/scripty#329e496043476254b6dd0990457cdbcee5c18191",
             .hash = "1220165019c862f801952d1529b990ec72de3d3b53c3a81be23500b1a10cac7266c2",
+        },
+        .@"zig-afl-kit" = .{
+            .url = "git+https://github.com/kristoff-it/zig-afl-kit#4283624edfca1d3cc409bee4638be210c06ccecf",
+            .hash = "122098536c31acdeeee50e4648798b0295e4594cfb04b8d57d9434d5fc3b7dd8cca0",
         },
     },
     .paths = .{
