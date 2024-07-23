@@ -43,6 +43,20 @@ pub const Handler = struct {
 
     usingnamespace @import("lsp/logic.zig");
 
+    fn windowNotification(
+        self: *Handler,
+        lvl: types.MessageType,
+        comptime fmt: []const u8,
+        args: anytype,
+    ) !void {
+        const txt = try std.fmt.allocPrint(self.gpa, fmt, args);
+        const msg = try self.server.sendToClientNotification(
+            "window/showMessage",
+            .{ .type = lvl, .message = txt },
+        );
+        defer self.gpa.free(msg);
+    }
+
     pub fn initialize(
         self: *Handler,
         _: std.mem.Allocator,
@@ -78,26 +92,26 @@ pub const Handler = struct {
                 .completionProvider = .{
                     .triggerCharacters = &[_][]const u8{"<"},
                 },
-                .hoverProvider = .{ .bool = true },
-                .definitionProvider = .{ .bool = true },
-                .referencesProvider = .{ .bool = true },
+                .hoverProvider = .{ .bool = false },
+                .definitionProvider = .{ .bool = false },
+                .referencesProvider = .{ .bool = false },
                 .documentFormattingProvider = .{ .bool = true },
                 .semanticTokensProvider = .{
                     .SemanticTokensOptions = .{
-                        .full = .{ .bool = true },
+                        .full = .{ .bool = false },
                         .legend = .{
                             .tokenTypes = std.meta.fieldNames(types.SemanticTokenTypes),
                             .tokenModifiers = std.meta.fieldNames(types.SemanticTokenModifiers),
                         },
                     },
                 },
-                .inlayHintProvider = .{ .bool = true },
+                .inlayHintProvider = .{ .bool = false },
             },
         };
     }
 
     pub fn initialized(
-        self: Handler,
+        self: *Handler,
         _: std.mem.Allocator,
         notification: types.InitializedParams,
     ) !void {
@@ -131,8 +145,13 @@ pub const Handler = struct {
 
         const language_id = notification.textDocument.languageId;
         const language = std.meta.stringToEnum(super.Language, language_id) orelse {
-            log.debug("unrecognized language id: '{s}'", .{language_id});
-            return;
+            log.err("unrecognized language id: '{s}'", .{language_id});
+            try self.windowNotification(
+                .Error,
+                "Unrecognized languageId, expected are: html, superhtml, xml",
+                .{},
+            );
+            @panic("unrecognized language id, exiting");
         };
         try self.loadFile(
             arena,
@@ -150,11 +169,17 @@ pub const Handler = struct {
         errdefer |e| log.err("changeDocument failed: {any}", .{e});
 
         if (notification.contentChanges.len == 0) {
-            log.warn("changeDocument failed: no changes", .{});
-            return error.InvalidParams;
+            return;
         }
+
         const file = self.files.get(notification.textDocument.uri) orelse {
-            log.warn("changeDocument failed: unknown file: {any}", .{notification.textDocument.uri});
+            log.err("changeDocument failed: unknown file: {any}", .{notification.textDocument.uri});
+
+            try self.windowNotification(
+                .Error,
+                "Unrecognized languageId, expected are: html, superhtml, xml",
+                .{},
+            );
             return error.InvalidParams;
         };
 
