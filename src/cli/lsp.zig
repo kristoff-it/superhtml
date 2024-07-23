@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_options = @import("build_options");
 const assert = std.debug.assert;
 const lsp = @import("lsp");
 const types = lsp.types;
@@ -8,7 +9,6 @@ const ResultType = lsp.server.ResultType;
 const Message = lsp.server.Message;
 const super = @import("superhtml");
 const Document = @import("lsp/Document.zig");
-const version = @import("../cli.zig").version;
 
 const log = std.log.scoped(.super_lsp);
 
@@ -74,7 +74,7 @@ pub const Handler = struct {
         return .{
             .serverInfo = .{
                 .name = "SuperHTML LSP",
-                .version = version,
+                .version = build_options.version,
             },
             .capabilities = .{
                 .positionEncoding = switch (offset_encoding_) {
