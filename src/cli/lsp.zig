@@ -169,7 +169,8 @@ pub const Handler = struct {
         errdefer |e| log.err("changeDocument failed: {any}", .{e});
 
         if (notification.contentChanges.len == 0) {
-            return;
+            log.warn("changeDocument failed: no changes", .{});
+            return error.InternalError;
         }
 
         const file = self.files.get(notification.textDocument.uri) orelse {
