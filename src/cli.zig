@@ -19,6 +19,8 @@ pub const std_options: std.Options = .{
     .logFn = logging.logFn,
 };
 
+pub const version = build_options.version;
+
 var lsp_mode = false;
 
 pub fn panic(
