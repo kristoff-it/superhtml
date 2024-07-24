@@ -120,9 +120,7 @@ fn formatFile(
             break :blk .html;
         }
 
-        if (std.mem.eql(u8, ext, ".shtml") or
-            std.mem.eql(u8, ext, ".super"))
-        {
+        if (std.mem.eql(u8, ext, ".shtml")) {
             break :blk .super;
         }
         return;
@@ -291,7 +289,7 @@ const Command = struct {
             \\     
             \\   Detected extensions:     
             \\        HTML          .html, .htm 
-            \\        SuperHTML     .shtml, .super 
+            \\        SuperHTML     .shtml 
             \\
             \\Options:
             \\
