@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) !void {
     const folders = b.dependency("known-folders", .{});
     const lsp = b.dependency("zig-lsp-kit", .{});
 
+    setupTestStep(b, target, superhtml);
     setupCliTool(b, target, optimize, options, superhtml, folders, lsp);
     setupWasmStep(b, optimize, options, superhtml, lsp);
     setupFuzzStep(b, target, superhtml);
