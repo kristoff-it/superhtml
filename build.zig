@@ -273,14 +273,15 @@ const Version = union(Kind) {
 };
 fn getVersion(b: *std.Build) Version {
     const git_path = b.findProgram(&.{"git"}, &.{}) catch return .unknown;
+    var out: u8 = undefined;
     const git_describe = std.mem.trim(
         u8,
-        b.run(&[_][]const u8{
+        b.runAllowFail(&[_][]const u8{
             git_path,            "-C",
             b.build_root.path.?, "describe",
             "--match",           "*.*.*",
             "--tags",
-        }),
+        }, &out, .Ignore) catch return .unknown,
         " \n\r",
     );
 
