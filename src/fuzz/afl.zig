@@ -4,46 +4,43 @@ const astgen = @import("astgen.zig");
 
 pub const std_options = .{ .log_level = .err };
 
-const mem = std.mem;
+export fn zig_fuzz_init() void {}
 
-// const toggle_me = std.mem.backend_can_use_eql_bytes;
-// comptime {
-//     std.debug.assert(toggle_me == false);
-// }
+export fn zig_fuzz_test(buf: [*]u8, len: isize) void {
+    var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    defer std.debug.assert(gpa_impl.deinit() == .ok);
 
-var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
-export fn zig_fuzz_test_direct(buf: [*]u8, len: isize) void {
     const gpa = gpa_impl.allocator();
     const src = buf[0..@intCast(len)];
 
     const html_ast = super.html.Ast.init(gpa, src, .superhtml) catch unreachable;
     defer html_ast.deinit(gpa);
 
-    if (html_ast.errors.len == 0) {
-        const super_ast = super.Ast.init(gpa, html_ast, src) catch unreachable;
-        defer super_ast.deinit(gpa);
-    }
-
     // if (html_ast.errors.len == 0) {
-    //     var out = std.ArrayList(u8).init(gpa);
-    //     defer out.deinit();
-    //     html_ast.render(src, out.writer()) catch unreachable;
-
-    //     eqlIgnoreWhitespace(src, out.items);
-
-    //     var full_circle = std.ArrayList(u8).init(gpa);
-    //     defer full_circle.deinit();
-    //     html_ast.render(out.items, full_circle.writer()) catch unreachable;
-
-    //     std.debug.assert(std.mem.eql(u8, out.items, full_circle.items));
-
     //     const super_ast = super.Ast.init(gpa, html_ast, src) catch unreachable;
     //     defer super_ast.deinit(gpa);
     // }
 
+    if (html_ast.errors.len == 0) {
+        var out = std.ArrayList(u8).init(gpa);
+        defer out.deinit();
+        html_ast.render(src, out.writer()) catch unreachable;
+
+        eqlIgnoreWhitespace(src, out.items);
+
+        var full_circle = std.ArrayList(u8).init(gpa);
+        defer full_circle.deinit();
+        html_ast.render(out.items, full_circle.writer()) catch unreachable;
+
+        std.debug.assert(std.mem.eql(u8, out.items, full_circle.items));
+
+        const super_ast = super.Ast.init(gpa, html_ast, src) catch unreachable;
+        defer super_ast.deinit(gpa);
+    }
 }
 
 export fn zig_fuzz_test_astgen(buf: [*]u8, len: isize) void {
+    var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
     const gpa = gpa_impl.allocator();
     const astgen_src = buf[0..@intCast(len)];
 

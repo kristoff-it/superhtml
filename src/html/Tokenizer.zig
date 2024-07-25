@@ -2248,11 +2248,14 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
 
                     // Anything else
                     // Start a new attribute in the current tag token. Set that attribute name and value to the empty string. Reconsume in the attribute name state.
-                    else => self.state = .{
-                        .attribute_name = .{
-                            .tag = state,
-                            .name_start = self.idx - 1,
-                        },
+                    else => {
+                        self.idx -= 1;
+                        self.state = .{
+                            .attribute_name = .{
+                                .tag = state,
+                                .name_start = self.idx,
+                            },
+                        };
                     },
                 }
             },
@@ -2864,7 +2867,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             else => unreachable,
                         };
 
-                        if (self.return_attrs) {
+                        if (self.return_attrs and tag.attr_count == 0) {
                             const deferred: Token = if (tag.kind == .end_self) .{
                                 .parse_error = .{
                                     .tag = .end_tag_with_trailing_solidus,

@@ -15,8 +15,8 @@
             .hash = "1220165019c862f801952d1529b990ec72de3d3b53c3a81be23500b1a10cac7266c2",
         },
         .@"zig-afl-kit" = .{
-            .url = "git+https://github.com/kristoff-it/zig-afl-kit#8784c51828b0fc9774a57d83d345f4ab73c23ffd",
-            .hash = "12205cb4a9a2c74fe9c501ff290367e22e93e69811e4fd8bdb8a614b3fdabd2b5fe7",
+            .url = "git+https://github.com/kristoff-it/zig-afl-kit#f003bfe714f2964c90939fdc940d5993190a66ec",
+            .hash = "1220f2d8402bb7bbc4786b9c0aad73910929ea209cbd3b063842371d68abfed33c1e",
         },
     },
     .paths = .{

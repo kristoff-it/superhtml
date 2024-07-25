@@ -107,23 +107,26 @@ fn setupFuzzStep(
         .name = "superfuzz-afl",
         .root_source_file = b.path("src/fuzz/afl.zig"),
         .target = target,
-        .optimize = .Debug,
-        .single_threaded = true,
+        .optimize = .ReleaseSafe,
     });
 
     afl_obj.root_module.addImport("superhtml", superhtml);
     afl_obj.root_module.stack_check = false; // not linking with compiler-rt
     afl_obj.root_module.link_libc = true; // afl runtime depends on libc
 
-    const afl_fuzz = afl.addInstrumentedExe(b, afl_obj);
-    fuzz.dependOn(&b.addInstallFile(afl_fuzz, "superfuzz-afl").step);
+    // const afl_fuzz = afl.addInstrumentedExe(
+    //     b,
+    //     target,
+    //     .ReleaseSafe,
+    //     afl_obj,
+    // );
+    // fuzz.dependOn(&b.addInstallFile(afl_fuzz, "superfuzz-afl").step);
 
     const super_fuzz = b.addExecutable(.{
         .name = "superfuzz",
         .root_source_file = b.path("src/fuzz.zig"),
         .target = target,
-        .optimize = .Debug,
-        .single_threaded = true,
+        .optimize = .ReleaseSafe,
     });
 
     super_fuzz.root_module.addImport("superhtml", superhtml);
@@ -134,7 +137,6 @@ fn setupFuzzStep(
         .root_source_file = b.path("src/fuzz/astgen.zig"),
         .target = target,
         .optimize = .Debug,
-        .single_threaded = true,
     });
 
     supergen.root_module.addImport("superhtml", superhtml);
@@ -286,7 +288,7 @@ fn getVersion(b: *std.Build) Version {
         0 => return .{ .tag = git_describe },
         2 => {
             // Untagged development build (e.g. 0.8.0-684-gbbe2cca1a).
-            var it = std.mem.split(u8, git_describe, "-");
+            var it = std.mem.splitScalar(u8, git_describe, '-');
             const tagged_ancestor = it.next() orelse unreachable;
             const commit_height = it.next() orelse unreachable;
             const commit_id = it.next() orelse unreachable;

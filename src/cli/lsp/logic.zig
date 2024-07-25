@@ -15,17 +15,18 @@ pub fn loadFile(
     uri: []const u8,
     language: super.Language,
 ) !void {
+    errdefer @panic("error while loading document!");
+
     var res: lsp.types.PublishDiagnosticsParams = .{
         .uri = uri,
         .diagnostics = &.{},
     };
 
-    var doc = try Document.init(
+    const doc = try Document.init(
         self.gpa,
         new_text,
         language,
     );
-    errdefer doc.deinit(self.gpa);
 
     log.debug("document init", .{});
 

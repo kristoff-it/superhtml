@@ -695,6 +695,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
 
                     log.debug("retokenizing: '{s}'", .{current.open.slice(src)});
                     const name = tt.next(src[0..current.open.end]).?.tag_name.slice(src);
+                    log.debug("tag name: '{s}'", .{name});
                     if (std.ascii.eqlIgnoreCase("pre", name)) {
                         pre += 1;
                     }
@@ -707,11 +708,26 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                         src[current.open.end - 2],
                     );
 
+                    // if (std.mem.eql(u8, name, "path")) @breakpoint();
+
                     while (tt.next(src[0..current.open.end])) |maybe_attr| {
                         log.debug("tt: {s}", .{@tagName(maybe_attr)});
                         log.debug("tt: {any}", .{maybe_attr});
                         switch (maybe_attr) {
-                            else => unreachable,
+                            else => {
+                                log.debug(
+                                    "got unexpected {any}",
+                                    .{maybe_attr},
+                                );
+                                unreachable;
+                            },
+                            .tag_name => {
+                                log.debug(
+                                    "got unexpected tag_name '{s}'",
+                                    .{maybe_attr.tag_name.slice(src)},
+                                );
+                                unreachable;
+                            },
                             .tag => break,
                             .attr => |attr| {
                                 if (vertical) {
@@ -1116,6 +1132,30 @@ test "arrow span" {
         \\  <span var="$if.title"></span></a>
     ;
 
+    const ast = try Ast.init(std.testing.allocator, case, .html);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+}
+
+test "self-closing tag complex example" {
+    const case =
+        \\extend template="base.html"/>
+        \\
+        \\<div id="content">
+        \\<svg viewBox="0 0 24 24">
+        \\<path d="M14.4,6H20V16H13L12.6,14H7V21H5V4H14L14.4,6M14,14H16V12H18V10H16V8H14V10L13,8V6H11V8H9V6H7V8H9V10H7V12H9V10H11V12H13V10L14,12V14M11,10V8H13V10H11M14,10H16V12H14V10Z" />
+        \\</svg>
+        \\</div>        
+    ;
+    const expected =
+        \\extend template="base.html"/>
+        \\<div id="content">
+        \\  <svg viewBox="0 0 24 24">
+        \\    <path d="M14.4,6H20V16H13L12.6,14H7V21H5V4H14L14.4,6M14,14H16V12H18V10H16V8H14V10L13,8V6H11V8H9V6H7V8H9V10H7V12H9V10H11V12H13V10L14,12V14M11,10V8H13V10H11M14,10H16V12H14V10Z"/>
+        \\  </svg>
+        \\</div>
+    ;
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
