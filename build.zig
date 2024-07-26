@@ -5,7 +5,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const version = getVersion(b);
+    const version: Version = if (b.option(
+        []const u8,
+        "force-version",
+        "When building the SuperHTML CLI tool force a specific version, bypassing 'git describe'",
+    )) |v| .{ .commit = v } else getVersion(b);
 
     const scripty = b.dependency("scripty", .{});
     const superhtml = b.addModule("superhtml", .{
