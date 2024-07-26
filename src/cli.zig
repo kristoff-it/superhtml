@@ -3,6 +3,8 @@ const builtin = @import("builtin");
 const build_options = @import("build_options");
 const super = @import("super");
 const logging = @import("cli/logging.zig");
+const interface_exe = @import("cli/interface.zig");
+const check_exe = @import("cli/check.zig");
 const fmt_exe = @import("cli/fmt.zig");
 const lsp_exe = @import("cli/lsp.zig");
 
@@ -80,13 +82,12 @@ pub fn main() !void {
     if (cmd == .lsp) lsp_mode = true;
 
     _ = switch (cmd) {
-        // .check => check_exe.run(gpa, args[2..]),
-        // .interface, .i => interface_exe.run(gpa, args[2..]),
+        .check => check_exe.run(gpa, args[2..]),
+        .interface, .i => interface_exe.run(gpa, args[2..]),
         .fmt => fmt_exe.run(gpa, args[2..]),
         .lsp => lsp_exe.run(gpa, args[2..]),
         .help => fatalHelp(),
         .version => printVersion(),
-        else => fatalHelp(),
     } catch |err| fatal("unexpected error: {s}\n", .{@errorName(err)});
 }
 

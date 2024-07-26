@@ -144,7 +144,7 @@ pub const Handler = struct {
         errdefer self.gpa.free(new_text);
 
         const language_id = notification.textDocument.languageId;
-        const language = std.meta.stringToEnum(super.Language, language_id) orelse {
+        const language = super.Language.fromSliceResilient(language_id) orelse {
             log.err("unrecognized language id: '{s}'", .{language_id});
             try self.windowNotification(
                 .Error,

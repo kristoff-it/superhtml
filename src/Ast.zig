@@ -1746,6 +1746,81 @@ const Parser = struct {
     }
 };
 
+pub fn printInterfaceAsHtml(
+    ast: Ast,
+    html_ast: html.Ast,
+    path: ?[]const u8,
+    out: anytype,
+) !void {
+    if (path) |p| {
+        try out.print("<extend template=\"{s}\">\n", .{p});
+    }
+    var it = ast.interface.iterator();
+    var at_least_one = false;
+    while (it.next()) |kv| {
+        at_least_one = true;
+        const id = kv.key_ptr.*;
+        const parent_idx = kv.value_ptr.*;
+        const tag_name = ast.nodes[parent_idx].superBlock(
+            ast.src,
+            html_ast,
+        ).parent_tag_name.slice(ast.src);
+        try out.print("<{s} id=\"{s}\"></{s}>\n", .{
+            tag_name,
+            id,
+            tag_name,
+        });
+    }
+
+    if (!at_least_one) {
+        try out.print(
+            \\
+            \\<!--
+            \\The extended template has no interface!
+            \\Add <super> tags to it to make it extensible.
+            \\-->
+            \\
+        , .{});
+    }
+}
+
+pub fn printErrors(ast: Ast, src: []const u8, path: ?[]const u8) void {
+    for (ast.errors) |err| {
+        const range = err.main_location.range(src);
+        std.debug.print("{s}:{}:{}: {s}\n", .{
+            path orelse "<stdin>",
+            range.start.row,
+            range.start.col,
+            @tagName(err.kind),
+        });
+    }
+}
+
+pub fn interfaceFormatter(
+    ast: Ast,
+    html_ast: html.Ast,
+    path: ?[]const u8,
+) Formatter {
+    return .{ .ast = ast, .html = html_ast, .path = path };
+}
+const Formatter = struct {
+    ast: Ast,
+    html: html.Ast,
+    path: ?[]const u8,
+
+    pub fn format(
+        f: Formatter,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        out_stream: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        try f.ast.printInterfaceAsHtml(f.html, f.path, out_stream);
+    }
+};
+
 fn is(str1: []const u8, str2: []const u8) bool {
     return std.ascii.eqlIgnoreCase(str1, str2);
 }
