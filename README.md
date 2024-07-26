@@ -157,7 +157,7 @@ language-servers = [ "superhtml-lsp" ]
 ```
 See https://helix-editor.com for more information on how to add new language servers.
 
-#### [Flow](https://github.com/neurocyte/flow)
+#### [Flow Control](https://github.com/neurocyte/flow)
 Already defaults to using SuperHTML, just add the executable to your `PATH`.
 
 #### Other editors
