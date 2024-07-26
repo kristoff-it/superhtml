@@ -51,7 +51,15 @@ pub fn panic(
     std.process.exit(1);
 }
 
-pub const Command = enum { fmt, lsp, help, version };
+pub const Command = enum {
+    check,
+    interface,
+    i, // alias for interface
+    fmt,
+    lsp,
+    help,
+    version,
+};
 
 pub fn main() !void {
     var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -72,10 +80,13 @@ pub fn main() !void {
     if (cmd == .lsp) lsp_mode = true;
 
     _ = switch (cmd) {
+        // .check => check_exe.run(gpa, args[2..]),
+        // .interface, .i => interface_exe.run(gpa, args[2..]),
         .fmt => fmt_exe.run(gpa, args[2..]),
         .lsp => lsp_exe.run(gpa, args[2..]),
         .help => fatalHelp(),
         .version => printVersion(),
+        else => fatalHelp(),
     } catch |err| fatal("unexpected error: {s}\n", .{@errorName(err)});
 }
 
@@ -95,14 +106,15 @@ fn printVersion() noreturn {
 
 fn fatalHelp() noreturn {
     fatal(
-        \\Usage: super COMMAND [OPTIONS]
+        \\Usage: superhtml COMMAND [OPTIONS]
         \\
         \\Commands:
-        // \\  check        Check HTML documents for syntax errors
-        \\  fmt          Format HTML documents
-        \\  lsp          Start the Super LSP
-        \\  help         Show this menu and exit
-        \\  version      Print Super's version and exit
+        \\  check         Check documents for syntax errors
+        \\  interface, i  Print a SuperHTML template's interface
+        \\  fmt           Format documents
+        \\  lsp           Start the Super LSP
+        \\  help          Show this menu and exit
+        \\  version       Print Super's version and exit
         \\
         \\General Options:
         \\  --help, -h   Print command specific usage

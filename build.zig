@@ -31,10 +31,17 @@ pub fn build(b: *std.Build) !void {
     setupTestStep(b, target, superhtml);
     setupCliTool(b, target, optimize, options, superhtml, folders, lsp);
     setupWasmStep(b, optimize, options, superhtml, lsp);
-    setupFuzzStep(b, target, superhtml);
     setupCheckStep(b, target, optimize, options, superhtml, folders, lsp);
     if (version == .tag) {
         setupReleaseStep(b, options, superhtml, folders, lsp);
+    }
+
+    if (b.option(
+        bool,
+        "fuzz",
+        "Generate an executable for AFL++ (persistent mode) plus extra tooling",
+    ) orelse false) {
+        setupFuzzStep(b, target, superhtml);
     }
 }
 
@@ -103,10 +110,6 @@ fn setupFuzzStep(
     target: std.Build.ResolvedTarget,
     superhtml: *std.Build.Module,
 ) void {
-    const fuzz = b.step(
-        "fuzz",
-        "Generate an executable for AFL++ (persistent mode) plus extra tooling",
-    );
     const afl_obj = b.addObject(.{
         .name = "superfuzz-afl",
         .root_source_file = b.path("src/fuzz/afl.zig"),
@@ -134,7 +137,7 @@ fn setupFuzzStep(
     });
 
     super_fuzz.root_module.addImport("superhtml", superhtml);
-    fuzz.dependOn(&b.addInstallArtifact(super_fuzz, .{}).step);
+    b.installArtifact(super_fuzz);
 
     const supergen = b.addExecutable(.{
         .name = "supergen",
@@ -144,7 +147,7 @@ fn setupFuzzStep(
     });
 
     supergen.root_module.addImport("superhtml", superhtml);
-    fuzz.dependOn(&b.addInstallArtifact(supergen, .{}).step);
+    b.installArtifact(supergen);
 }
 
 fn setupCliTool(

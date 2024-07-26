@@ -11,12 +11,13 @@
             .hash = "12209cde192558f8b3dc098ac2330fc2a14fdd211c5433afd33085af75caa9183147",
         },
         .scripty = .{
-            .url = "git+https://github.com/kristoff-it/scripty#141af2a88ed45a8e0fa5762ae7acddb8e747d8c9",
-            .hash = "12209226037051a39081e33137927031e378d76420088fd57cf0eab0fa98474456b4",
+            .url = "git+https://github.com/kristoff-it/scripty#3338e0ed9e1ffd869acadca9673c87894b3ba38c",
+            .hash = "1220a064034f7b797618a1fc5c2f3596b5dbfe4f309afd0798cfc77bbea6bb5eb672",
         },
         .@"zig-afl-kit" = .{
             .url = "git+https://github.com/kristoff-it/zig-afl-kit#f003bfe714f2964c90939fdc940d5993190a66ec",
             .hash = "1220f2d8402bb7bbc4786b9c0aad73910929ea209cbd3b063842371d68abfed33c1e",
+            .lazy = true,
         },
     },
     .paths = .{
