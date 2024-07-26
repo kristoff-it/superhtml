@@ -114,15 +114,17 @@ fn isIdentChar(char: u8) bool {
 
 // https://www.w3.org/TR/css-syntax-3/#check-if-three-code-points-would-start-an-ident-sequence
 fn wouldStartIdent(self: *Tokenizer, src: []const u8) bool {
-    if (self.idx + 2 >= src.len) return false;
+    const char0 = if (self.idx >= src.len) ' ' else src[self.idx];
+    const char1 = if (self.idx + 1 >= src.len) ' ' else src[self.idx + 1];
+    const char2 = if (self.idx + 2 >= src.len) ' ' else src[self.idx + 2];
 
-    const chars = src[self.idx .. self.idx + 3];
+    _ = char2;
 
     // TODO: Support escape sequences
-    return switch (chars[0]) {
-        '-' => isIdentStartChar(chars[1]) or chars[1] == '-',
+    return switch (char0) {
+        '-' => isIdentStartChar(char1) or char1 == '-',
         '\\' => @panic("TODO"),
-        else => isIdentStartChar(chars[0]),
+        else => isIdentStartChar(char0),
     };
 }
 

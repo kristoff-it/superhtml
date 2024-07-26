@@ -75,7 +75,7 @@ pub const Rule = struct {
             pub fn render(self: Declaration, src: []const u8, out_stream: anytype) !void {
                 _ = try out_stream.write(self.property.slice(src));
                 _ = try out_stream.write(": ");
-                _ = try out_stream.write(self.value.slice(src));
+                try renderValue(self.value.slice(src), out_stream);
             }
         };
 
@@ -118,6 +118,45 @@ pub const Rule = struct {
         queries: Span,
         first_rule: ?u32,
 
+        fn renderMediaQuery(query: []const u8, out_stream: anytype) !void {
+            var query_tokenizer: Tokenizer = .{};
+
+            while (query_tokenizer.next(query)) |token| {
+                switch (token) {
+                    .ident => |ident| _ = try out_stream.write(ident.slice(query)),
+                    .open_paren => {
+                        _ = try out_stream.write("(");
+                        _ = try out_stream.write(query_tokenizer.next(query).?.ident.slice(query));
+                        switch (query_tokenizer.next(query).?) {
+                            .colon => {
+                                _ = try out_stream.write(": ");
+
+                                var span: ?Span = null;
+                                while (true) {
+                                    const t = query_tokenizer.next(query).?;
+                                    if (t == .close_paren) break;
+
+                                    if (span == null) {
+                                        span = t.span();
+                                    } else {
+                                        span.?.end = t.span().end;
+                                    }
+                                }
+
+                                std.debug.assert(span != null);
+
+                                try renderValue(span.?.slice(query), out_stream);
+                            },
+                            .close_paren => {},
+                            else => unreachable,
+                        }
+                        _ = try out_stream.write(")");
+                    },
+                    else => unreachable,
+                }
+            }
+        }
+
         pub fn render(self: Media, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) !void {
             for (0..depth) |_| _ = try out_stream.write("    ");
 
@@ -128,7 +167,7 @@ pub const Rule = struct {
                     _ = try out_stream.write(", ");
                 }
 
-                _ = try out_stream.write(query.slice(src));
+                try renderMediaQuery(query.slice(src), out_stream);
             }
 
             _ = try out_stream.write(" {");
@@ -255,6 +294,24 @@ pub fn render(self: Ast, src: []const u8, out_stream: anytype) !void {
         try rule.render(self, src, out_stream, 0);
 
         rule = self.rules[rule.next orelse break];
+    }
+}
+
+fn renderValue(value: []const u8, out_stream: anytype) !void {
+    var value_tokenizer: Tokenizer = .{};
+
+    var last_token: ?Tokenizer.Token = null;
+    while (value_tokenizer.next(value)) |token| : (last_token = token) {
+        if (switch (token) {
+            .comma, .close_paren => false,
+            else => true,
+        } and if (last_token) |last| switch (last) {
+            .function => false,
+            else => true,
+        } else false) {
+            _ = try out_stream.write(" ");
+        }
+        _ = try out_stream.write(token.span().slice(value));
     }
 }
 
@@ -403,36 +460,37 @@ fn parseMediaRule(s: *State) !Rule.Media {
 
     var first_query: ?u32 = null;
     var current_query: ?Span = null;
+    var paren_depth: usize = 0;
     while (true) {
         if (s.consume()) |token| {
-            switch (token) {
-                inline .comma, .open_curly => {
-                    if (current_query) |q| {
-                        try s.media_queries.append(s.allocator, q);
+            if ((token == .comma or token == .open_curly) and paren_depth == 0) {
+                if (current_query) |q| {
+                    try s.media_queries.append(s.allocator, q);
 
-                        if (first_query == null) {
-                            first_query = @intCast(s.media_queries.items.len - 1);
-                        }
-                    } else {
-                        try s.errors.append(s.allocator, .{
-                            .tag = .expected_media_query,
-                            .loc = token.span(),
-                        });
+                    if (first_query == null) {
+                        first_query = @intCast(s.media_queries.items.len - 1);
                     }
+                } else {
+                    try s.errors.append(s.allocator, .{
+                        .tag = .expected_media_query,
+                        .loc = token.span(),
+                    });
+                }
 
-                    switch (token) {
-                        .comma => current_query = null,
-                        .open_curly => break,
-                        else => unreachable,
-                    }
-                },
-                else => {
-                    if (current_query == null) {
-                        current_query = token.span();
-                    } else {
-                        current_query.?.end = token.span().end;
-                    }
-                },
+                switch (token) {
+                    .comma => current_query = null,
+                    .open_curly => break,
+                    else => unreachable,
+                }
+            } else {
+                if (token == .open_paren or token == .function) paren_depth += 1;
+                if (token == .close_paren and paren_depth > 0) paren_depth -= 1;
+
+                if (current_query == null) {
+                    current_query = token.span();
+                } else {
+                    current_query.?.end = token.span().end;
+                }
             }
         } else {
             @panic("TODO");
@@ -752,7 +810,7 @@ test "example.org" {
         \\    padding: 2em;
         \\    background-color: #fdfdff;
         \\    border-radius: 0.5em;
-        \\    box-shadow: 2px 3px 7px 2px rgba(0,0,0,0.02);
+        \\    box-shadow: 2px 3px 7px 2px rgba(0, 0, 0, 0.02);
         \\}
         \\
         \\a:link, a:visited {
@@ -775,9 +833,50 @@ test "example.org" {
     try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
 }
 
+test "minimized example.org" {
+    const src =
+        \\body{background-color:#f0f0f2;margin:0;padding:0;font-family:-apple-system,system-ui,BlinkMacSystemFont,"Segoe UI","Open Sans","Helvetica Neue",Helvetica,Arial,sans-serif;}div{width:600px;margin:5em auto;padding:2em;background-color:#fdfdff;border-radius:0.5em;box-shadow:2px 3px 7px 2px rgba(0,0,0,0.02);}a:link,a:visited{color:#38488f;text-decoration:none;}@media(max-width:700px){div{margin:0 auto;width:auto;}}
+    ;
+    const expected =
+        \\body {
+        \\    background-color: #f0f0f2;
+        \\    margin: 0;
+        \\    padding: 0;
+        \\    font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        \\}
+        \\
+        \\div {
+        \\    width: 600px;
+        \\    margin: 5em auto;
+        \\    padding: 2em;
+        \\    background-color: #fdfdff;
+        \\    border-radius: 0.5em;
+        \\    box-shadow: 2px 3px 7px 2px rgba(0, 0, 0, 0.02);
+        \\}
+        \\
+        \\a:link, a:visited {
+        \\    color: #38488f;
+        \\    text-decoration: none;
+        \\}
+        \\
+        \\@media (max-width: 700px) {
+        \\    div {
+        \\        margin: 0 auto;
+        \\        width: auto;
+        \\    }
+        \\}
+    ;
+
+    const ast = try Ast.init(std.testing.allocator, src);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expect(ast.errors.len == 0);
+    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(src)});
+}
+
 test "media queries" {
     const src =
-        \\@media foo, (something very long), bar {
+        \\@media foo, (something: a, b, c), bar {
         \\    p {
         \\        display: none;
         \\    }
