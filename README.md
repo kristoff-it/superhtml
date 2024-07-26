@@ -126,20 +126,20 @@ After:
 3. Configure `superhtml` for your chosen lsp
     - ##### [LspZero](https://github.com/VonHeikemen/lsp-zero.nvim)
 
-    ```lua
-    local lsp = require("lsp-zero")
-
-    require('lspconfig.configs').superhtml = { 
-        default_config = { 
-            name = 'superhtml', 
-            cmd = {'superhtml', 'lsp'}, 
-            filetypes = {'html', 'shtml', 'htm'}, 
-            root_dir = require('lspconfig.util').root_pattern('.git') 
-        } 
-    } 
-
-    lsp.configure('superhtml', {force_setup = true})
-    ```
+      ```lua
+      local lsp = require("lsp-zero")
+  
+      require('lspconfig.configs').superhtml = { 
+          default_config = { 
+              name = 'superhtml', 
+              cmd = {'superhtml', 'lsp'}, 
+              filetypes = {'html', 'shtml', 'htm'}, 
+              root_dir = require('lspconfig.util').root_pattern('.git') 
+          } 
+      } 
+  
+      lsp.configure('superhtml', {force_setup = true})
+      ```
 
 #### Helix
 Add to your `.config/helix/languages.toml`:
