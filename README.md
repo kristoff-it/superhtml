@@ -127,6 +127,8 @@ After:
     - ##### [LspZero](https://github.com/VonHeikemen/lsp-zero.nvim)
 
     ```lua
+    local lsp = require("lsp-zero")
+
     require('lspconfig.configs').superhtml = { 
         default_config = { 
             name = 'superhtml', 
