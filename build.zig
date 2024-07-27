@@ -1,5 +1,4 @@
 const std = @import("std");
-const afl = @import("zig-afl-kit");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -110,6 +109,7 @@ fn setupFuzzStep(
     target: std.Build.ResolvedTarget,
     superhtml: *std.Build.Module,
 ) void {
+    const afl = b.lazyImport(@This(), "zig-afl-kit") orelse return;
     const afl_obj = b.addObject(.{
         .name = "superfuzz-afl",
         .root_source_file = b.path("src/fuzz/afl.zig"),
@@ -121,13 +121,13 @@ fn setupFuzzStep(
     afl_obj.root_module.stack_check = false; // not linking with compiler-rt
     afl_obj.root_module.link_libc = true; // afl runtime depends on libc
 
-    // const afl_fuzz = afl.addInstrumentedExe(
-    //     b,
-    //     target,
-    //     .ReleaseSafe,
-    //     afl_obj,
-    // );
-    // fuzz.dependOn(&b.addInstallFile(afl_fuzz, "superfuzz-afl").step);
+    const afl_fuzz = afl.addInstrumentedExe(
+        b,
+        target,
+        .ReleaseSafe,
+        afl_obj,
+    );
+    b.defaultInstallStep().dependOn(&b.addInstallFile(afl_fuzz, "superfuzz-afl").step);
 
     const super_fuzz = b.addExecutable(.{
         .name = "superfuzz",
