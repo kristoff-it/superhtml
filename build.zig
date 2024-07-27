@@ -127,7 +127,7 @@ fn setupFuzzStep(
         .ReleaseSafe,
         afl_obj,
     );
-    b.defaultInstallStep().dependOn(&b.addInstallFile(afl_fuzz, "superfuzz-afl").step);
+    b.getInstallStep().dependOn(&b.addInstallFile(afl_fuzz, "superfuzz-afl").step);
 
     const super_fuzz = b.addExecutable(.{
         .name = "superfuzz",
