@@ -62,7 +62,7 @@ fn findInList(first_child_index: u12, char: u8) ?u12 {
     unreachable;
 }
 
-pub const Node = struct {
+pub const Node = packed struct(u22) {
     char: u8,
     /// If true, this node is the end of a valid named character reference.
     /// Note: This does not necessarily mean that this node does not have child nodes.
