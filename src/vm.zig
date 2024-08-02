@@ -26,7 +26,11 @@ pub const Exception = error{
     OutIO,
 };
 
-pub fn VM(comptime Context: type, comptime Value: type) type {
+pub fn VM(
+    comptime Context: type,
+    comptime Value: type,
+    comptime UserResourceDescriptor: type,
+) type {
     return struct {
         arena: std.mem.Allocator,
         content_name: []const u8,
@@ -45,7 +49,11 @@ pub fn VM(comptime Context: type, comptime Value: type) type {
             idx: usize,
         }) = .{},
 
-        const ScriptyVM = scripty.VM(Context, Value, utils.ResourceDescriptor);
+        const ScriptyVM = scripty.VM(
+            Context,
+            Value,
+            utils.ResourceDescriptor(UserResourceDescriptor),
+        );
         const OutWriter = std.io.BufferedWriter(4096, std.fs.File.Writer).Writer;
         const ErrWriter = errors.ErrWriter;
         const Self = @This();
@@ -288,7 +296,7 @@ pub fn VM(comptime Context: type, comptime Value: type) type {
                 const current = &vm.templates.items[current_idx];
                 const ext = &current.ast.nodes[current.ast.extends_idx];
 
-                _ = current.eval_frames.pop();
+                _ = current.stack.pop();
                 const template_value = ext.templateValue();
                 //TODO: unescape
                 const template_name = template_value.span.slice(current.src);

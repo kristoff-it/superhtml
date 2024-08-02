@@ -21,7 +21,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         print_end: u32,
         role: Role,
 
-        eval_frames: std.ArrayListUnmanaged(EvalFrame) = .{},
+        stack: std.ArrayListUnmanaged(EvalFrame) = .{},
         // index in eval_frame to a IfCondition frame
         top_if_idx: u32 = 0,
         // index in eval_frame to a LoopIter frame
@@ -103,7 +103,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                 .role = role,
                 .print_end = @intCast(src.len),
             };
-            try t.eval_frames.append(arena, .{
+            try t.stack.append(arena, .{
                 .default = t.ast.cursor(0),
             });
             return t;
@@ -179,7 +179,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             err_writer: errors.ErrWriter,
         ) errors.FatalOOM!void {
             std.debug.assert(tpl.ast.extends_idx != 0);
-            std.debug.assert(tpl.eval_frames.items.len == 0);
+            std.debug.assert(tpl.stack.items.len == 0);
 
             const block_idx = tpl.ast.blocks.get(super_id).?;
             const block = tpl.ast.nodes[block_idx];
@@ -188,7 +188,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                 block_idx,
                 block.elem(tpl.html).open.slice(tpl.src),
             });
-            try tpl.eval_frames.append(tpl.arena, .{
+            try tpl.stack.append(tpl.arena, .{
                 .default = tpl.ast.cursor(block_idx),
             });
 
@@ -227,7 +227,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                     },
                                     .element => {
                                         tpl.print_cursor = elem.close.start;
-                                        const frame = &tpl.eval_frames.items[0];
+                                        const frame = &tpl.stack.items[0];
                                         frame.default.skipChildrenOfCurrentNode();
                                     },
                                 }
@@ -276,12 +276,12 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             writer: OutWriter,
             err_writer: errors.ErrWriter,
         ) errors.FatalShowOOM!Continuation {
-            std.debug.assert(tpl.eval_frames.items.len > 0);
-            outer: while (tpl.eval_frames.items.len > 0) {
-                const cur_frame_idx = tpl.eval_frames.items.len - 1;
+            std.debug.assert(tpl.stack.items.len > 0);
+            outer: while (tpl.stack.items.len > 0) {
+                const cur_frame_idx = tpl.stack.items.len - 1;
                 // necessary to avoid pointer invalidation afterwards
-                try tpl.eval_frames.ensureTotalCapacity(tpl.arena, 1);
-                const cur_frame = &tpl.eval_frames.items[cur_frame_idx];
+                try tpl.stack.ensureTotalCapacity(tpl.arena, 1);
+                const cur_frame = &tpl.stack.items[cur_frame_idx];
                 switch (cur_frame.*) {
                     .default, .loop_iter, .if_condition => {},
                     .loop_condition => |*l| {
@@ -290,14 +290,14 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                             cursor_copy.depth = 0;
                             var new = n.iter_elem;
                             new._up_idx = tpl.top_loop_idx;
-                            tpl.eval_frames.appendAssumeCapacity(.{
+                            tpl.stack.appendAssumeCapacity(.{
                                 .loop_iter = .{
                                     .cursor = cursor_copy,
                                     .loop = new,
                                     // .up_idx = tpl.top_loop_idx,
                                 },
                             });
-                            tpl.top_loop_idx = @intCast(tpl.eval_frames.items.len - 1);
+                            tpl.top_loop_idx = @intCast(tpl.stack.items.len - 1);
                             tpl.print_cursor = l.print_loop_body;
                             tpl.print_end = l.print_loop_body_end;
                             l.index += 1;
@@ -319,7 +319,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                             tpl.print_cursor = l.print_loop_body_end;
                             tpl.print_end = l.print_end;
                             l.cursor_ptr.skipChildrenOfCurrentNode();
-                            _ = tpl.eval_frames.pop();
+                            _ = tpl.stack.pop();
                             continue;
                         }
                     },
@@ -332,12 +332,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                 };
                 while (cur.next()) |node| {
                     switch (node.kind.role()) {
-                        .root, .extend, .block, .super_block => {
-                            std.debug.print("unexpected '{s}'", .{
-                                @tagName(node.kind),
-                            });
-                            unreachable;
-                        },
+                        .root, .extend, .block, .super_block => unreachable,
                         .super => {
                             writer.writeAll(
                                 tpl.src[tpl.print_cursor..node.elem(tpl.html).open.start],
@@ -375,7 +370,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                 value.span,
                             );
 
-                            try tpl.eval_frames.append(tpl.arena, .{
+                            try tpl.stack.append(tpl.arena, .{
                                 .loop_condition = .{
                                     .inloop_idx = cur.current_idx,
                                     .print_loop_body = tpl.print_cursor,
@@ -409,7 +404,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                 value.span,
                             );
 
-                            try tpl.eval_frames.append(tpl.arena, .{
+                            try tpl.stack.append(tpl.arena, .{
                                 .loop_condition = .{
                                     .print_loop_body = tpl.print_cursor,
                                     .print_loop_body_end = node.elem(tpl.html).close.start,
@@ -461,10 +456,10 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                                 .up_idx = tpl.top_if_idx,
                                             },
                                         };
-                                        tpl.top_if_idx = @intCast(tpl.eval_frames.items.len);
+                                        tpl.top_if_idx = @intCast(tpl.stack.items.len);
 
                                         new_frame.if_condition.cursor.depth = 0;
-                                        try tpl.eval_frames.append(
+                                        try tpl.stack.append(
                                             tpl.arena,
                                             new_frame,
                                         );
@@ -579,7 +574,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                     }
                 }
 
-                if (tpl.eval_frames.popOrNull()) |frame| {
+                if (tpl.stack.popOrNull()) |frame| {
                     switch (frame) {
                         .default => {},
                         .loop_iter => |li| {
@@ -837,7 +832,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                             .err = "already at the topmost $loop value",
                         });
                     } else {
-                        const iter = tpl.eval_frames.items[frame_idx].loop_iter;
+                        const iter = tpl.stack.items[frame_idx].loop_iter;
                         script_vm.insertResource(.{
                             .iterator_element = iter.loop,
                         });
@@ -848,13 +843,13 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         pub fn setContext(tpl: Template, script_ctx: *Context) void {
             script_ctx.loop = if (tpl.top_loop_idx == 0) null else blk: {
-                const iter = tpl.eval_frames.items[tpl.top_loop_idx].loop_iter;
+                const iter = tpl.stack.items[tpl.top_loop_idx].loop_iter;
                 break :blk .{
                     .iterator_element = iter.loop,
                 };
             };
             script_ctx.@"if" = if (tpl.top_if_idx == 0) null else blk: {
-                const cond = tpl.eval_frames.items[tpl.top_if_idx].if_condition;
+                const cond = tpl.stack.items[tpl.top_if_idx].if_condition;
                 break :blk cond.if_result;
             };
         }
