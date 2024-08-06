@@ -8,7 +8,7 @@ The Super CLI Tool offers **syntax checking** and **autoformatting** features fo
 The tool can be used either directly (for example by running it on save), or through a LSP client implementation.
 
 ```
-$ super
+$ superhtml
 Usage: super COMMAND [OPTIONS]
 
 Commands:
