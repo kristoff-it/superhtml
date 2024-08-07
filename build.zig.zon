@@ -11,8 +11,8 @@
             .hash = "12209cde192558f8b3dc098ac2330fc2a14fdd211c5433afd33085af75caa9183147",
         },
         .scripty = .{
-            .url = "git+https://github.com/kristoff-it/scripty#b6cb6f4b5dca6280a022afd8e297e6b267467a5a",
-            .hash = "1220b5daf2059c5d02be2e6c30e64fe58e0ac5574f38797c6250e994cf5b94fc024a",
+            .url = "git+https://github.com/kristoff-it/scripty#f76f3509ced74a85d8103860cc31cdd121e08a63",
+            .hash = "122035c69f332a5a626c5fffb47efe6572ebd3566e405511e3f44914688db0951e0c",
         },
         .@"zig-afl-kit" = .{
             .url = "git+https://github.com/kristoff-it/zig-afl-kit#f003bfe714f2964c90939fdc940d5993190a66ec",
