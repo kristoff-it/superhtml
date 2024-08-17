@@ -7,29 +7,26 @@ pub const VM = vm.VM;
 pub const Exception = vm.Exception;
 
 pub const utils = struct {
-    pub fn ResourceDescriptor(comptime UserResourceDescriptor: type) type {
-        return union(enum) {
-            @"if": u32,
-            loop: u32,
-            user: UserResourceDescriptor,
-        };
-    }
-    pub fn loopUpFunction(comptime Value: type, comptime ResourceDesc: type) fn (
+    // TODO: iter element should be defined by us
+    pub fn loopUpFunction(comptime Value: type, comptime Template: type) fn (
         Value.IterElement,
         std.mem.Allocator,
         []const Value,
-        *ResourceDesc,
-    ) error{ OutOfMemory, WantResource }!Value {
+    ) error{ OutOfMemory, Interrupt }!Value {
         return struct {
             pub fn up(
                 v: Value.IterElement,
                 _: std.mem.Allocator,
                 args: []const Value,
-                ext: *ResourceDesc,
-            ) error{ OutOfMemory, WantResource }!Value {
-                if (args.len != 0) return .{ .err = "'up' wants 0 arguments" };
-                ext.* = .{ .loop = v._up_idx };
-                return error.WantResource;
+            ) error{ OutOfMemory, Interrupt }!Value {
+                if (args.len != 0) return .{
+                    .err = "expected 0 arguments",
+                };
+
+                return Template.loopUp(
+                    v._up_tpl,
+                    v._up_idx,
+                );
             }
         }.up;
     }

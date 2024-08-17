@@ -38,6 +38,7 @@ const Error = struct {
         missing_template_value,
         unexpected_extend,
         unscripted_var,
+        unscripted_ctx,
         duplicate_block: Span,
     },
 
@@ -129,6 +130,14 @@ pub const Node = struct {
     }
     pub fn varValue(node: Node) html.Tokenizer.Attr.Value {
         return node.varAttr().attr.value.?;
+    }
+
+    pub fn ctxAttr(node: Node) ScriptedAttr {
+        std.debug.assert(node.kind.output() == .ctx);
+        return node.var_ctx;
+    }
+    pub fn ctxValue(node: Node) html.Tokenizer.Attr.Value {
+        return node.ctxAttr().attr.value.?;
     }
 
     pub fn debugName(node: Node, src: []const u8) []const u8 {
@@ -1107,6 +1116,114 @@ const Parser = struct {
                 {
                     try p.errors.append(gpa, .{
                         .kind = .unscripted_var,
+                        .main_location = name,
+                    });
+
+                    // return p.reportError(
+                    //     name,
+                    //     "unscripted_var",
+                    //     "UNSCRIPTED VAR",
+                    //     \\A `var` attribute requires a value that scripts what
+                    //     \\to put in the relative element's body.
+                    //     ,
+                    // );
+                }
+                tmp_result.var_ctx = .{
+                    .attr = attr,
+                    .code = .{
+                        .slice = code,
+                    },
+                };
+
+                continue;
+            }
+
+            //ctx
+            if (is(name_string, "ctx")) {
+                tmp_result.kind = switch (tmp_result.kind) {
+                    .block => .block_ctx,
+                    .block_if => .block_if_ctx,
+                    .block_loop => .block_loop_ctx,
+                    .element => .element_ctx,
+                    .element_if => .element_if_ctx,
+                    .element_else => .element_else_ctx,
+                    .element_loop => .element_loop_ctx,
+                    .element_inloop => .element_inloop_ctx,
+                    .element_id => .element_id_ctx,
+                    .element_id_if => .element_id_if_ctx,
+                    .element_id_else => .element_id_else_ctx,
+                    .element_id_loop => .element_id_loop_ctx,
+                    .element_id_inloop => .element_id_inloop_ctx,
+
+                    .block_var,
+                    .block_if_var,
+                    .block_loop_var,
+                    .element_var,
+                    .element_if_var,
+                    .element_else_var,
+                    .element_loop_var,
+                    .element_inloop_var,
+                    .element_id_var,
+                    .element_id_if_var,
+                    .element_id_else_var,
+                    .element_id_loop_var,
+                    .element_id_inloop_var,
+                    => {
+                        @panic("TODO: explain that a tag combination is wrong");
+                    },
+
+                    .root,
+                    .extend,
+                    .super,
+                    // never discorvered yet
+                    .super_block,
+                    .super_block_ctx,
+                    => unreachable,
+
+                    // duplicate attr
+                    .block_ctx,
+                    .block_if_ctx,
+                    .block_loop_ctx,
+                    .element_ctx,
+                    .element_if_ctx,
+                    .element_else_ctx,
+                    .element_loop_ctx,
+                    .element_inloop_ctx,
+                    .element_id_ctx,
+                    .element_id_if_ctx,
+                    .element_id_else_ctx,
+                    .element_id_loop_ctx,
+                    .element_id_inloop_ctx,
+                    => tmp_result.kind, // do nothing
+                };
+
+                //TODO: implement unescape
+                // const code = try value.unescape(gpa, p.src);
+                const code = if (attr.value) |v|
+                    v.span.slice(p.src)
+                else blk: {
+
+                    // return p.reportError(
+                    //     name,
+                    //     "var_no_value",
+                    //     "VAR MISSING VALUE",
+                    //     \\A `var` attribute requires a value that scripts what
+                    //     \\to put in the relative element's body.
+                    //     ,
+                    // );
+                    try p.errors.append(gpa, .{
+                        .kind = .missing_attribute_value,
+                        .main_location = name,
+                    });
+                    break :blk "";
+                };
+
+                // TODO: typecheck the expression
+                if (code.len > 0 and
+                    std.mem.indexOfScalar(u8, code, '$') == null)
+                {
+                    try p.errors.append(gpa, .{
+                        .kind = .unscripted_ctx,
                         .main_location = name,
                     });
 

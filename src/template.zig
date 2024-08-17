@@ -26,11 +26,14 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         top_if_idx: u32 = 0,
         // index in eval_frame to a LoopIter frame
         top_loop_idx: u32 = 0,
+        // index in eval_frame to a CtxFrame frame
+        top_ctx_idx: u32 = 0,
 
         const Template = @This();
         const Value = ScriptyVM.Value;
         const Context = ScriptyVM.Context;
         const EvalFrame = union(enum) {
+            ctx: CtxFrame,
             if_condition: IfCondition,
             loop_condition: LoopCondition,
             loop_iter: LoopIter,
@@ -39,7 +42,6 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             const LoopIter = struct {
                 cursor: Ast.Cursor,
                 loop: Value.IterElement,
-                // up_idx: u32,
             };
 
             const LoopCondition = struct {
@@ -65,6 +67,13 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                 cursor: Ast.Cursor,
                 // eval result
                 if_result: ?Value,
+                up_idx: u32,
+            };
+            const CtxFrame = struct {
+                /// cursor scoped to the if body
+                cursor: Ast.Cursor,
+                // eval result
+                ctx_value: Value,
                 up_idx: u32,
             };
         };
@@ -283,13 +292,14 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                 try tpl.stack.ensureTotalCapacity(tpl.arena, 1);
                 const cur_frame = &tpl.stack.items[cur_frame_idx];
                 switch (cur_frame.*) {
-                    .default, .loop_iter, .if_condition => {},
+                    .default, .loop_iter, .if_condition, .ctx => {},
                     .loop_condition => |*l| {
-                        if (l.iter.next(tpl.arena)) |n| {
+                        if (try l.iter.next(tpl.arena)) |n| {
                             var cursor_copy = l.cursor_ptr.*;
                             cursor_copy.depth = 0;
                             var new = n.iter_elem;
                             new._up_idx = tpl.top_loop_idx;
+                            new._up_tpl = tpl;
                             tpl.stack.appendAssumeCapacity(.{
                                 .loop_iter = .{
                                     .cursor = cursor_copy,
@@ -328,6 +338,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                     .default => |*d| d,
                     .loop_iter => |*li| &li.cursor,
                     .if_condition => |*ic| &ic.cursor,
+                    .ctx => |*ctx| &ctx.cursor,
                     .loop_condition => unreachable,
                 };
                 while (cur.next()) |node| {
@@ -476,6 +487,45 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         },
                     }
 
+                    if (node.kind.output() == .ctx) {
+                        const start_tag = node.elem(tpl.html).open;
+                        const scripted_attr = node.ctxAttr();
+                        const attr = scripted_attr.attr;
+                        const value = node.ctxValue();
+
+                        const up_to_attr = tpl.src[tpl.print_cursor..attr.span().start];
+                        writer.writeAll(up_to_attr) catch return error.OutIO;
+                        const rest_of_start_tag = tpl.src[attr.span().end..start_tag.end];
+                        writer.writeAll(rest_of_start_tag) catch return error.OutIO;
+                        tpl.print_cursor = start_tag.end;
+
+                        const result = try tpl.evalCtx(
+                            err_writer,
+                            script_vm,
+                            script_ctx,
+                            attr.name,
+                            value.span,
+                        );
+
+                        var new_frame: EvalFrame = .{
+                            .ctx = .{
+                                .cursor = cur.*,
+                                .ctx_value = result,
+                                .up_idx = tpl.top_ctx_idx,
+                            },
+                        };
+                        tpl.top_ctx_idx = @intCast(tpl.stack.items.len);
+
+                        new_frame.ctx.cursor.depth = 0;
+                        try tpl.stack.append(
+                            tpl.arena,
+                            new_frame,
+                        );
+
+                        cur.skipChildrenOfCurrentNode();
+                        continue :outer;
+                    }
+
                     var it = node.elem(tpl.html).startTagIterator(tpl.src, tpl.html.language);
                     while (it.next(tpl.src)) |attr| {
                         const value = attr.value orelse continue;
@@ -484,6 +534,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         const attr_name = attr.name.slice(tpl.src);
                         if (is(attr_name, "var") or
                             is(attr_name, "if") or
+                            is(attr_name, "ctx") or
                             is(attr_name, "loop")) continue;
 
                         // TODO: unescape
@@ -497,8 +548,15 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                             value.span,
                         );
 
-                        const attr_string = switch (result.value) {
-                            .string => |s| s,
+                        const up_to_value = tpl.src[tpl.print_cursor..value.span.start];
+                        writer.writeAll(up_to_value) catch return error.OutIO;
+                        switch (result.value) {
+                            .string => |s| {
+                                writer.writeAll(s) catch return error.OutIO;
+                            },
+                            .int => |i| {
+                                writer.print("{}", .{i}) catch return error.OutIO;
+                            },
                             else => {
                                 tpl.reportError(
                                     err_writer,
@@ -528,11 +586,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                 );
                                 return error.Fatal;
                             },
-                        };
-
-                        const up_to_value = tpl.src[tpl.print_cursor..value.span.start];
-                        writer.writeAll(up_to_value) catch return error.OutIO;
-                        writer.writeAll(attr_string) catch return error.OutIO;
+                        }
                         tpl.print_cursor = value.span.end;
                     }
 
@@ -584,6 +638,10 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                             tpl.top_if_idx = ic.up_idx;
                             continue;
                         },
+                        .ctx => |ctx| {
+                            tpl.top_ctx_idx = ctx.up_idx;
+                            continue;
+                        },
                         .loop_condition => unreachable,
                     }
                     writer.writeAll(
@@ -607,18 +665,12 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         ) errors.Fatal!Value {
             tpl.setContext(script_ctx);
 
-            const result = while (true) break script_vm.run(
+            const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
                 code_span.slice(tpl.src),
                 .{},
-            ) catch |err| switch (err) {
-                error.WantResource => {
-                    tpl.giveResource(script_vm);
-                    continue;
-                },
-                else => return error.Fatal,
-            };
+            ) catch return error.Fatal;
 
             switch (result.value) {
                 .string, .int => {},
@@ -652,6 +704,55 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             }
             return result.value;
         }
+
+        fn evalCtx(
+            tpl: *Template,
+            err_writer: errors.ErrWriter,
+            script_vm: *ScriptyVM,
+            script_ctx: *Context,
+            script_attr_name: Span,
+            code_span: Span,
+        ) errors.Fatal!Value {
+            tpl.setContext(script_ctx);
+
+            const result = script_vm.run(
+                tpl.arena,
+                script_ctx,
+                code_span.slice(tpl.src),
+                .{},
+            ) catch return error.Fatal;
+
+            switch (result.value) {
+                else => {},
+                .err, .iterator_element, .optional => {
+                    tpl.reportError(
+                        err_writer,
+                        script_attr_name,
+                        "bad_ctx_value",
+                        "SCRIPT RESULT TYPE MISMATCH",
+                        \\A script evaluated to an unxepected type.
+                        \\
+                        \\The `ctx` attribute can evaluate to any type
+                        \\except `error`, `optional`, and `@TypeOf($loop)`.
+                        ,
+                    ) catch {};
+
+                    try tpl.diagnostic(
+                        err_writer,
+                        false,
+                        "note: value was generated from this sub-expression:",
+                        .{
+                            .start = code_span.start + result.loc.start,
+                            .end = code_span.start + result.loc.end,
+                        },
+                    );
+                    try result.value.renderForError(tpl.arena, err_writer);
+                    return error.Fatal;
+                },
+            }
+            return result.value;
+        }
+
         fn evalAttr(
             tpl: *Template,
             script_vm: *ScriptyVM,
@@ -659,18 +760,12 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             code_span: Span,
         ) errors.Fatal!ScriptyVM.Result {
             tpl.setContext(script_ctx);
-            const result = while (true) break script_vm.run(
+            const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
                 code_span.slice(tpl.src),
                 .{},
-            ) catch |err| switch (err) {
-                error.WantResource => {
-                    tpl.giveResource(script_vm);
-                    continue;
-                },
-                else => return error.Fatal,
-            };
+            ) catch return error.Fatal;
 
             return result;
         }
@@ -684,18 +779,12 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             code_span: Span,
         ) errors.Fatal!Value {
             tpl.setContext(script_ctx);
-            const result = while (true) break script_vm.run(
+            const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
                 code_span.slice(tpl.src),
                 .{},
-            ) catch |err| switch (err) {
-                error.WantResource => {
-                    tpl.giveResource(script_vm);
-                    continue;
-                },
-                else => return error.Fatal,
-            };
+            ) catch return error.Fatal;
 
             switch (result.value) {
                 .bool, .optional => {},
@@ -740,18 +829,12 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         ) errors.Fatal!Value.Iterator {
             tpl.setContext(script_ctx);
 
-            const result = while (true) break script_vm.run(
+            const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
                 code_span.slice(tpl.src),
                 .{},
-            ) catch |err| switch (err) {
-                error.WantResource => {
-                    tpl.giveResource(script_vm);
-                    continue;
-                },
-                else => return error.Fatal,
-            };
+            ) catch return error.Fatal;
 
             switch (result.value) {
                 .iterator => |i| return i,
@@ -822,22 +905,17 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             );
         }
 
-        pub fn giveResource(tpl: Template, script_vm: *ScriptyVM) void {
-            const ext = script_vm.getResourceDescriptor();
-            switch (ext) {
-                else => @panic("TODO"),
-                .loop => |frame_idx| {
-                    if (frame_idx == 0) {
-                        script_vm.insertResource(.{
-                            .err = "already at the topmost $loop value",
-                        });
-                    } else {
-                        const iter = tpl.stack.items[frame_idx].loop_iter;
-                        script_vm.insertResource(.{
-                            .iterator_element = iter.loop,
-                        });
-                    }
-                },
+        pub fn loopUp(ptr: *const anyopaque, frame_idx: u32) Value {
+            const tpl: *const Template = @alignCast(@ptrCast(ptr));
+            if (frame_idx == 0) {
+                return .{
+                    .err = "already at the topmost $loop value",
+                };
+            } else {
+                const iter = tpl.stack.items[frame_idx].loop_iter;
+                return .{
+                    .iterator_element = iter.loop,
+                };
             }
         }
 
@@ -851,6 +929,10 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             script_ctx.@"if" = if (tpl.top_if_idx == 0) null else blk: {
                 const cond = tpl.stack.items[tpl.top_if_idx].if_condition;
                 break :blk cond.if_result;
+            };
+            script_ctx.ctx = if (tpl.top_ctx_idx == 0) null else blk: {
+                const cond = tpl.stack.items[tpl.top_ctx_idx].ctx;
+                break :blk cond.ctx_value;
             };
         }
     };

@@ -68,7 +68,7 @@ pub fn diagnostic(
     const start_trim_left = line_off.start + line_off.line.len - line_trim_left.len;
 
     const caret_len = span.end - span.start;
-    const caret_spaces_len = span.start - start_trim_left;
+    const caret_spaces_len = span.start -| start_trim_left;
 
     const line_trim = std.mem.trimRight(u8, line_trim_left, &std.ascii.whitespace);
 

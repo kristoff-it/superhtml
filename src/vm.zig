@@ -29,7 +29,6 @@ pub const Exception = error{
 pub fn VM(
     comptime Context: type,
     comptime Value: type,
-    comptime UserResourceDescriptor: type,
 ) type {
     return struct {
         arena: std.mem.Allocator,
@@ -49,11 +48,7 @@ pub fn VM(
             idx: usize,
         }) = .{},
 
-        const ScriptyVM = scripty.VM(
-            Context,
-            Value,
-            utils.ResourceDescriptor(UserResourceDescriptor),
-        );
+        const ScriptyVM = scripty.VM(Context, Value);
         const OutWriter = std.io.BufferedWriter(4096, std.fs.File.Writer).Writer;
         const ErrWriter = errors.ErrWriter;
         const Self = @This();
