@@ -291,7 +291,8 @@ pub fn VM(
                 const current = &vm.templates.items[current_idx];
                 const ext = &current.ast.nodes[current.ast.extends_idx];
 
-                _ = current.stack.pop();
+                // _ = current.stack.pop();
+                current.cursor.cur = null;
                 const template_value = ext.templateValue();
                 //TODO: unescape
                 const template_name = template_value.span.slice(current.src);

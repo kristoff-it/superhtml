@@ -6,6 +6,27 @@ pub const Ast = @import("Ast.zig");
 pub const VM = vm.VM;
 pub const Exception = vm.Exception;
 
+pub const HtmlSafe = struct {
+    bytes: []const u8,
+
+    pub fn format(
+        self: HtmlSafe,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        out_stream: anytype,
+    ) !void {
+        _ = options;
+        _ = fmt;
+        for (self.bytes) |b| {
+            switch (b) {
+                '>' => try out_stream.writeAll("&gt;"),
+                '<' => try out_stream.writeAll("&lt;"),
+                else => try out_stream.writeByte(b),
+            }
+        }
+    }
+};
+
 pub const utils = struct {
     // TODO: iter element should be defined by us
     pub fn loopUpFunction(comptime Value: type, comptime Template: type) fn (
@@ -24,8 +45,8 @@ pub const utils = struct {
                 };
 
                 return Template.loopUp(
-                    v._up_tpl,
-                    v._up_idx,
+                    v._iter.up_tpl,
+                    v._iter.up_idx,
                 );
             }
         }.up;

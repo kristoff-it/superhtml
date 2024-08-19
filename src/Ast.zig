@@ -14,19 +14,15 @@ interface: std.StringArrayHashMapUnmanaged(u32),
 blocks: std.StringHashMapUnmanaged(u32),
 nodes: []const Node,
 errors: []const Error,
-scripted_attrs: []const Node.ScriptedAttr,
 
 const Error = struct {
     kind: union(enum) {
         bad_attr,
-        late_else,
-        late_loop,
+        else_must_be_first_attr,
         missing_attribute_value,
-        loop_must_be_first_attr,
         loop_no_value,
         block_cannot_be_inlined,
         block_missing_id,
-        duplicate_id_value,
         already_branching,
         id_under_loop,
         extend_without_template_attr,
@@ -37,14 +33,23 @@ const Error = struct {
         template_interface_id_collision,
         missing_template_value,
         unexpected_extend,
-        unscripted_var,
-        unscripted_ctx,
+        unscripted_attr,
+        two_supers_one_id,
+        super_under_branching,
+
+        one_branching_attribute_per_element,
+        ctx_attrs_must_be_scripted,
+        else_with_value,
+        no_ifs_after_loop,
+        text_and_html_are_mutually_exclusive,
+        text_and_html_require_an_empty_element,
         duplicate_block: Span,
     },
 
     main_location: Span,
 };
 
+pub const SpecialAttr = enum { @"if", loop, @"else", text, html };
 pub const Node = struct {
     kind: Kind = .element,
     elem_idx: u32,
@@ -53,342 +58,52 @@ pub const Node = struct {
     first_child_idx: u32 = 0,
     next_idx: u32 = 0,
 
-    // parent: ?*Node = null,
-    // child: ?*Node = null,
-    // next: ?*Node = null,
-    // prev: ?*Node = null,
+    id_template_parentid: ?html.Tokenizer.Attr = null,
+    html_text: ?html.Tokenizer.Attr = null,
+    if_loop: ?html.Tokenizer.Attr = null,
 
-    // Evaluation
-    id_template_parentid: html.Tokenizer.Attr = undefined,
-    if_else_loop: ScriptedAttr = undefined,
-    var_ctx: ScriptedAttr = undefined,
-    scripted_attrs_span: ScriptedAttrsSpan = .{ .start = 0, .end = 0 },
-
-    const ScriptedAttrsSpan = struct {
-        start: u32,
-        end: u32,
-
-        pub fn slice(
-            span: ScriptedAttrsSpan,
-            attrs: []const ScriptedAttr,
-        ) []const ScriptedAttr {
-            return attrs[span.start..span.end];
-        }
-    };
-
-    const ScriptedAttr = struct {
-        attr: html.Tokenizer.Attr,
-        code: html.Tokenizer.Attr.Value.UnescapedSlice,
-        eval: ?[]const u8 = null,
+    const Kind = enum {
+        root,
+        extend,
+        super,
+        ctx,
+        block,
+        super_block,
+        element,
     };
 
     pub fn elem(node: Node, html_ast: html.Ast) HtmlNode {
         return html_ast.nodes[node.elem_idx];
     }
 
-    pub fn idAttr(node: Node) html.Tokenizer.Attr {
-        std.debug.assert(node.kind.hasId());
+    pub fn idAttr(node: Node) ?html.Tokenizer.Attr {
+        std.debug.assert(switch (node.kind) {
+            .block, .super_block, .element => true,
+            else => false,
+        });
+
         return node.id_template_parentid;
     }
-    pub fn idValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.idAttr().value.?;
+
+    pub fn blockId(node: Node) html.Tokenizer.Attr.Value {
+        std.debug.assert(node.kind == .block);
+        return node.id_template_parentid.?.value.?;
     }
 
     pub fn templateAttr(node: Node) html.Tokenizer.Attr {
-        std.debug.assert(node.kind == .extend);
-        return node.id_template_parentid;
+        std.debug.assert(switch (node.kind) {
+            .extend => true,
+            else => false,
+        });
+        return node.id_template_parentid.?;
     }
     pub fn templateValue(node: Node) html.Tokenizer.Attr.Value {
         return node.templateAttr().value.?;
     }
 
-    pub fn branchingAttr(node: Node) ScriptedAttr {
-        std.debug.assert(node.kind.branching() != .none);
-        return node.if_else_loop;
-    }
-    pub fn loopAttr(node: Node) ScriptedAttr {
-        std.debug.assert(node.kind.branching() == .loop or node.kind.branching() == .inloop);
-        return node.if_else_loop;
-    }
-    pub fn loopValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.loopAttr().attr.value.?;
-    }
-    pub fn ifAttr(node: Node) ScriptedAttr {
-        std.debug.assert(node.kind.branching() == .@"if");
-        return node.if_else_loop;
-    }
-    pub fn ifValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.ifAttr().attr.value.?;
-    }
-    pub fn elseAttr(node: Node) ScriptedAttr {
-        std.debug.assert(node.kind.branching() == .@"else");
-        return node.if_else_loop;
-    }
-    pub fn varAttr(node: Node) ScriptedAttr {
-        std.debug.assert(node.kind.output() == .@"var");
-        return node.var_ctx;
-    }
-    pub fn varValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.varAttr().attr.value.?;
-    }
-
-    pub fn ctxAttr(node: Node) ScriptedAttr {
-        std.debug.assert(node.kind.output() == .ctx);
-        return node.var_ctx;
-    }
-    pub fn ctxValue(node: Node) html.Tokenizer.Attr.Value {
-        return node.ctxAttr().attr.value.?;
-    }
-
     pub fn debugName(node: Node, src: []const u8) []const u8 {
         return node.elem.startTag().name().string(src);
     }
-
-    const Kind = enum {
-        root,
-        extend,
-        super,
-
-        block,
-        block_var,
-        block_ctx,
-        block_if,
-        block_if_var,
-        block_if_ctx,
-        block_loop,
-        block_loop_var,
-        block_loop_ctx,
-
-        super_block,
-        super_block_ctx,
-        // TODO: enable these types once we implement super attributes
-        //super_block_if,
-        //super_block_if_ctx,
-        //super_block_loop,
-        //super_block_loop_ctx,
-
-        element,
-        element_var,
-        element_ctx,
-        element_if,
-        element_if_var,
-        element_if_ctx,
-        element_else,
-        element_else_var,
-        element_else_ctx,
-        element_loop,
-        element_loop_var,
-        element_loop_ctx,
-        element_inloop,
-        element_inloop_var,
-        element_inloop_ctx,
-        element_id,
-        element_id_var,
-        element_id_ctx,
-        element_id_if,
-        element_id_if_var,
-        element_id_if_ctx,
-        element_id_else,
-        element_id_else_var,
-        element_id_else_ctx,
-        element_id_loop,
-        element_id_loop_var,
-        element_id_loop_ctx,
-        element_id_inloop,
-        element_id_inloop_var,
-        element_id_inloop_ctx,
-
-        pub const Branching = enum { none, loop, inloop, @"if", @"else" };
-        pub fn branching(kind: Kind) Branching {
-            return switch (kind) {
-                .block_loop,
-                .block_loop_var,
-                .block_loop_ctx,
-                .element_loop,
-                .element_loop_var,
-                .element_loop_ctx,
-                .element_id_loop,
-                .element_id_loop_var,
-                .element_id_loop_ctx,
-                => .loop,
-                .element_inloop,
-                .element_inloop_var,
-                .element_inloop_ctx,
-                .element_id_inloop,
-                .element_id_inloop_var,
-                .element_id_inloop_ctx,
-                => .inloop,
-                .block_if,
-                .block_if_var,
-                .block_if_ctx,
-                .element_if,
-                .element_if_var,
-                .element_if_ctx,
-                .element_id_if,
-                .element_id_if_var,
-                .element_id_if_ctx,
-                => .@"if",
-                .element_else,
-                .element_else_var,
-                .element_else_ctx,
-                .element_id_else,
-                .element_id_else_var,
-                .element_id_else_ctx,
-                => .@"else",
-                .root,
-                .extend,
-                .block,
-                .block_var,
-                .block_ctx,
-                .super_block,
-                .super_block_ctx,
-                .super,
-                .element,
-                .element_var,
-                .element_ctx,
-                .element_id,
-                .element_id_var,
-                .element_id_ctx,
-                => .none,
-            };
-        }
-
-        pub const Output = enum { none, @"var", ctx };
-        pub fn output(kind: Kind) Output {
-            return switch (kind) {
-                .block_var,
-                .block_if_var,
-                .block_loop_var,
-                .element_var,
-                .element_if_var,
-                .element_else_var,
-                .element_loop_var,
-                .element_inloop_var,
-                .element_id_var,
-                .element_id_if_var,
-                .element_id_else_var,
-                .element_id_loop_var,
-                .element_id_inloop_var,
-                => .@"var",
-                .block_ctx,
-                .block_if_ctx,
-                .block_loop_ctx,
-                .super_block_ctx,
-                .element_ctx,
-                .element_if_ctx,
-                .element_else_ctx,
-                .element_loop_ctx,
-                .element_inloop_ctx,
-                .element_id_ctx,
-                .element_id_if_ctx,
-                .element_id_else_ctx,
-                .element_id_loop_ctx,
-                .element_id_inloop_ctx,
-                => .ctx,
-                .root,
-                .extend,
-                .super,
-                .super_block,
-                .block,
-                .block_if,
-                .block_loop,
-                .element,
-                .element_if,
-                .element_else,
-                .element_loop,
-                .element_inloop,
-                .element_id,
-                .element_id_if,
-                .element_id_else,
-                .element_id_loop,
-                .element_id_inloop,
-                => .none,
-            };
-        }
-
-        const Role = enum { root, extend, block, super_block, super, element };
-        pub fn role(kind: Kind) Role {
-            return switch (kind) {
-                .root => .root,
-                .extend => .extend,
-                .block,
-                .block_var,
-                .block_ctx,
-                .block_if,
-                .block_if_var,
-                .block_if_ctx,
-                .block_loop,
-                .block_loop_var,
-                .block_loop_ctx,
-                => .block,
-                .super => .super,
-                .super_block,
-                .super_block_ctx,
-                => .super_block,
-                .element,
-                .element_var,
-                .element_ctx,
-                .element_if,
-                .element_if_var,
-                .element_if_ctx,
-                .element_else,
-                .element_else_var,
-                .element_else_ctx,
-                .element_loop,
-                .element_loop_var,
-                .element_loop_ctx,
-                .element_inloop,
-                .element_inloop_var,
-                .element_inloop_ctx,
-                .element_id,
-                .element_id_var,
-                .element_id_ctx,
-                .element_id_if,
-                .element_id_if_var,
-                .element_id_if_ctx,
-                .element_id_else,
-                .element_id_else_var,
-                .element_id_else_ctx,
-                .element_id_loop,
-                .element_id_loop_var,
-                .element_id_loop_ctx,
-                .element_id_inloop,
-                .element_id_inloop_var,
-                .element_id_inloop_ctx,
-                => .element,
-            };
-        }
-        pub fn hasId(kind: Kind) bool {
-            return switch (kind) {
-                else => false,
-                .block,
-                .block_var,
-                .block_ctx,
-                .block_if,
-                .block_if_var,
-                .block_if_ctx,
-                .block_loop,
-                .block_loop_var,
-                .block_loop_ctx,
-                .super_block,
-                .super_block_ctx,
-                .element_id,
-                .element_id_var,
-                .element_id_ctx,
-                .element_id_if,
-                .element_id_if_var,
-                .element_id_if_ctx,
-                .element_id_else,
-                .element_id_else_var,
-                .element_id_else_ctx,
-                .element_id_loop,
-                .element_id_loop_ctx,
-                .element_id_inloop,
-                .element_id_inloop_ctx,
-                => true,
-            };
-        }
-    };
 
     pub const Block = struct {
         parent_tag_name: Span,
@@ -396,12 +111,12 @@ pub const Node = struct {
     };
 
     pub fn superBlock(node: Node, src: []const u8, html_ast: html.Ast) Block {
-        std.debug.assert(node.kind.role() == .super);
-        const id_value = node.id_template_parentid.value.?;
+        std.debug.assert(node.kind == .super);
+        const id_value = node.id_template_parentid.?.value.?;
         const elem_idx = node.elem(html_ast).parent_idx;
-        const parent = html_ast.nodes[elem_idx];
+        const par = html_ast.nodes[elem_idx];
 
-        const it = parent.startTagIterator(src, html_ast.language);
+        const it = par.startTagIterator(src, html_ast.language);
 
         return .{
             .parent_tag_name = it.name_span,
@@ -436,6 +151,13 @@ pub const Node = struct {
         node.debugInternal(src, html_ast, ast, w, 0) catch unreachable;
     }
 
+    fn hasId(node: Node) ?html.Tokenizer.Attr {
+        switch (node.kind) {
+            .block, .super_block, .element => return node.idAttr(),
+            else => return null,
+        }
+    }
+
     fn debugInternal(
         node: Node,
         src: []const u8,
@@ -447,8 +169,8 @@ pub const Node = struct {
         for (0..lvl) |_| try w.print("    ", .{});
         try w.print("({s} {}", .{ @tagName(node.kind), node.depth });
 
-        if (node.kind.hasId()) {
-            try w.print(" #{s}", .{node.idValue().span.slice(src)});
+        if (node.hasId()) |id| {
+            try w.print(" #{s}", .{id.value.?.span.slice(src)});
         } else if (node.kind == .extend) {
             try w.print(" {s}", .{node.templateAttr().span().slice(src)});
         } else if (node.kind == .super) {
@@ -473,11 +195,6 @@ pub const Node = struct {
     }
 };
 
-pub fn scripted_attrs(ast: Ast, node: Node) []Node.ScriptedAttr {
-    const span = node.scripted_attrs_span;
-    return ast.scripted_attrs[span.start..span.end];
-}
-
 pub fn at(ast: Ast, idx: u32) ?Node {
     if (idx == 0) return null;
     return ast.nodes[idx];
@@ -489,6 +206,11 @@ pub fn child(ast: Ast, n: Node) ?Node {
 
 pub fn next(ast: Ast, n: Node) ?Node {
     return ast.at(n.next_idx);
+}
+
+pub fn parent(ast: Ast, n: Node) Node {
+    std.debug.assert(n.kind != .root);
+    return ast.nodes[n.parent_idx];
 }
 
 pub fn cursor(ast: Ast, idx: u32) Cursor {
@@ -507,7 +229,6 @@ pub fn deinit(ast: Ast, gpa: std.mem.Allocator) void {
     @constCast(&ast).blocks.deinit(gpa);
     gpa.free(ast.nodes);
     gpa.free(ast.errors);
-    gpa.free(ast.scripted_attrs);
 }
 
 pub fn init(
@@ -527,9 +248,6 @@ pub fn init(
     errdefer p.deinit(gpa);
 
     try p.nodes.append(gpa, .{ .kind = .root, .elem_idx = 0, .depth = 0 });
-
-    var seen_ids: std.StringHashMapUnmanaged(Span) = .{};
-    defer seen_ids.deinit(gpa);
 
     var cur = p.html.cursor(0);
     var node_idx: u32 = 0;
@@ -555,10 +273,10 @@ pub fn init(
 
         {
             var node = p.nodes.items[node_idx];
-            while (p.parent(node)) |parent| {
-                if (low_mark > parent.depth) break;
+            while (p.parent(node)) |par| {
+                if (low_mark > par.depth) break;
                 node_idx = node.parent_idx;
-                node = parent;
+                node = par;
             }
         }
 
@@ -568,14 +286,13 @@ pub fn init(
             html_node_idx,
             depth,
             seen_non_comment_elems,
-            &seen_ids,
         ) orelse continue;
         const new_node_idx: u32 = @intCast(p.nodes.items.len - 1);
 
         // Iterface and block mode
-        switch (new_node.kind.role()) {
+        switch (new_node.kind) {
             .root, .super_block => unreachable,
-            .super, .element => {},
+            .super, .element, .ctx => {},
             .extend => {
                 // sets block mode
                 std.debug.assert(p.extends_idx == 0);
@@ -584,13 +301,13 @@ pub fn init(
                 p.extends_idx = new_node_idx;
             },
             .block => {
-                const id_value = new_node.idValue();
+                const id_value = new_node.blockId();
                 const gop = try p.blocks.getOrPut(
                     gpa,
                     id_value.span.slice(src),
                 );
                 if (gop.found_existing) {
-                    const other = p.at(gop.value_ptr.*).?.idValue().span;
+                    const other = p.at(gop.value_ptr.*).?.blockId().span;
                     try p.errors.append(gpa, .{
                         .kind = .{ .duplicate_block = other },
                         .main_location = id_value.span,
@@ -651,17 +368,15 @@ pub fn init(
             }
         }
 
-        try p.validateNodeInTree(gpa, new_node.*);
-
         node_idx = new_node_idx;
         low_mark = new_node.depth + 1;
     }
 
+    try p.validate(gpa);
     return .{
         .src = src,
         .nodes = try p.nodes.toOwnedSlice(gpa),
         .errors = try p.errors.toOwnedSlice(gpa),
-        .scripted_attrs = try p.scripted_attrs.toOwnedSlice(gpa),
         .interface = p.interface,
         .blocks = p.blocks,
         .extends_idx = p.extends_idx,
@@ -677,7 +392,6 @@ const Parser = struct {
     html: html.Ast,
     nodes: std.ArrayListUnmanaged(Node) = .{},
     errors: std.ArrayListUnmanaged(Error) = .{},
-    scripted_attrs: std.ArrayListUnmanaged(Node.ScriptedAttr) = .{},
     extends_idx: u32 = 0,
     interface: std.StringArrayHashMapUnmanaged(u32) = .{},
     blocks: std.StringHashMapUnmanaged(u32) = .{},
@@ -685,7 +399,6 @@ const Parser = struct {
     pub fn deinit(p: *Parser, gpa: std.mem.Allocator) void {
         p.nodes.deinit(gpa);
         p.errors.deinit(gpa);
-        p.scripted_attrs.deinit(gpa);
         p.interface.deinit(gpa);
         p.blocks.deinit(gpa);
     }
@@ -713,7 +426,6 @@ const Parser = struct {
         elem_idx: u32,
         depth: u32,
         seen_non_comment_elems: bool,
-        seen_ids: *std.StringHashMapUnmanaged(Span),
     ) !?*Node {
         const elem = p.html.nodes[elem_idx];
 
@@ -726,9 +438,6 @@ const Parser = struct {
         std.debug.assert(depth > 0);
         const block_context = block_mode and depth == 1;
         if (block_context) tmp_result.kind = .block;
-
-        // used to detect when a block is missing an id
-        var seen_id_attr = false;
 
         var start_it = elem.startTagIterator(p.src, p.html.language);
         const tag_name = start_it.name_span;
@@ -895,773 +604,174 @@ const Parser = struct {
                     // );
                     // return error.Fatal;
                 }
+            } else if (is(tag_name_string, "ctx")) {
+                tmp_result.kind = .ctx;
             }
         }
 
-        // programming errors
-        switch (tmp_result.kind.role()) {
-            else => {},
-            .root, .extend, .super_block, .super => unreachable,
-        }
+        std.debug.assert(switch (tmp_result.kind) {
+            else => true,
+            .root, .extend, .super_block, .super => false,
+        });
 
+        var has_attr_text_html = false;
+        var has_attr_if = false;
+        var has_attr_loop = false;
+        var has_attr_else = false;
+        var has_attr_scripted = false;
+        var has_attr_id = false;
         var last_attr_end = tag_name.end;
-        var scripted_attrs_span: Node.ScriptedAttrsSpan = .{
-            .start = @intCast(p.scripted_attrs.items.len),
-            .end = @intCast(p.scripted_attrs.items.len),
-        };
+
         while (start_it.next(p.src)) |attr| : (last_attr_end = attr.span().end) {
             const name = attr.name;
             const name_string = name.slice(p.src);
 
-            if (is(name_string, "id")) {
-                tmp_result.kind = switch (tmp_result.kind) {
-                    .element => .element_id,
-                    .element_var => .element_id_var,
-                    .element_ctx => .element_id_ctx,
-                    .element_if => .element_id_if,
-                    .element_if_var => .element_id_if_var,
-                    .element_if_ctx => .element_id_if_ctx,
-                    .element_else => .element_id_else,
-                    .element_else_var => .element_id_else_var,
-                    .element_else_ctx => .element_id_else_ctx,
-                    .element_loop => .element_id_loop,
-                    .element_loop_var => .element_id_loop_var,
-                    .element_loop_ctx => .element_id_loop_ctx,
-                    .element_inloop => .element_id_inloop,
-                    .element_inloop_var => .element_id_inloop_var,
-                    .element_inloop_ctx => .element_id_inloop_ctx,
+            const special_attr = std.meta.stringToEnum(SpecialAttr, name_string) orelse {
+                const is_id = is(name_string, "id");
+                if (is_id) {
+                    tmp_result.id_template_parentid = attr;
+                    has_attr_id = true;
+                }
 
-                    // no state transition
-                    .block,
-                    .block_var,
-                    .block_ctx,
-                    .block_if,
-                    .block_if_var,
-                    .block_if_ctx,
-                    .block_loop,
-                    .block_loop_var,
-                    .block_loop_ctx,
-                    => |s| s,
+                // normal attribute
+                if (attr.value) |value| {
+                    // TODO: implement unescape
+                    // const code = try value.unescape(gpa, p.src);
+                    const code = value.span.slice(p.src);
 
-                    .root,
-                    .extend,
-                    .super,
-                    // never discovered yet
-                    .super_block,
-                    .super_block_ctx,
-                    // duplicate detection
-                    .element_id,
-                    .element_id_var,
-                    .element_id_ctx,
-                    .element_id_if,
-                    .element_id_if_var,
-                    .element_id_if_ctx,
-                    .element_id_else,
-                    .element_id_else_var,
-                    .element_id_else_ctx,
-                    .element_id_loop,
-                    .element_id_loop_var,
-                    .element_id_loop_ctx,
-                    .element_id_inloop,
-                    .element_id_inloop_var,
-                    .element_id_inloop_ctx,
-                    => unreachable,
-                };
-
-                const value = attr.value orelse {
-                    try p.errors.append(gpa, .{
-                        .kind = .missing_attribute_value,
-                        .main_location = name,
-                    });
-                    return null;
-                };
-
-                // TODO: implement value.unescape
-                const maybe_code = value.span.slice(p.src);
-
-                if (std.mem.indexOfScalar(u8, maybe_code, '$') != null) {
-                    switch (tmp_result.kind.role()) {
-                        .root, .extend, .super_block, .super => unreachable,
-                        .block => {
+                    if (std.mem.startsWith(u8, code, "$")) {
+                        has_attr_scripted = true;
+                        if (is_id and tmp_result.kind == .block) {
                             try p.errors.append(gpa, .{
                                 .kind = .block_with_scripted_id,
                                 .main_location = value.span,
                             });
-                        },
-                        .element => {},
+                        }
+                    } else {
+                        if (tmp_result.kind == .ctx) {
+                            try p.errors.append(gpa, .{
+                                .kind = .ctx_attrs_must_be_scripted,
+                                .main_location = name,
+                            });
+                        }
                     }
                 } else {
-                    // we can only statically analyze non-scripted ids
-                    const gop = try seen_ids.getOrPut(gpa, maybe_code);
-
-                    if (gop.found_existing) {
+                    if (is_id) {
                         try p.errors.append(gpa, .{
-                            .kind = .duplicate_id_value,
-                            .main_location = value.span,
+                            .kind = .missing_attribute_value,
+                            .main_location = name,
+                        });
+                    }
+                    if (tmp_result.kind == .ctx) {
+                        try p.errors.append(gpa, .{
+                            .kind = .ctx_attrs_must_be_scripted,
+                            .main_location = name,
                         });
                     }
                 }
 
-                tmp_result.id_template_parentid = attr;
-                seen_id_attr = true;
-
                 continue;
-            }
-            if (builtin.mode == .Debug and is(name_string, "debug")) {
-                log.debug("\nfound debug attribute", .{});
-                log.debug("\n{s}\n", .{name.slice(p.src)});
-                name.debug(p.src);
-                log.debug("\n", .{});
+            };
 
-                @panic("debug attr found, aborting");
-                // return Ast.fatal("debug attribute found, aborting", .{});
-            }
-
-            // var
-            if (is(name_string, "var")) {
-                // TODO: triage this error message
-
-                // if (attr.node.next() != null) {
-                //     return p.reportError(
-                //         name,
-                //         "var_must_be_last",
-                //         "MISPLACED VAR ATTRIBUTE",
-                //         \\An element that prints the content of a variable must place
-                //         \\the `var` attribute at the very end of the opening tag.
-                //         ,
-                //     );
-                // }
-
-                tmp_result.kind = switch (tmp_result.kind) {
-                    .block => .block_var,
-                    .block_if => .block_if_var,
-                    .block_loop => .block_loop_var,
-                    .element => .element_var,
-                    .element_if => .element_if_var,
-                    .element_else => .element_else_var,
-                    .element_loop => .element_loop_var,
-                    .element_inloop => .element_inloop_var,
-                    .element_id => .element_id_var,
-                    .element_id_if => .element_id_if_var,
-                    .element_id_else => .element_id_else_var,
-                    .element_id_loop => .element_id_loop_var,
-                    .element_id_inloop => .element_id_inloop_var,
-
-                    .block_ctx,
-                    .block_if_ctx,
-                    .block_loop_var,
-                    .block_loop_ctx,
-                    .element_ctx,
-                    .element_if_ctx,
-                    .element_else_ctx,
-                    .element_loop_ctx,
-                    .element_inloop_ctx,
-                    .element_id_ctx,
-                    .element_id_if_ctx,
-                    .element_id_else_ctx,
-                    .element_id_loop_ctx,
-                    .element_id_inloop_ctx,
-                    => {
-                        @panic("TODO: explain that a tag combination is wrong");
-                    },
-
-                    .root,
-                    .extend,
-                    .super,
-                    // never discorvered yet
-                    .super_block,
-                    .super_block_ctx,
-                    => unreachable,
-
-                    // duplicate attr
-                    .block_var,
-                    .block_if_var,
-                    .element_var,
-                    .element_if_var,
-                    .element_else_var,
-                    .element_loop_var,
-                    .element_inloop_var,
-                    .element_id_var,
-                    .element_id_if_var,
-                    .element_id_else_var,
-                    .element_id_loop_var,
-                    .element_id_inloop_var,
-                    => tmp_result.kind, // do nothing
-                };
-
-                //TODO: implement unescape
-                // const code = try value.unescape(gpa, p.src);
-                const code = if (attr.value) |v|
-                    v.span.slice(p.src)
-                else blk: {
-
-                    // return p.reportError(
-                    //     name,
-                    //     "var_no_value",
-                    //     "VAR MISSING VALUE",
-                    //     \\A `var` attribute requires a value that scripts what
-                    //     \\to put in the relative element's body.
-                    //     ,
-                    // );
-                    try p.errors.append(gpa, .{
-                        .kind = .missing_attribute_value,
-                        .main_location = name,
-                    });
-                    break :blk "";
-                };
-
-                // TODO: typecheck the expression
-                if (code.len > 0 and
-                    std.mem.indexOfScalar(u8, code, '$') == null)
-                {
-                    try p.errors.append(gpa, .{
-                        .kind = .unscripted_var,
-                        .main_location = name,
-                    });
-
-                    // return p.reportError(
-                    //     name,
-                    //     "unscripted_var",
-                    //     "UNSCRIPTED VAR",
-                    //     \\A `var` attribute requires a value that scripts what
-                    //     \\to put in the relative element's body.
-                    //     ,
-                    // );
-                }
-                tmp_result.var_ctx = .{
-                    .attr = attr,
-                    .code = .{
-                        .slice = code,
-                    },
-                };
-
-                continue;
-            }
-
-            //ctx
-            if (is(name_string, "ctx")) {
-                tmp_result.kind = switch (tmp_result.kind) {
-                    .block => .block_ctx,
-                    .block_if => .block_if_ctx,
-                    .block_loop => .block_loop_ctx,
-                    .element => .element_ctx,
-                    .element_if => .element_if_ctx,
-                    .element_else => .element_else_ctx,
-                    .element_loop => .element_loop_ctx,
-                    .element_inloop => .element_inloop_ctx,
-                    .element_id => .element_id_ctx,
-                    .element_id_if => .element_id_if_ctx,
-                    .element_id_else => .element_id_else_ctx,
-                    .element_id_loop => .element_id_loop_ctx,
-                    .element_id_inloop => .element_id_inloop_ctx,
-
-                    .block_var,
-                    .block_if_var,
-                    .block_loop_var,
-                    .element_var,
-                    .element_if_var,
-                    .element_else_var,
-                    .element_loop_var,
-                    .element_inloop_var,
-                    .element_id_var,
-                    .element_id_if_var,
-                    .element_id_else_var,
-                    .element_id_loop_var,
-                    .element_id_inloop_var,
-                    => {
-                        @panic("TODO: explain that a tag combination is wrong");
-                    },
-
-                    .root,
-                    .extend,
-                    .super,
-                    // never discorvered yet
-                    .super_block,
-                    .super_block_ctx,
-                    => unreachable,
-
-                    // duplicate attr
-                    .block_ctx,
-                    .block_if_ctx,
-                    .block_loop_ctx,
-                    .element_ctx,
-                    .element_if_ctx,
-                    .element_else_ctx,
-                    .element_loop_ctx,
-                    .element_inloop_ctx,
-                    .element_id_ctx,
-                    .element_id_if_ctx,
-                    .element_id_else_ctx,
-                    .element_id_loop_ctx,
-                    .element_id_inloop_ctx,
-                    => tmp_result.kind, // do nothing
-                };
-
-                //TODO: implement unescape
-                // const code = try value.unescape(gpa, p.src);
-                const code = if (attr.value) |v|
-                    v.span.slice(p.src)
-                else blk: {
-
-                    // return p.reportError(
-                    //     name,
-                    //     "var_no_value",
-                    //     "VAR MISSING VALUE",
-                    //     \\A `var` attribute requires a value that scripts what
-                    //     \\to put in the relative element's body.
-                    //     ,
-                    // );
-                    try p.errors.append(gpa, .{
-                        .kind = .missing_attribute_value,
-                        .main_location = name,
-                    });
-                    break :blk "";
-                };
-
-                // TODO: typecheck the expression
-                if (code.len > 0 and
-                    std.mem.indexOfScalar(u8, code, '$') == null)
-                {
-                    try p.errors.append(gpa, .{
-                        .kind = .unscripted_ctx,
-                        .main_location = name,
-                    });
-
-                    // return p.reportError(
-                    //     name,
-                    //     "unscripted_var",
-                    //     "UNSCRIPTED VAR",
-                    //     \\A `var` attribute requires a value that scripts what
-                    //     \\to put in the relative element's body.
-                    //     ,
-                    // );
-                }
-                tmp_result.var_ctx = .{
-                    .attr = attr,
-                    .code = .{
-                        .slice = code,
-                    },
-                };
-
-                continue;
-            }
-
-            // if
-            if (is(name_string, "if")) {
-                tmp_result.kind = switch (tmp_result.kind) {
-                    .block => .block_if,
-                    .block_var => .block_if_var,
-                    .block_ctx => .block_if_ctx,
-                    .element => .element_if,
-                    .element_var => .element_if_var,
-                    .element_ctx => .element_if_ctx,
-                    .element_id => .element_id_if,
-                    .element_id_var => .element_id_if_var,
-                    .element_id_ctx => .element_id_if_ctx,
-
-                    .block_if,
-                    .block_if_var,
-                    .block_if_ctx,
-                    .block_loop,
-                    .block_loop_var,
-                    .block_loop_ctx,
-                    .element_else,
-                    .element_else_var,
-                    .element_else_ctx,
-                    .element_loop,
-                    .element_loop_var,
-                    .element_loop_ctx,
-                    .element_inloop,
-                    .element_inloop_var,
-                    .element_inloop_ctx,
-                    .element_id_else,
-                    .element_id_else_var,
-                    .element_id_else_ctx,
-                    .element_id_loop,
-                    .element_id_loop_var,
-                    .element_id_loop_ctx,
-                    .element_id_inloop,
-                    .element_id_inloop_var,
-                    .element_id_inloop_ctx,
-                    => blk: {
-                        try p.errors.append(gpa, .{
-                            .kind = .bad_attr,
-                            .main_location = name,
-                        });
-                        break :blk tmp_result.kind;
-                        // p.reportError(
-                        //     name,
-                        //     "bad_attr",
-                        //     "ALREADY BRANCHING",
-                        //     \\Elements can't have multiple branching attributes defined
-                        //     \\at the same time.
-                        //     ,
-                        // ) catch {};
-                        // try p.diagnostic(
-                        //     "note: this is the previous branching attribute:",
-                        //     tmp_result.branchingAttr().attr.name,
-                        // );
-                        // return error.Fatal;
-                    },
-
-                    .root,
-                    .extend,
-                    .super,
-                    // never discovered yet
-                    .super_block,
-                    .super_block_ctx,
-                    // duplicate attribute
-                    .element_if,
-                    .element_if_var,
-                    .element_if_ctx,
-                    .element_id_if,
-                    .element_id_if_var,
-                    .element_id_if_ctx,
-                    => unreachable,
-                };
+            if (special_attr == .@"else") {
+                has_attr_else = true;
 
                 if (last_attr_end != tag_name.end) {
                     try p.errors.append(gpa, .{
-                        .kind = .bad_attr,
+                        .kind = .else_must_be_first_attr,
                         .main_location = name,
                     });
-                    // return p.reportError(
-                    //     name,
-                    //     "bad_attr",
-                    //     "IF ATTRIBUTE MUST COME FIRST",
-                    //     \\When giving an 'if' attribute to an element, you must always place it
-                    //     \\first in the attribute list.
-                    //     ,
-                    // );
                 }
 
-                const code = if (attr.value) |v|
-                    v.span.slice(p.src)
-                else blk: {
+                if (attr.value != null) {
                     try p.errors.append(gpa, .{
-                        .kind = .bad_attr,
+                        .kind = .else_with_value,
                         .main_location = name,
                     });
-                    // return p.reportError(
-                    //     name,
-                    //     "bad_attr",
-                    //     "IF ATTRIBUTE WIHTOUT VALUE",
-                    //     \\When giving an `if` attribute to an element, you must always
-                    //     \\also provide a condition in the form of a value.
-                    //     ,
-                    // );
-                    break :blk "";
-                };
-
-                // TODO: implement unescape
-                // const code = try value.unescape(gpa, p.src);
-
-                // TODO: typecheck the expression
-                tmp_result.if_else_loop = .{
-                    .attr = attr,
-                    .code = .{
-                        .slice = code,
-                    },
-                };
-
+                }
                 continue;
             }
 
-            // else
-            if (is(name_string, "else")) {
-                tmp_result.kind = switch (tmp_result.kind) {
-                    .element => .element_else,
-                    .element_var => .element_else_var,
-                    .element_ctx => .element_else_ctx,
-                    .element_id => .element_id_else,
-                    .element_id_var => .element_id_else_var,
-                    .element_id_ctx => .element_id_else_ctx,
-
-                    .block,
-                    .block_var,
-                    .block_ctx,
-                    .block_if,
-                    .block_if_var,
-                    .block_if_ctx,
-                    .block_loop,
-                    .block_loop_var,
-                    .block_loop_ctx,
-                    .element_if,
-                    .element_if_var,
-                    .element_if_ctx,
-                    .element_else,
-                    .element_else_var,
-                    .element_else_ctx,
-                    .element_loop,
-                    .element_loop_var,
-                    .element_loop_ctx,
-                    .element_inloop,
-                    .element_inloop_var,
-                    .element_inloop_ctx,
-                    .element_id_if,
-                    .element_id_if_var,
-                    .element_id_if_ctx,
-                    .element_id_else,
-                    .element_id_else_var,
-                    .element_id_else_ctx,
-                    .element_id_loop,
-                    .element_id_loop_var,
-                    .element_id_loop_ctx,
-                    .element_id_inloop,
-                    .element_id_inloop_var,
-                    .element_id_inloop_ctx,
-                    => blk: {
-                        try p.errors.append(gpa, .{
-                            .kind = .already_branching,
-                            .main_location = name,
-                        });
-                        break :blk tmp_result.kind;
-                    },
-
-                    .root,
-                    .extend,
-                    .super,
-                    // never discovered yet
-                    .super_block,
-                    .super_block_ctx,
-                    => unreachable,
-                };
-
-                if (last_attr_end != tag_name.end) {
-                    try p.errors.append(gpa, .{
-                        .kind = .late_else,
-                        .main_location = name,
-                    });
-                }
-                if (attr.value) |v| {
-                    try p.errors.append(gpa, .{
-                        .kind = .bad_attr,
-                        .main_location = v.span,
-                    });
-                    // return p.reportError(
-                    //     v.span,
-                    //     "bad_attr",
-                    //     "ELSE ATTRIBUTE WITH VALUE",
-                    //     "`else` attributes cannot have a value.",
-                    // );
-                }
-
-                tmp_result.if_else_loop = .{ .attr = attr, .code = .{} };
-
-                continue;
+            if (attr.value == null) {
+                try p.errors.append(gpa, .{
+                    .kind = .missing_attribute_value,
+                    .main_location = name,
+                });
+                return null;
             }
 
-            // loop
-            if (is(name_string, "loop")) {
-                if (last_attr_end != tag_name.end) {
-                    try p.errors.append(gpa, .{
-                        .kind = .late_loop,
-                        .main_location = name,
-                    });
-                }
+            const code = if (attr.value) |v|
+                v.span.slice(p.src)
+            else blk: {
+                try p.errors.append(gpa, .{
+                    .kind = .missing_attribute_value,
+                    .main_location = name,
+                });
+                break :blk "";
+            };
 
-                tmp_result.kind = switch (tmp_result.kind) {
-                    .block => .block_loop,
-                    .block_var => .block_loop_var,
-                    .block_ctx => .block_loop_ctx,
-                    .element => .element_loop,
-                    .element_var => .element_loop_var,
-                    .element_ctx => .element_loop_ctx,
-                    .element_id => .element_id_loop,
-                    .element_id_var => .element_id_loop_var,
-                    .element_id_ctx => .element_id_loop_ctx,
-
-                    .block_if,
-                    .block_if_var,
-                    .block_if_ctx,
-                    .block_loop,
-                    .block_loop_var,
-                    .block_loop_ctx,
-                    .element_if,
-                    .element_if_var,
-                    .element_if_ctx,
-                    .element_else,
-                    .element_else_var,
-                    .element_else_ctx,
-                    .element_loop,
-                    .element_loop_var,
-                    .element_loop_ctx,
-                    .element_inloop,
-                    .element_inloop_var,
-                    .element_inloop_ctx,
-                    .element_id_if,
-                    .element_id_if_var,
-                    .element_id_if_ctx,
-                    .element_id_else,
-                    .element_id_else_var,
-                    .element_id_else_ctx,
-                    .element_id_loop,
-                    .element_id_loop_var,
-                    .element_id_loop_ctx,
-                    .element_id_inloop,
-                    .element_id_inloop_var,
-                    .element_id_inloop_ctx,
-                    => blk: {
-                        // TODO: some of these cases should be unreachable
-                        try p.errors.append(gpa, .{
-                            .kind = .already_branching,
-                            .main_location = name,
-                        });
-                        break :blk tmp_result.kind;
-                    },
-
-                    .root,
-                    .extend,
-                    .super,
-                    // never discovered yet
-                    .super_block,
-                    .super_block_ctx,
-                    => unreachable,
-                };
-
-                const code = if (attr.value) |v|
-                    v.span.slice(p.src)
-                else blk: {
-                    try p.errors.append(gpa, .{
-                        .kind = .loop_no_value,
-                        .main_location = name,
-                    });
-                    break :blk "";
-                };
-
-                // TODO: implement unescape
-                // const code = try value.unescape(gpa, p.src);
-
-                // TODO: typecheck the expression
-                tmp_result.if_else_loop = .{
-                    .attr = attr,
-                    .code = .{
-                        .slice = code,
-                    },
-                };
-
-                continue;
+            if (code.len > 0 and
+                std.mem.indexOfScalar(u8, code, '$') == null)
+            {
+                try p.errors.append(gpa, .{
+                    .kind = .unscripted_attr,
+                    .main_location = name,
+                });
             }
 
-            // inline-loop
-            if (is(name_string, "inline-loop")) {
-                if (last_attr_end != tag_name.end) {
-                    try p.errors.append(gpa, .{
-                        .kind = .loop_must_be_first_attr,
-                        .main_location = name,
-                    });
-                }
-
-                tmp_result.kind = switch (tmp_result.kind) {
-                    .element => .element_inloop,
-                    .element_var => .element_inloop_var,
-                    .element_ctx => .element_inloop_ctx,
-                    .element_id => .element_id_inloop,
-                    .element_id_var => .element_id_inloop_var,
-                    .element_id_ctx => .element_id_inloop_ctx,
-
-                    .block_if,
-                    .block_if_var,
-                    .block_if_ctx,
-                    .block_loop,
-                    .block_loop_var,
-                    .block_loop_ctx,
-                    .element_if,
-                    .element_if_var,
-                    .element_if_ctx,
-                    .element_else,
-                    .element_else_var,
-                    .element_else_ctx,
-                    .element_loop,
-                    .element_loop_var,
-                    .element_loop_ctx,
-                    .element_inloop,
-                    .element_inloop_var,
-                    .element_inloop_ctx,
-                    .element_id_if,
-                    .element_id_if_var,
-                    .element_id_if_ctx,
-                    .element_id_else,
-                    .element_id_else_var,
-                    .element_id_else_ctx,
-                    .element_id_loop,
-                    .element_id_loop_var,
-                    .element_id_loop_ctx,
-                    .element_id_inloop,
-                    .element_id_inloop_var,
-                    .element_id_inloop_ctx,
-                    => blk: {
+            switch (special_attr) {
+                .text, .html => {
+                    if (has_attr_text_html) {
                         try p.errors.append(gpa, .{
-                            .kind = .block_cannot_be_inlined,
-                            .main_location = name,
+                            .kind = .text_and_html_are_mutually_exclusive,
+                            .main_location = attr.name,
                         });
-                        break :blk tmp_result.kind;
-                    },
-
-                    .root,
-                    .extend,
-                    .super,
-                    .block,
-                    .block_var,
-                    .block_ctx,
-                    => blk: {
+                    }
+                    if (elem.first_child_idx != 0) {
                         try p.errors.append(gpa, .{
-                            .kind = .block_cannot_be_inlined,
-                            .main_location = name,
+                            .kind = .text_and_html_require_an_empty_element,
+                            .main_location = attr.name,
                         });
-                        break :blk tmp_result.kind;
-                    },
-                    // never discovered yet
-                    .super_block,
-                    .super_block_ctx,
-                    => unreachable,
-                };
-
-                const value = attr.value orelse {
-                    try p.errors.append(gpa, .{
-                        .kind = .missing_attribute_value,
-                        .main_location = name,
-                    });
-                    return null;
-                };
-
-                //TODO: implement unescape
-                // const code = try value.unescape(gpa, p.src);
-                const code = value.span.slice(p.src);
-                // TODO: typecheck the expression
-                tmp_result.if_else_loop = .{
-                    .attr = attr,
-                    .code = .{
-                        .slice = code,
-                    },
-                };
-
-                continue;
-            }
-
-            // normal attribute
-            if (attr.value) |value| {
-                // TODO: implement unescape
-                // const code = try value.unescape(gpa, p.src);
-                const code = value.span.slice(p.src);
-
-                if (std.mem.startsWith(u8, code, "$")) {
-                    scripted_attrs_span.end += 1;
-                    try p.scripted_attrs.append(gpa, .{
-                        .attr = attr,
-                        .code = .{ .slice = code },
-                    });
-                }
+                    }
+                    has_attr_text_html = true;
+                    tmp_result.html_text = attr;
+                },
+                .@"if" => {
+                    if (has_attr_loop) {
+                        try p.errors.append(gpa, .{
+                            .kind = .one_branching_attribute_per_element,
+                            .main_location = attr.name,
+                        });
+                    }
+                    has_attr_if = true;
+                    tmp_result.if_loop = attr;
+                },
+                .loop => {
+                    if (has_attr_if) {
+                        try p.errors.append(gpa, .{
+                            .kind = .one_branching_attribute_per_element,
+                            .main_location = attr.name,
+                        });
+                    }
+                    has_attr_loop = true;
+                    tmp_result.if_loop = attr;
+                },
+                .@"else" => unreachable,
             }
         }
 
-        const scripted_attrs_count = scripted_attrs_span.end - scripted_attrs_span.start;
-        switch (tmp_result.kind) {
-            .element, .element_id => if (scripted_attrs_count == 0) return null,
-            else => {},
+        if (tmp_result.kind == .element) {
+            if (!has_attr_if and
+                !has_attr_loop and
+                !has_attr_else and
+                !has_attr_text_html and
+                !has_attr_scripted)
+            {
+                return null;
+            }
         }
 
-        if (tmp_result.kind.role() == .block and !seen_id_attr) {
+        if (tmp_result.kind == .block and !has_attr_id) {
             try p.errors.append(gpa, .{
                 .kind = .block_missing_id,
                 .main_location = tag_name,
@@ -1682,137 +792,149 @@ const Parser = struct {
 
         const new_node = try p.nodes.addOne(gpa);
         new_node.* = tmp_result;
-        new_node.scripted_attrs_span = scripted_attrs_span;
         return new_node;
     }
 
-    fn validateNodeInTree(p: *Parser, gpa: std.mem.Allocator, node: Node) !void {
-        // NOTE: This function should only validate rules that require
-        //       having inserted the node in the tree. anything that
-        //       can be tested sooner should go in self.buildNode().
-        //
-        // NOTE: We can only validate constraints *upwards*, as the
-        //       rest of the tree has not yet been built.
-        switch (node.kind.role()) {
-            .root => unreachable,
-            .element => {},
+    fn validate(p: *Parser, gpa: std.mem.Allocator) !void {
+        var ast: Ast = undefined;
+        ast.nodes = p.nodes.items;
+        var c = ast.cursor(0);
+        while (c.next()) |ev| {
+            if (ev.dir == .exit) continue;
+            const node = ev.node;
+            switch (node.kind) {
+                .root => unreachable,
+                .ctx => {},
+                .element => {
+                    // element with an unscripted id cannot be directly under
+                    // a loop, as that guarantees that duplicated ids will be
+                    // generated. we stop if we find `if` branching because,
+                    // even if risky, the user might have handled the situation
+                    // properly (eg by only printing the id element on
+                    // $loop.first)
+                    if (node.idAttr()) |id| blk: {
+                        if (std.mem.startsWith(
+                            u8,
+                            "$",
+                            id.name.slice(p.src),
+                        )) break :blk;
 
-            .extend => {
-                // if present, <extend/> must be the first tag in the document
-                // (validated on creation)
-                // TODO: check for empty body
-            },
-            .block => {
-                // blocks must have an id
-                // (validated on creation)
+                        var upper = ast.parent(node);
+                        while (upper.kind != .root) : (upper = ast.parent(upper)) {
+                            const attr = upper.if_loop orelse continue;
+                            if (attr.name.len() == "if".len) break;
+                            try p.errors.append(gpa, .{
+                                .kind = .id_under_loop,
+                                .main_location = id.name,
+                            });
+                            // todo: add note location
+                            break;
+                        }
+                    }
+                },
+                .extend => {
+                    // if present, <extend> must be the first tag in the document
+                    // (validated on creation)
+                },
+                .block => {
+                    // blocks must have an id
+                    // (validated on creation)
 
-                // blocks must be at depth = 1
-                // (validated on creation)
-            },
+                    // blocks must be at depth = 1
+                    // (validated on creation)
 
-            .super_block => {
-                // must have an id
-                // (validated on creation)
+                    // blocks must not be under branching
+                    // (validated by the .super branch)
+                },
 
-                // must have a <super/> inside
-                // (validated when validating the <super/>)
-            },
-            .super => {
-                // <super/> must have super_block right above
-                // (validated on creation)
+                .super_block => {
+                    // must have an id
+                    // (validated on creation)
 
-                // // <super/> can't be inside any subtree with branching in it
-                // var out = node.parent;
-                // while (out) |o| : (out = o.parent) if (o.kind.branching() != .none) {
-                //     self.reportError(node.elem.node, "<SUPER/> UNDER BRANCHING",
-                //         \\The <super/> tag is used to define a static template
-                //         \\extension hierarchy, and as such should not be placed
-                //         \\inside of elements that feature branching logic.
-                //     ) catch {};
-                //     std.debug.print("note: branching happening here:\n", .{});
-                //     self.diagnostic(o.branchingAttr().attr.name());
-                //     return error.Reported;
-                // };
+                    // must have a <super> inside
+                    // (validated when creating the <super> node)
+                },
+                .super => {
+                    // <super> must have super_block right above
+                    // (validated on creation)
 
-                // each super_block can only have one <super/> in it.
+                    // only one <super> per block
+                    // we scan downwards to avoid duplicate errors
+                    var sibling_idx = node.next_idx;
+                    while (sibling_idx != 0) {
+                        const sibling = ast.at(sibling_idx).?;
+                        sibling_idx = sibling.next_idx;
 
-                // TODO: this only catches the simplest case,
-                //       it needs to also enter prev nodes.
+                        if (sibling.kind == .super) {
+                            const p1 = node.elem(p.html).parent_idx;
+                            const p2 = sibling.elem(p.html).parent_idx;
+                            if (p1 != p2) continue;
 
-                // TODO: triage this error
-                // var html_up = ast.prev(node.elem);
-                // while (html_up) |u| : (html_up = u.prev()) {
-                //     const elem = u.toElement() orelse continue;
-                //     const start_tag = elem.startTag();
-                //     if (is(start_tag.name().string(ast.html), "super")) {
-                //         ast.reportError(
-                //             node.elem.node,
-                //             "too_many_supers",
-                //             "MULTIPLE SUPER TAGS UNDER SAME ID",
-                //             \\TODO: write explanation
-                //             ,
-                //         ) catch {};
-                //         try ast.diagnostic(
-                //             "note: the other tag:",
-                //             start_tag.name(),
-                //         );
-                //         try ast.diagnostic(
-                //             "note: both are relative to:",
-                //             node.superBlock().id_value.node,
-                //         );
-                //         return error.Fatal;
+                            try p.errors.append(gpa, .{
+                                .kind = .two_supers_one_id,
+                                .main_location = sibling.elem(p.html).open,
+                            });
+                            // todo: add note location
+                        }
+                    }
+                    // <super> can't be inside any subtree with branching in it
+                    var upper = ast.parent(node);
+                    while (upper.kind != .root) : (upper = ast.parent(upper)) {
+                        if (upper.if_loop) |attr| {
+                            try p.errors.append(gpa, .{
+                                .kind = .super_under_branching,
+                                .main_location = node.elem(p.html).open,
+                            });
+                            // todo: add note location
+                            _ = attr;
 
-                //         // self.reportError(elem_name, "UNEXPECTED SUPER TAG",
-                //         //     \\All <super/> tags must have a parent element with an id,
-                //         //     \\which is what defines a block, and each block can only have
-                //         //     \\one <super/> tag.
-                //         //     \\
-                //         //     \\Add an `id` attribute to a new element to split them into
-                //         //     \\two blocks, or remove one.
-                //         // ) catch {};
-                //         // std.debug.print("note: this is where the other tag is:", .{});
-                //         // self.templateDiagnostics(gop.value_ptr.*);
-                //         // std.debug.print("note: both refer to this ancestor:", .{});
-                //         // self.templateDiagnostics(s.tag_name);
-                //         // return error.Reported;
-                //     }
-                // }
-            },
+                            // ast.reportError(node.elem(html_ast).open, "<SUPER> UNDER BRANCHING",
+                            //     \\The <super> tag is used to define a static template
+                            //     \\extension hierarchy, and as such should not be placed
+                            //     \\inside of elements that feature branching logic.
+                            // ) catch {};
+                            // std.debug.print("note: branching happening here:\n", .{});
+                            // ast.diagnostic(attr.name);
+                            // return error.Reported;
+                        }
+                    }
+                },
+            }
         }
 
-        // nodes under a loop can't have ids
-        log.debug("before", .{});
-        if (node.kind.hasId()) {
-            log.debug("here", .{});
-            var maybe_parent = p.parent(node);
-            while (maybe_parent) |par| : (maybe_parent = p.parent(par)) switch (par.kind.branching()) {
-                else => {
-                    log.debug("testing '{s}'", .{
-                        par.elem(p.html).open.slice(p.src),
-                    });
-                    continue;
-                },
-                .loop, .inloop => {
-                    try p.errors.append(gpa, .{
-                        .kind = .id_under_loop,
-                        .main_location = node.idAttr().name,
-                    });
-                    // p.reportError(
-                    //     node.idAttr().name,
-                    //     "id_under_loop",
-                    //     "ID UNDER LOOP",
-                    //     \\In a valid HTML document all `id` attributes must
-                    //     \\have unique values.
-                    //     \\
-                    //     \\Giving an `id` attribute to elements under a loop
-                    //     \\makes that impossible.
-                    //     ,
-                    // ) catch {};
-                    // try p.diagnostic("note: the loop:\n", p.loopAttr().attr.name);
-                    // return error.Fatal;
-                },
-            };
-        }
+        // // nodes under a loop can't have ids
+        // log.debug("before", .{});
+        // if (node.kind.hasId()) {
+        //     log.debug("here", .{});
+        //     var maybe_parent = p.parent(node);
+        //     while (maybe_parent) |par| : (maybe_parent = p.parent(par)) switch (par.kind.branching()) {
+        //         else => {
+        //             log.debug("testing '{s}'", .{
+        //                 par.elem(p.html).open.slice(p.src),
+        //             });
+        //             continue;
+        //         },
+        //         .loop, .inloop => {
+        //             try p.errors.append(gpa, .{
+        //                 .kind = .id_under_loop,
+        //                 .main_location = node.idAttr().name,
+        //             });
+        //             // p.reportError(
+        //             //     node.idAttr().name,
+        //             //     "id_under_loop",
+        //             //     "ID UNDER LOOP",
+        //             //     \\In a valid HTML document all `id` attributes must
+        //             //     \\have unique values.
+        //             //     \\
+        //             //     \\Giving an `id` attribute to elements under a loop
+        //             //     \\makes that impossible.
+        //             //     ,
+        //             // ) catch {};
+        //             // try p.diagnostic("note: the loop:\n", p.loopAttr().attr.name);
+        //             // return error.Fatal;
+        //         },
+        //     };
+        // }
 
         // switch (node.kind.branching()) {
         //     else => {},
@@ -1966,14 +1088,18 @@ test "basics" {
     try std.testing.expectEqual(0, r.first_child_idx);
 }
 
-test "var - errors" {
+test "text/html - errors" {
     const cases =
-        \\<div var></div>
-        \\<div var="$page.content" else></div>
-        \\<div var="$page.content" if></div>
-        \\<div var="$page.content" loop></div>
-        \\<div var="$page.content" var></div>
-        \\<div var="not scripted"></div>
+        \\<div text></div>
+        \\<div text="$page.content" else></div>
+        \\<div text="$page.content" if></div>
+        \\<div text="$page.content" loop></div>
+        \\<div text="$page.content" text></div>
+        \\<div text="$page.content" html></div>
+        \\<div html="$page.content" html></div>
+        \\<div html="$page.content" text></div>
+        \\<div text="not scripted"></div>
+        \\<div html="not scripted"></div>
     ;
 
     var it = std.mem.tokenizeScalar(u8, cases, '\n');
@@ -2018,8 +1144,8 @@ test "siblings" {
 
     const ex =
         \\(root 0
-        \\    (element_if 2)
-        \\    (element_var 2)
+        \\    (element 2)
+        \\    (element 2)
         \\)
         \\
     ;
@@ -2052,9 +1178,9 @@ test "nesting" {
 
     const ex =
         \\(root 0
-        \\    (element_loop 1
-        \\        (element_if 2)
-        \\        (element_var 2)
+        \\    (element 1
+        \\        (element 2)
+        \\        (element 2)
         \\    )
         \\)
         \\
@@ -2088,9 +1214,9 @@ test "deeper nesting" {
 
     const ex =
         \\(root 0
-        \\    (element_loop 1
-        \\        (element_if 2)
-        \\        (element_var 3)
+        \\    (element 1
+        \\        (element 2)
+        \\        (element 3)
         \\    )
         \\)
         \\
@@ -2133,14 +1259,14 @@ test "complex example" {
 
     const ex =
         \\(root 0
-        \\    (element_if 1
-        \\        (element_if 2)
-        \\        (element_else 2
-        \\            (element_id_loop 3 #p-loop
-        \\                (element_var 4)
+        \\    (element 1
+        \\        (element 2)
+        \\        (element 2
+        \\            (element 3 #p-loop
+        \\                (element 4)
         \\            )
         \\        )
-        \\        (element_id_var 3 #last)
+        \\        (element 3 #last)
         \\    )
         \\)
         \\
@@ -2151,10 +1277,9 @@ test "complex example" {
 test "if-else-loop errors" {
     const cases =
         \\<div if></div>
+        \\<div if="arst"></div>
         \\<div else="$foo"></div>
         \\<div else="bar"></div>
-        \\<div else if></div>
-        \\<div else if="$foo"></div>
         \\<div else if="bar"></div>
     ;
 
@@ -2206,12 +1331,12 @@ test "super" {
 
     const ex =
         \\(root 0
-        \\    (element_if 1
-        \\        (element_id_loop 3 #p-loop
-        \\            (element_var 4)
+        \\    (element 1
+        \\        (element 3 #p-loop
+        \\            (element 4)
         \\            (super 4 ->#p-loop)
         \\        )
-        \\        (element_id_var 3 #last)
+        \\        (element 3 #last)
         \\    )
         \\)
         \\
@@ -2235,53 +1360,72 @@ test "super" {
 // }
 
 pub const Cursor = struct {
-    skip_children_of_current_node: bool = false,
-    current_idx: u32,
-    depth: usize,
+    cur: ?Event = null,
     ast: Ast,
+    start_idx: u32,
+
+    pub const Event = struct {
+        dir: Dir,
+        node: Node,
+        idx: u32,
+        pub const Dir = enum { enter, exit };
+    };
 
     pub fn init(ast: Ast, idx: u32) Cursor {
-        return .{ .depth = 0, .current_idx = idx, .ast = ast };
+        return .{
+            .ast = ast,
+            .start_idx = idx,
+            .cur = .{
+                .node = ast.nodes[idx],
+                .idx = idx,
+                .dir = .enter,
+            },
+        };
     }
 
-    pub fn skipChildrenOfCurrentNode(c: *Cursor) void {
-        c.skip_children_of_current_node = true;
-    }
-    pub fn next(c: *Cursor) ?Node {
-        const current = c.ast.nodes[c.current_idx];
-        if (c.skip_children_of_current_node) {
-            c.skip_children_of_current_node = false;
-        } else {
-            if (current.first_child_idx != 0) {
-                const ch = c.ast.at(current.first_child_idx);
-                c.depth += 1;
-                c.current_idx = current.first_child_idx;
-                return ch;
-            }
-        }
-
-        if (c.depth == 0) return null;
-
-        if (current.next_idx != 0) {
-            const sb = c.ast.at(current.next_idx);
-            c.current_idx = current.next_idx;
-            return sb;
-        }
-
-        c.depth -= 1;
-        if (c.depth == 0) return null;
-
-        const parent = c.ast.nodes[current.parent_idx];
-        if (parent.next_idx != 0) {
-            const un = c.ast.at(parent.next_idx);
-            c.current_idx = parent.next_idx;
-            return un;
-        }
-
-        return null;
+    pub fn move(c: *Cursor, idx: u32) void {
+        c.cur = .{
+            .node = c.ast.nodes[idx],
+            .idx = idx,
+            .dir = .enter,
+        };
     }
 
-    pub fn reset(c: *Cursor, idx: u32) void {
-        c.* = Cursor.init(c.ast, idx);
+    pub fn current(c: Cursor) ?Event {
+        return c.cur;
+    }
+
+    pub fn next(c: *Cursor) ?Event {
+        const cur = c.cur orelse return null;
+        switch (cur.dir) {
+            .enter => {
+                const ch = c.ast.child(cur.node) orelse {
+                    c.cur.?.dir = .exit;
+                    return c.cur;
+                };
+
+                c.cur.?.node = ch;
+                c.cur.?.idx = cur.node.first_child_idx;
+                return c.cur;
+            },
+            .exit => {
+                if (c.start_idx == cur.idx) {
+                    c.cur = null;
+                    return null;
+                }
+
+                const n = c.ast.next(cur.node) orelse {
+                    const _parent = c.ast.parent(cur.node);
+                    c.cur.?.node = _parent;
+                    c.cur.?.idx = cur.node.parent_idx;
+                    return c.cur;
+                };
+
+                c.cur.?.node = n;
+                c.cur.?.idx = cur.node.next_idx;
+                c.cur.?.dir = .enter;
+                return c.cur;
+            },
+        }
     }
 };
