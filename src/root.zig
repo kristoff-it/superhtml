@@ -51,6 +51,21 @@ pub const utils = struct {
             }
         }.up;
     }
+
+    pub fn Ctx(comptime Value: type) type {
+        return struct {
+            _map: *const std.StringHashMapUnmanaged(Value) = undefined,
+
+            pub fn dot(
+                ctx: *const @This(),
+                _: std.mem.Allocator,
+                path: []const u8,
+            ) !Value {
+                return ctx._map.get(path) orelse .{ .err = "field not found" };
+            }
+            pub const Builtins = struct {};
+        };
+    }
 };
 
 pub const Language = enum {

@@ -250,6 +250,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             err_writer: errors.ErrWriter,
         ) errors.FatalShowOOM!Continuation {
             scripty_vm.reset();
+            scripty_ctx.ctx._map = &tpl.ctx;
             std.debug.assert(tpl.cursor.current() != null);
             while (tpl.cursor.current()) |ev| switch (ev.node.kind) {
                 .extend => unreachable,
@@ -303,6 +304,12 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                             tpl.html.language,
                         );
 
+                        var out: union(enum) {
+                            none,
+                            html: Value,
+                            text: Value,
+                        } = .none;
+
                         var skip_body = false;
                         while (it.next(tpl.src)) |attr| {
                             const name = attr.name;
@@ -332,6 +339,28 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
                             switch (special_attr) {
                                 else => {},
+                                .html => {
+                                    out = .{
+                                        .html = try tpl.evalVar(
+                                            err_writer,
+                                            scripty_vm,
+                                            scripty_ctx,
+                                            name,
+                                            expr.span,
+                                        ),
+                                    };
+                                },
+                                .text => {
+                                    out = .{
+                                        .text = try tpl.evalVar(
+                                            err_writer,
+                                            scripty_vm,
+                                            scripty_ctx,
+                                            name,
+                                            expr.span,
+                                        ),
+                                    };
+                                },
                                 .@"if" => {
                                     const value = try tpl.evalIf(
                                         err_writer,
@@ -392,6 +421,29 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         } else {
                             tpl.print_cursor = elem.open.end;
                             _ = tpl.cursor.next();
+                            switch (out) {
+                                .none => {},
+                                .html => |h| switch (h) {
+                                    else => unreachable,
+                                    .string => |s| {
+                                        writer.writeAll(s) catch return error.OutIO;
+                                    },
+                                    .int => |i| {
+                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                    },
+                                },
+                                .text => |text| switch (text) {
+                                    else => unreachable,
+                                    .string => |s| {
+                                        writer.print("{}", .{
+                                            HtmlSafe{ .bytes = s },
+                                        }) catch return error.OutIO;
+                                    },
+                                    .int => |i| {
+                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                    },
+                                },
+                            }
                         }
                     },
                     .exit => {
@@ -974,7 +1026,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         //                             attr.name,
         //                             "script_eval",
         //                             "SCRIPT RUNTIME ERROR",
-        //                             \\A script evaluated to an unxepected type.
+        //                             \\A script evaluated to an unexpected type.
         //                             \\
         //                             \\This attribute expects to evaluate to one
         //                             \\of the following types:
@@ -1091,7 +1143,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         script_attr_name,
                         "script_eval_not_string_or_int",
                         "SCRIPT RESULT TYPE MISMATCH",
-                        \\A script evaluated to an unxepected type.
+                        \\A script evaluated to an unexpected type.
                         \\
                         \\This attribute expects to evaluate to one
                         \\of the following types:
@@ -1141,7 +1193,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         script_attr_name,
                         "bad_ctx_value",
                         "SCRIPT RESULT TYPE MISMATCH",
-                        \\A script evaluated to an unxepected type.
+                        \\A script evaluated to an unexpected type.
                         \\
                         \\The `ctx` attribute can evaluate to any type
                         \\except `error`, `optional`, and `@TypeOf($loop)`.
@@ -1233,7 +1285,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         script_attr_name,
                         "script_eval_not_bool",
                         "SCRIPT RESULT TYPE MISMATCH",
-                        \\A script evaluated to an unxepected type.
+                        \\A script evaluated to an unexpected type.
                         \\
                         \\This attribute expects to evaluate to one
                         \\of the following types:
@@ -1283,7 +1335,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         script_attr_name,
                         "script_eval_not_iterable",
                         "SCRIPT RESULT TYPE MISMATCH",
-                        \\A script evaluated to an unxepected type.
+                        \\A script evaluated to an unexpected type.
                         \\
                         \\This attribute expects to evaluate to one
                         \\of the following types:
@@ -1345,22 +1397,17 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         }
 
         pub fn loopUp(ptr: *const anyopaque, frame_idx: u32) Value {
-            _ = ptr;
-            _ = frame_idx;
-            return .{
-                .err = "already at the topmost $loop value",
-            };
-            // const tpl: *const Template = @alignCast(@ptrCast(ptr));
-            // if (frame_idx == 0) {
-            //     return .{
-            //         .err = "already at the topmost $loop value",
-            //     };
-            // } else {
-            //     const iter = tpl.stack.items[frame_idx].loop_iter;
-            //     return .{
-            //         .iterator_element = iter.loop,
-            //     };
-            // }
+            const tpl: *const Template = @alignCast(@ptrCast(ptr));
+            if (frame_idx == 0) {
+                return .{
+                    .err = "already at the topmost $loop value",
+                };
+            } else {
+                const iter_elem = tpl.loop_stack.items[frame_idx - 1].current;
+                return .{
+                    .iterator_element = iter_elem,
+                };
+            }
         }
 
         pub fn setContext(tpl: Template, script_ctx: *Context) void {
