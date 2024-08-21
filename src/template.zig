@@ -156,15 +156,14 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
             const block_idx = tpl.ast.blocks.get(super_id).?;
             const block = tpl.ast.nodes[block_idx];
+            const elem = block.elem(tpl.html);
 
             log.debug("activating block_idx = {}, '{s}'", .{
                 block_idx,
-                block.elem(tpl.html).open.slice(tpl.src),
+                elem.open.slice(tpl.src),
             });
 
             tpl.cursor = tpl.ast.cursor(block_idx);
-            _ = tpl.cursor.next();
-
             tpl.print_cursor = block.elem(tpl.html).open.end;
             tpl.print_end = block.elem(tpl.html).close.start;
 
@@ -267,13 +266,184 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                     },
                 },
                 .block => switch (ev.dir) {
-                    .enter => unreachable,
+                    .enter => {
+                        const elem = ev.node.elem(tpl.html);
+                        var it = elem.startTagIterator(
+                            tpl.src,
+                            tpl.html.language,
+                        );
+
+                        var out: union(enum) {
+                            none,
+                            html: Value,
+                            text: Value,
+                        } = .none;
+
+                        var skip_body = false;
+
+                        while (it.next(tpl.src)) |attr| {
+                            const name = attr.name;
+                            const expr = attr.value.?;
+                            const special_attr = std.meta.stringToEnum(
+                                Ast.SpecialAttr,
+                                name.slice(tpl.src),
+                            ) orelse {
+                                // if (is(name.slice(tpl.src), "id")) continue;
+                                // TODO: implement this stuff
+                                continue;
+                            };
+
+                            switch (special_attr) {
+                                else => {},
+                                .html => {
+                                    out = .{
+                                        .html = try tpl.evalVar(
+                                            err_writer,
+                                            scripty_vm,
+                                            scripty_ctx,
+                                            name,
+                                            expr.span,
+                                        ),
+                                    };
+                                },
+                                .text => {
+                                    out = .{
+                                        .text = try tpl.evalVar(
+                                            err_writer,
+                                            scripty_vm,
+                                            scripty_ctx,
+                                            name,
+                                            expr.span,
+                                        ),
+                                    };
+                                },
+                                .@"if" => {
+                                    const value = try tpl.evalIf(
+                                        err_writer,
+                                        scripty_vm,
+                                        scripty_ctx,
+                                        name,
+                                        expr.span,
+                                    );
+
+                                    switch (value) {
+                                        else => unreachable,
+                                        .bool => |b| if (!b) {
+                                            skip_body = true;
+                                        },
+                                        .optional => |opt| if (opt) |v| {
+                                            try tpl.if_stack.append(tpl.arena, .{
+                                                .node_idx = ev.idx,
+                                                .value = Value.from(tpl.arena, v),
+                                            });
+                                        } else {
+                                            skip_body = true;
+                                        },
+                                    }
+                                },
+                                .loop => {
+                                    var loop_iterator = try tpl.evalLoop(
+                                        err_writer,
+                                        scripty_vm,
+                                        scripty_ctx,
+                                        name,
+                                        expr.span,
+                                    );
+                                    loop_iterator.up_tpl = tpl;
+                                    loop_iterator.up_idx = @intCast(
+                                        tpl.loop_stack.items.len,
+                                    );
+
+                                    const next = try loop_iterator.next(tpl.arena) orelse {
+                                        skip_body = true;
+                                        continue;
+                                    };
+
+                                    try tpl.loop_stack.append(tpl.arena, .{
+                                        .node_idx = ev.idx,
+                                        .iterator = loop_iterator,
+                                        .current = next,
+                                    });
+                                },
+                            }
+                        }
+
+                        if (skip_body) {
+                            tpl.print_cursor = elem.close.start;
+                            tpl.cursor.cur.?.dir = .exit;
+                        } else {
+                            tpl.print_cursor = elem.open.end;
+                            _ = tpl.cursor.next();
+                            switch (out) {
+                                .none => {},
+                                .html => |h| switch (h) {
+                                    else => unreachable,
+                                    .string => |s| {
+                                        writer.writeAll(s) catch return error.OutIO;
+                                    },
+                                    .int => |i| {
+                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                    },
+                                },
+                                .text => |text| switch (text) {
+                                    else => unreachable,
+                                    .string => |s| {
+                                        writer.print("{}", .{
+                                            HtmlSafe{ .bytes = s },
+                                        }) catch return error.OutIO;
+                                    },
+                                    .int => |i| {
+                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                    },
+                                },
+                            }
+                        }
+                    },
                     .exit => {
                         const elem = ev.node.elem(tpl.html);
-                        const end = elem.close.start;
-                        const up_to_attr = tpl.src[tpl.print_cursor..end];
-                        writer.writeAll(up_to_attr) catch return error.OutIO;
-                        tpl.print_cursor = end;
+                        const last = if (tpl.loop_stack.items.len == 0) null else blk: {
+                            break :blk &tpl.loop_stack.items[tpl.loop_stack.items.len - 1];
+                        };
+                        if (last) |loop_frame| blk: {
+                            if (loop_frame.node_idx == ev.idx) {
+                                const next = try loop_frame.iterator.next(
+                                    tpl.arena,
+                                ) orelse {
+                                    _ = tpl.loop_stack.pop();
+                                    break :blk;
+                                };
+
+                                loop_frame.current = next;
+
+                                const end = elem.close.start;
+                                const up_to_close_tag = tpl.src[tpl.print_cursor..end];
+                                writer.writeAll(up_to_close_tag) catch return error.OutIO;
+                                tpl.print_cursor = elem.open.end;
+
+                                if (ev.node.first_child_idx != 0) {
+                                    // if there are scripted nodes in the body
+                                    // we move the cursor again back to the
+                                    // beginning of it.
+                                    tpl.cursor.move(ev.node.first_child_idx);
+                                } else {
+                                    // there are no scripted children of the
+                                    // current node, but there might still be
+                                    // unscripted html elements that need to
+                                    // be printed.
+                                    // even if we don't use $loop, we still
+                                    // want to trigger element evaluation in
+                                    // case that the procedure has side effects
+                                }
+                                continue;
+                            }
+                        }
+
+                        // Skip </close tag>
+                        {
+                            const up_to_elem = tpl.src[tpl.print_cursor..elem.close.start];
+                            writer.writeAll(up_to_elem) catch return error.OutIO;
+                            tpl.print_cursor = elem.close.start;
+                        }
                         _ = tpl.cursor.next();
                         return .end;
                     },
