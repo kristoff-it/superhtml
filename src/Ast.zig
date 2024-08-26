@@ -49,7 +49,14 @@ const Error = struct {
     main_location: Span,
 };
 
-pub const SpecialAttr = enum { @"if", loop, @"else", text, html };
+pub const SpecialAttr = enum {
+    @":if",
+    @":loop",
+    @":else",
+    @":text",
+    @":html",
+};
+
 pub const Node = struct {
     kind: Kind = .element,
     elem_idx: u32,
@@ -673,7 +680,7 @@ const Parser = struct {
                 continue;
             };
 
-            if (special_attr == .@"else") {
+            if (special_attr == .@":else") {
                 has_attr_else = true;
 
                 if (last_attr_end != tag_name.end) {
@@ -720,7 +727,7 @@ const Parser = struct {
             }
 
             switch (special_attr) {
-                .text, .html => {
+                .@":text", .@":html" => {
                     if (has_attr_text_html) {
                         try p.errors.append(gpa, .{
                             .kind = .text_and_html_are_mutually_exclusive,
@@ -736,7 +743,7 @@ const Parser = struct {
                     has_attr_text_html = true;
                     tmp_result.html_text = attr;
                 },
-                .@"if" => {
+                .@":if" => {
                     if (has_attr_loop) {
                         try p.errors.append(gpa, .{
                             .kind = .one_branching_attribute_per_element,
@@ -746,7 +753,7 @@ const Parser = struct {
                     has_attr_if = true;
                     tmp_result.if_loop = attr;
                 },
-                .loop => {
+                .@":loop" => {
                     if (has_attr_if) {
                         try p.errors.append(gpa, .{
                             .kind = .one_branching_attribute_per_element,
@@ -756,7 +763,7 @@ const Parser = struct {
                     has_attr_loop = true;
                     tmp_result.if_loop = attr;
                 },
-                .@"else" => unreachable,
+                .@":else" => unreachable,
             }
         }
 
@@ -1090,16 +1097,16 @@ test "basics" {
 
 test "text/html - errors" {
     const cases =
-        \\<div text></div>
-        \\<div text="$page.content" else></div>
-        \\<div text="$page.content" if></div>
-        \\<div text="$page.content" loop></div>
-        \\<div text="$page.content" text></div>
-        \\<div text="$page.content" html></div>
-        \\<div html="$page.content" html></div>
-        \\<div html="$page.content" text></div>
-        \\<div text="not scripted"></div>
-        \\<div html="not scripted"></div>
+        \\<div :text></div>
+        \\<div :text="$page.content()" :else></div>
+        \\<div :text="$page.content()" :if></div>
+        \\<div :text="$page.content()" :loop></div>
+        \\<div :text="$page.content()" :text></div>
+        \\<div :text="$page.content()" :html></div>
+        \\<div :html="$page.content()" :html></div>
+        \\<div :html="$page.content()" :text></div>
+        \\<div :text="not scripted"></div>
+        \\<div :html="not scripted"></div>
     ;
 
     var it = std.mem.tokenizeScalar(u8, cases, '\n');
@@ -1122,8 +1129,8 @@ test "siblings" {
     const case =
         \\<div>
         \\  Hello World!
-        \\  <span if="$foo"></span>
-        \\  <p var="$bar"></p>
+        \\  <span :if="$foo"></span>
+        \\  <p :text="$bar"></p>
         \\</div>
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
@@ -1154,10 +1161,10 @@ test "siblings" {
 
 test "nesting" {
     const case =
-        \\<div loop="$page.authors">
+        \\<div :loop="$page.authors">
         \\  Hello World!
-        \\  <span if="$foo"></span>
-        \\  <p var="$bar"></p>
+        \\  <span :if="$foo"></span>
+        \\  <p :text="$bar"></p>
         \\</div>
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
@@ -1190,10 +1197,10 @@ test "nesting" {
 
 test "deeper nesting" {
     const case =
-        \\<div loop="$page.authors">
+        \\<div :loop="$page.authors">
         \\  Hello World!
-        \\  <span if="$foo"></span>
-        \\  <div><p var="$bar"></p></div>
+        \\  <span :if="$foo"></span>
+        \\  <div><p :text="$bar"></p></div>
         \\</div>
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
@@ -1226,15 +1233,15 @@ test "deeper nesting" {
 
 test "complex example" {
     const case =
-        \\<div if="$page.authors">
+        \\<div :if="$page.authors">
         \\  Hello World!
-        \\  <span if="$foo"></span>
-        \\  <span else>
-        \\    <p loop="foo" id="p-loop">
-        \\      <span var="$bar"></span>
+        \\  <span :if="$foo"></span>
+        \\  <span :else>
+        \\    <p :loop="foo" id="p-loop">
+        \\      <span :text="$bar"></span>
         \\    </p>
         \\  </span>
-        \\  <div><p id="last" var="$bar"></p></div>
+        \\  <div><p id="last" :text="$bar"></p></div>
         \\</div>
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});
@@ -1276,11 +1283,11 @@ test "complex example" {
 
 test "if-else-loop errors" {
     const cases =
-        \\<div if></div>
-        \\<div if="arst"></div>
-        \\<div else="$foo"></div>
-        \\<div else="bar"></div>
-        \\<div else if="bar"></div>
+        \\<div :if></div>
+        \\<div :if="arst"></div>
+        \\<div :else="$foo"></div>
+        \\<div :else="bar"></div>
+        \\<div :else :if="bar"></div>
     ;
 
     var it = std.mem.tokenizeScalar(u8, cases, '\n');
@@ -1301,15 +1308,15 @@ test "if-else-loop errors" {
 
 test "super" {
     const case =
-        \\<div if="$page.authors">
+        \\<div :if="$page.authors">
         \\  Hello World!
         \\  <span>
-        \\    <p loop="$page.authors" id="p-loop">
-        \\      <span var="$loop.it.name"></span>
+        \\    <p :loop="$page.authors" id="p-loop">
+        \\      <span :text="$loop.it.name"></span>
         \\      <super>
         \\    </p>
         \\  </span>
-        \\  <div><p id="last" var="$bar"></p></div>
+        \\  <div><p id="last" :text="$bar"></p></div>
         \\</div>
     ;
     errdefer std.debug.print("--- CASE ---\n{s}\n", .{case});

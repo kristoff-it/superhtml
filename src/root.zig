@@ -21,6 +21,8 @@ pub const HtmlSafe = struct {
             switch (b) {
                 '>' => try out_stream.writeAll("&gt;"),
                 '<' => try out_stream.writeAll("&lt;"),
+                '\'' => try out_stream.writeAll("&apos;"),
+                '\"' => try out_stream.writeAll("&quot;"),
                 else => try out_stream.writeByte(b),
             }
         }
@@ -28,28 +30,15 @@ pub const HtmlSafe = struct {
 };
 
 pub const utils = struct {
-    // TODO: iter element should be defined by us
-    pub fn loopUpFunction(comptime Value: type, comptime Template: type) fn (
-        Value.IterElement,
-        std.mem.Allocator,
-        []const Value,
-    ) error{ OutOfMemory, Interrupt }!Value {
+    pub fn IteratorContext(comptime Value: type, comptime Template: type) type {
         return struct {
-            pub fn up(
-                v: Value.IterElement,
-                _: std.mem.Allocator,
-                args: []const Value,
-            ) error{ OutOfMemory, Interrupt }!Value {
-                if (args.len != 0) return .{
-                    .err = "expected 0 arguments",
-                };
+            idx: u32 = undefined,
+            tpl: *const VM(Template, Value).Template = undefined,
 
-                return Template.loopUp(
-                    v._iter.up_tpl,
-                    v._iter.up_idx,
-                );
+            pub fn up(lc: @This()) Value {
+                return lc.tpl.loopUp(lc.idx);
             }
-        }.up;
+        };
     }
 
     pub fn Ctx(comptime Value: type) type {
@@ -63,6 +52,22 @@ pub const utils = struct {
             ) !Value {
                 return ctx._map.get(path) orelse .{ .err = "field not found" };
             }
+            pub const description =
+                \\A special map that contains all the attributes
+                \\ defined on `<ctx>` in the current scope.
+                \\
+                \\You can access the available fields using dot notation.
+                \\
+                \\Example:
+                \\```superhtml
+                \\<div>
+                \\  <ctx foo="(scripty expr)" bar="(scripty expr)"> 
+                \\    <span :text="$ctx.foo"></span>
+                \\    <span :text="$ctx.bar"></span>
+                \\  </ctx>
+                \\</div>
+                \\```
+            ;
             pub const Builtins = struct {};
         };
     }

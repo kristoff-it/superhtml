@@ -34,13 +34,12 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         const IfFrame = struct {
             node_idx: u32,
-            value: Value,
+            value: *const Value.Optional,
         };
 
         const LoopFrame = struct {
             node_idx: u32,
-            iterator: Value.Iterator,
-            current: Value.IterElement,
+            iterator: *Value.Iterator,
         };
 
         pub fn superBlock(tpl: Template, idx: u32) Ast.Node.Block {
@@ -295,7 +294,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
                             switch (special_attr) {
                                 else => {},
-                                .html => {
+                                .@":html" => {
                                     out = .{
                                         .html = try tpl.evalVar(
                                             err_writer,
@@ -306,7 +305,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         ),
                                     };
                                 },
-                                .text => {
+                                .@":text" => {
                                     out = .{
                                         .text = try tpl.evalVar(
                                             err_writer,
@@ -317,7 +316,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         ),
                                     };
                                 },
-                                .@"if" => {
+                                .@":if" => {
                                     const value = try tpl.evalIf(
                                         err_writer,
                                         scripty_vm,
@@ -328,20 +327,20 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
                                     switch (value) {
                                         else => unreachable,
-                                        .bool => |b| if (!b) {
+                                        .bool => |b| if (!b.value) {
                                             skip_body = true;
                                         },
                                         .optional => |opt| if (opt) |v| {
                                             try tpl.if_stack.append(tpl.arena, .{
                                                 .node_idx = ev.idx,
-                                                .value = Value.from(tpl.arena, v),
+                                                .value = v,
                                             });
                                         } else {
                                             skip_body = true;
                                         },
                                     }
                                 },
-                                .loop => {
+                                .@":loop" => {
                                     var loop_iterator = try tpl.evalLoop(
                                         err_writer,
                                         scripty_vm,
@@ -349,20 +348,21 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         name,
                                         expr.span,
                                     );
-                                    loop_iterator.up_tpl = tpl;
-                                    loop_iterator.up_idx = @intCast(
-                                        tpl.loop_stack.items.len,
-                                    );
+                                    loop_iterator._superhtml_context = .{
+                                        .tpl = tpl,
+                                        .idx = @intCast(
+                                            tpl.loop_stack.items.len,
+                                        ),
+                                    };
 
-                                    const next = try loop_iterator.next(tpl.arena) orelse {
+                                    if (!try loop_iterator.next(tpl.arena)) {
                                         skip_body = true;
                                         continue;
-                                    };
+                                    }
 
                                     try tpl.loop_stack.append(tpl.arena, .{
                                         .node_idx = ev.idx,
                                         .iterator = loop_iterator,
-                                        .current = next,
                                     });
                                 },
                             }
@@ -379,7 +379,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                 .html => |h| switch (h) {
                                     else => unreachable,
                                     .string => |s| {
-                                        writer.writeAll(s) catch return error.OutIO;
+                                        writer.writeAll(s.value) catch return error.OutIO;
                                     },
                                     .int => |i| {
                                         writer.print("{}", .{i}) catch return error.OutIO;
@@ -389,7 +389,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                     else => unreachable,
                                     .string => |s| {
                                         writer.print("{}", .{
-                                            HtmlSafe{ .bytes = s },
+                                            HtmlSafe{ .bytes = s.value },
                                         }) catch return error.OutIO;
                                     },
                                     .int => |i| {
@@ -406,14 +406,10 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         };
                         if (last) |loop_frame| blk: {
                             if (loop_frame.node_idx == ev.idx) {
-                                const next = try loop_frame.iterator.next(
-                                    tpl.arena,
-                                ) orelse {
+                                if (!try loop_frame.iterator.next(tpl.arena)) {
                                     _ = tpl.loop_stack.pop();
                                     break :blk;
-                                };
-
-                                loop_frame.current = next;
+                                }
 
                                 const end = elem.close.start;
                                 const up_to_close_tag = tpl.src[tpl.print_cursor..end];
@@ -509,7 +505,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
                             switch (special_attr) {
                                 else => {},
-                                .html => {
+                                .@":html" => {
                                     out = .{
                                         .html = try tpl.evalVar(
                                             err_writer,
@@ -520,7 +516,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         ),
                                     };
                                 },
-                                .text => {
+                                .@":text" => {
                                     out = .{
                                         .text = try tpl.evalVar(
                                             err_writer,
@@ -531,7 +527,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         ),
                                     };
                                 },
-                                .@"if" => {
+                                .@":if" => {
                                     const value = try tpl.evalIf(
                                         err_writer,
                                         scripty_vm,
@@ -542,20 +538,20 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
                                     switch (value) {
                                         else => unreachable,
-                                        .bool => |b| if (!b) {
+                                        .bool => |b| if (!b.value) {
                                             skip_body = true;
                                         },
                                         .optional => |opt| if (opt) |v| {
                                             try tpl.if_stack.append(tpl.arena, .{
                                                 .node_idx = ev.idx,
-                                                .value = Value.from(tpl.arena, v),
+                                                .value = v,
                                             });
                                         } else {
                                             skip_body = true;
                                         },
                                     }
                                 },
-                                .loop => {
+                                .@":loop" => {
                                     var loop_iterator = try tpl.evalLoop(
                                         err_writer,
                                         scripty_vm,
@@ -563,20 +559,21 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         name,
                                         expr.span,
                                     );
-                                    loop_iterator.up_tpl = tpl;
-                                    loop_iterator.up_idx = @intCast(
-                                        tpl.loop_stack.items.len,
-                                    );
+                                    loop_iterator._superhtml_context = .{
+                                        .tpl = tpl,
+                                        .idx = @intCast(
+                                            tpl.loop_stack.items.len,
+                                        ),
+                                    };
 
-                                    const next = try loop_iterator.next(tpl.arena) orelse {
+                                    if (!try loop_iterator.next(tpl.arena)) {
                                         skip_body = true;
                                         continue;
-                                    };
+                                    }
 
                                     try tpl.loop_stack.append(tpl.arena, .{
                                         .node_idx = ev.idx,
                                         .iterator = loop_iterator,
-                                        .current = next,
                                     });
                                 },
                             }
@@ -596,7 +593,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                 .html => |h| switch (h) {
                                     else => unreachable,
                                     .string => |s| {
-                                        writer.writeAll(s) catch return error.OutIO;
+                                        writer.writeAll(s.value) catch return error.OutIO;
                                     },
                                     .int => |i| {
                                         writer.print("{}", .{i}) catch return error.OutIO;
@@ -606,7 +603,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                     else => unreachable,
                                     .string => |s| {
                                         writer.print("{}", .{
-                                            HtmlSafe{ .bytes = s },
+                                            HtmlSafe{ .bytes = s.value },
                                         }) catch return error.OutIO;
                                     },
                                     .int => |i| {
@@ -623,14 +620,10 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         };
                         if (last) |loop_frame| blk: {
                             if (loop_frame.node_idx == ev.idx) {
-                                const next = try loop_frame.iterator.next(
-                                    tpl.arena,
-                                ) orelse {
+                                if (!try loop_frame.iterator.next(tpl.arena)) {
                                     _ = tpl.loop_stack.pop();
                                     break :blk;
-                                };
-
-                                loop_frame.current = next;
+                                }
 
                                 const end = elem.close.start;
                                 const up_to_close_tag = tpl.src[tpl.print_cursor..end];
@@ -733,7 +726,11 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                     .string => |s| {
                                         writer.print(
                                             "=\"{s}\"",
-                                            .{s},
+                                            .{
+                                                HtmlSafe{
+                                                    .bytes = s.value,
+                                                },
+                                            },
                                         ) catch return error.OutIO;
                                     },
                                     .int => |i| {
@@ -751,7 +748,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
                             switch (special_attr) {
                                 else => {},
-                                .html => {
+                                .@":html" => {
                                     out = .{
                                         .html = try tpl.evalVar(
                                             err_writer,
@@ -762,7 +759,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         ),
                                     };
                                 },
-                                .text => {
+                                .@":text" => {
                                     out = .{
                                         .text = try tpl.evalVar(
                                             err_writer,
@@ -773,7 +770,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         ),
                                     };
                                 },
-                                .@"if" => {
+                                .@":if" => {
                                     const value = try tpl.evalIf(
                                         err_writer,
                                         scripty_vm,
@@ -784,20 +781,20 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
                                     switch (value) {
                                         else => unreachable,
-                                        .bool => |b| if (!b) {
+                                        .bool => |b| if (!b.value) {
                                             skip_body = true;
                                         },
                                         .optional => |opt| if (opt) |v| {
                                             try tpl.if_stack.append(tpl.arena, .{
                                                 .node_idx = ev.idx,
-                                                .value = Value.from(tpl.arena, v),
+                                                .value = v,
                                             });
                                         } else {
                                             skip_body = true;
                                         },
                                     }
                                 },
-                                .loop => {
+                                .@":loop" => {
                                     var loop_iterator = try tpl.evalLoop(
                                         err_writer,
                                         scripty_vm,
@@ -805,20 +802,21 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         name,
                                         expr.span,
                                     );
-                                    loop_iterator.up_tpl = tpl;
-                                    loop_iterator.up_idx = @intCast(
-                                        tpl.loop_stack.items.len,
-                                    );
+                                    loop_iterator._superhtml_context = .{
+                                        .tpl = tpl,
+                                        .idx = @intCast(
+                                            tpl.loop_stack.items.len,
+                                        ),
+                                    };
 
-                                    const next = try loop_iterator.next(tpl.arena) orelse {
+                                    if (!try loop_iterator.next(tpl.arena)) {
                                         skip_body = true;
                                         continue;
-                                    };
+                                    }
 
                                     try tpl.loop_stack.append(tpl.arena, .{
                                         .node_idx = ev.idx,
                                         .iterator = loop_iterator,
-                                        .current = next,
                                     });
                                 },
                             }
@@ -837,7 +835,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                 .html => |h| switch (h) {
                                     else => unreachable,
                                     .string => |s| {
-                                        writer.writeAll(s) catch return error.OutIO;
+                                        writer.writeAll(s.value) catch return error.OutIO;
                                     },
                                     .int => |i| {
                                         writer.print("{}", .{i}) catch return error.OutIO;
@@ -847,7 +845,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                     else => unreachable,
                                     .string => |s| {
                                         writer.print("{}", .{
-                                            HtmlSafe{ .bytes = s },
+                                            HtmlSafe{ .bytes = s.value },
                                         }) catch return error.OutIO;
                                     },
                                     .int => |i| {
@@ -864,14 +862,10 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                         };
                         if (last) |loop_frame| blk: {
                             if (loop_frame.node_idx == ev.idx) {
-                                const next = try loop_frame.iterator.next(
-                                    tpl.arena,
-                                ) orelse {
+                                if (!try loop_frame.iterator.next(tpl.arena)) {
                                     _ = tpl.loop_stack.pop();
                                     break :blk;
-                                };
-
-                                loop_frame.current = next;
+                                }
 
                                 const end = elem.close.start;
                                 const up_to_close_tag = tpl.src[tpl.print_cursor..end];
@@ -910,383 +904,6 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
             unreachable;
         }
-
-        // pub fn eval1(
-        //     tpl: *Template,
-        //     script_vm: *ScriptyVM,
-        //     script_ctx: *Context,
-        //     writer: OutWriter,
-        //     err_writer: errors.ErrWriter,
-        // ) errors.FatalShowOOM!Continuation {
-        //     std.debug.assert(tpl.stack.items.len > 0);
-        //     outer: while (tpl.stack.items.len > 0) {
-        //         const cur_frame_idx = tpl.stack.items.len - 1;
-        //         // necessary to avoid pointer invalidation afterwards
-        //         try tpl.stack.ensureTotalCapacity(tpl.arena, 1);
-        //         const cur_frame = &tpl.stack.items[cur_frame_idx];
-        //         switch (cur_frame.*) {
-        //             .default, .loop_iter, .if_condition, .ctx => {},
-        //             .loop_condition => |*l| {
-        //                 if (try l.iter.next(tpl.arena)) |n| {
-        //                     var cursor_copy = l.cursor_ptr.*;
-        //                     cursor_copy.depth = 0;
-        //                     var new = n.iter_elem;
-        //                     new._up_idx = tpl.top_loop_idx;
-        //                     new._up_tpl = tpl;
-        //                     tpl.stack.appendAssumeCapacity(.{
-        //                         .loop_iter = .{
-        //                             .cursor = cursor_copy,
-        //                             .loop = new,
-        //                             // .up_idx = tpl.top_loop_idx,
-        //                         },
-        //                     });
-        //                     tpl.top_loop_idx = @intCast(tpl.stack.items.len - 1);
-        //                     tpl.print_cursor = l.print_loop_body;
-        //                     tpl.print_end = l.print_loop_body_end;
-        //                     l.index += 1;
-        //                     if (l.inloop_idx) |node_idx| {
-        //                         // print container element start tag
-        //                         const node = tpl.ast.nodes[node_idx];
-        //                         const start_tag = node.elem(tpl.html).open;
-        //                         const scripted_attr = node.loopAttr();
-        //                         const attr = scripted_attr.attr;
-
-        //                         const up_to_attr = tpl.src[tpl.print_cursor..attr.span().start];
-        //                         writer.writeAll(up_to_attr) catch return error.OutIO;
-        //                         const rest_of_start_tag = tpl.src[attr.span().end..start_tag.end];
-        //                         writer.writeAll(rest_of_start_tag) catch return error.OutIO;
-        //                         tpl.print_cursor = start_tag.end;
-        //                     }
-        //                     continue;
-        //                 } else {
-        //                     tpl.print_cursor = l.print_loop_body_end;
-        //                     tpl.print_end = l.print_end;
-        //                     l.cursor_ptr.skipChildrenOfCurrentNode();
-        //                     _ = tpl.stack.pop();
-        //                     continue;
-        //                 }
-        //             },
-        //         }
-        //         const cur = switch (cur_frame.*) {
-        //             .default => |*d| d,
-        //             .loop_iter => |*li| &li.cursor,
-        //             .if_condition => |*ic| &ic.cursor,
-        //             .ctx => |*ctx| &ctx.cursor,
-        //             .loop_condition => unreachable,
-        //         };
-        //         while (cur.next()) |node| {
-        //             switch (node.kind.role()) {
-        //                 .root, .extend, .block, .super_block => unreachable,
-        //                 .super => {
-        //                     writer.writeAll(
-        //                         tpl.src[tpl.print_cursor..node.elem(tpl.html).open.start],
-        //                     ) catch return error.OutIO;
-        //                     tpl.print_cursor = node.elem(tpl.html).open.end;
-        //                     log.debug("SWITCHING TEMPLATE, SUPER TAG: ({}) {}", .{
-        //                         cur.current_idx,
-        //                         node.elem(tpl.html).open.range(tpl.src),
-        //                     });
-
-        //                     return .{ .super_idx = cur.current_idx };
-        //                 },
-        //                 .element => {},
-        //             }
-
-        //             switch (node.kind.branching()) {
-        //                 else => @panic("TODO: more branching support in eval"),
-        //                 .none => {},
-        //                 .inloop => {
-        //                     const start_tag = node.elem(tpl.html).open;
-        //                     const scripted_attr = node.loopAttr();
-        //                     const attr = scripted_attr.attr;
-        //                     const value = node.loopValue();
-
-        //                     const elem_start = start_tag.start;
-        //                     const up_to_elem = tpl.src[tpl.print_cursor..elem_start];
-        //                     tpl.print_cursor = elem_start;
-        //                     writer.writeAll(up_to_elem) catch return error.OutIO;
-
-        //                     const iter = try tpl.evalLoop(
-        //                         err_writer,
-        //                         script_vm,
-        //                         script_ctx,
-        //                         attr.name,
-        //                         value.span,
-        //                     );
-
-        //                     try tpl.stack.append(tpl.arena, .{
-        //                         .loop_condition = .{
-        //                             .inloop_idx = cur.current_idx,
-        //                             .print_loop_body = tpl.print_cursor,
-        //                             .print_loop_body_end = node.elem(tpl.html).close.end,
-        //                             .print_end = tpl.print_end,
-        //                             .cursor_ptr = cur,
-        //                             .iter = iter,
-        //                             .index = 0,
-        //                         },
-        //                     });
-
-        //                     continue :outer;
-        //                 },
-        //                 .loop => {
-        //                     const start_tag = node.elem(tpl.html).open;
-        //                     const scripted_attr = node.loopAttr();
-        //                     const attr = scripted_attr.attr;
-        //                     const value = node.loopValue();
-
-        //                     const up_to_attr = tpl.src[tpl.print_cursor..attr.span().start];
-        //                     writer.writeAll(up_to_attr) catch return error.OutIO;
-        //                     const rest_of_start_tag = tpl.src[attr.span().end..start_tag.end];
-        //                     writer.writeAll(rest_of_start_tag) catch return error.OutIO;
-        //                     tpl.print_cursor = start_tag.end;
-
-        //                     const iter = try tpl.evalLoop(
-        //                         err_writer,
-        //                         script_vm,
-        //                         script_ctx,
-        //                         attr.name,
-        //                         value.span,
-        //                     );
-
-        //                     try tpl.stack.append(tpl.arena, .{
-        //                         .loop_condition = .{
-        //                             .print_loop_body = tpl.print_cursor,
-        //                             .print_loop_body_end = node.elem(tpl.html).close.start,
-        //                             .print_end = tpl.print_end,
-        //                             .cursor_ptr = cur,
-        //                             .iter = iter,
-        //                             .index = 0,
-        //                         },
-        //                     });
-
-        //                     continue :outer;
-        //                 },
-        //                 .@"if" => {
-        //                     const start_tag = node.elem(tpl.html).open;
-        //                     const scripted_attr = node.ifAttr();
-        //                     const attr = scripted_attr.attr;
-        //                     const value = node.ifValue();
-
-        //                     const up_to_attr = tpl.src[tpl.print_cursor..attr.span().start];
-        //                     writer.writeAll(up_to_attr) catch return error.OutIO;
-        //                     const rest_of_start_tag = tpl.src[attr.span().end..start_tag.end];
-        //                     writer.writeAll(rest_of_start_tag) catch return error.OutIO;
-        //                     tpl.print_cursor = start_tag.end;
-
-        //                     const result = try tpl.evalIf(
-        //                         err_writer,
-        //                         script_vm,
-        //                         script_ctx,
-        //                         attr.name,
-        //                         value.span,
-        //                     );
-
-        //                     switch (result) {
-        //                         else => unreachable,
-        //                         .bool => |b| {
-        //                             if (!b) {
-        //                                 tpl.print_cursor = node.elem(tpl.html).close.start;
-        //                                 // TODO: void tags :^)
-        //                                 cur.skipChildrenOfCurrentNode();
-        //                             }
-        //                         },
-        //                         .optional => |opt| {
-        //                             if (opt) |o| {
-        //                                 // if resulted in a non-boolean value
-        //                                 var new_frame: EvalFrame = .{
-        //                                     .if_condition = .{
-        //                                         .cursor = cur.*,
-        //                                         .if_result = Value.from(tpl.arena, o),
-        //                                         .up_idx = tpl.top_if_idx,
-        //                                     },
-        //                                 };
-        //                                 tpl.top_if_idx = @intCast(tpl.stack.items.len);
-
-        //                                 new_frame.if_condition.cursor.depth = 0;
-        //                                 try tpl.stack.append(
-        //                                     tpl.arena,
-        //                                     new_frame,
-        //                                 );
-
-        //                                 cur.skipChildrenOfCurrentNode();
-        //                                 continue :outer;
-        //                             } else {
-        //                                 tpl.print_cursor = node.elem(tpl.html).close.start;
-        //                                 // TODO: void tags :^)
-        //                                 cur.skipChildrenOfCurrentNode();
-        //                             }
-        //                         },
-        //                     }
-        //                 },
-        //             }
-
-        //             if (node.kind.output() == .ctx) {
-        //                 const start_tag = node.elem(tpl.html).open;
-        //                 const scripted_attr = node.ctxAttr();
-        //                 const attr = scripted_attr.attr;
-        //                 const value = node.ctxValue();
-
-        //                 const up_to_attr = tpl.src[tpl.print_cursor..attr.span().start];
-        //                 writer.writeAll(up_to_attr) catch return error.OutIO;
-        //                 const rest_of_start_tag = tpl.src[attr.span().end..start_tag.end];
-        //                 writer.writeAll(rest_of_start_tag) catch return error.OutIO;
-        //                 tpl.print_cursor = start_tag.end;
-
-        //                 const result = try tpl.evalCtx(
-        //                     err_writer,
-        //                     script_vm,
-        //                     script_ctx,
-        //                     attr.name,
-        //                     value.span,
-        //                 );
-
-        //                 var new_frame: EvalFrame = .{
-        //                     .ctx = .{
-        //                         .cursor = cur.*,
-        //                         .ctx_value = result,
-        //                         .up_idx = tpl.top_ctx_idx,
-        //                     },
-        //                 };
-        //                 tpl.top_ctx_idx = @intCast(tpl.stack.items.len);
-
-        //                 new_frame.ctx.cursor.depth = 0;
-        //                 try tpl.stack.append(
-        //                     tpl.arena,
-        //                     new_frame,
-        //                 );
-
-        //                 cur.skipChildrenOfCurrentNode();
-        //                 continue :outer;
-        //             }
-
-        //             var it = node.elem(tpl.html).startTagIterator(tpl.src, tpl.html.language);
-        //             while (it.next(tpl.src)) |attr| {
-        //                 const value = attr.value orelse continue;
-        //                 if (value.span.len() == 0) continue;
-
-        //                 const attr_name = attr.name.slice(tpl.src);
-        //                 if (is(attr_name, "var") or
-        //                     is(attr_name, "if") or
-        //                     is(attr_name, "ctx") or
-        //                     is(attr_name, "loop")) continue;
-
-        //                 // TODO: unescape
-        //                 const code = value.span.slice(tpl.src);
-        //                 if (code[0] != '$') continue;
-        //                 // defer code.deinit(tpl.arena);
-
-        //                 const result = try tpl.evalAttr(
-        //                     script_vm,
-        //                     script_ctx,
-        //                     value.span,
-        //                 );
-
-        //                 const up_to_value = tpl.src[tpl.print_cursor..value.span.start];
-        //                 writer.writeAll(up_to_value) catch return error.OutIO;
-        //                 switch (result.value) {
-        //                     .string => |s| {
-        //                         writer.writeAll(s) catch return error.OutIO;
-        //                     },
-        //                     .int => |i| {
-        //                         writer.print("{}", .{i}) catch return error.OutIO;
-        //                     },
-        //                     else => {
-        //                         tpl.reportError(
-        //                             err_writer,
-        //                             attr.name,
-        //                             "script_eval",
-        //                             "SCRIPT RUNTIME ERROR",
-        //                             \\A script evaluated to an unexpected type.
-        //                             \\
-        //                             \\This attribute expects to evaluate to one
-        //                             \\of the following types:
-        //                             \\   - string
-        //                             ,
-        //                         ) catch {};
-
-        //                         try tpl.diagnostic(
-        //                             err_writer,
-        //                             false,
-        //                             "note: value was generated from this sub-expression:",
-        //                             .{
-        //                                 .start = value.span.start + result.loc.start,
-        //                                 .end = value.span.start + result.loc.end,
-        //                             },
-        //                         );
-        //                         try result.value.renderForError(
-        //                             tpl.arena,
-        //                             err_writer,
-        //                         );
-        //                         return error.Fatal;
-        //                     },
-        //                 }
-        //                 tpl.print_cursor = value.span.end;
-        //             }
-
-        //             switch (node.kind.output()) {
-        //                 .none => {},
-        //                 .@"var" => {
-        //                     const start_tag = node.elem(tpl.html).open;
-        //                     const scripted_attr = node.varAttr();
-        //                     const attr = scripted_attr.attr;
-        //                     const value = node.varValue();
-
-        //                     const var_value = try tpl.evalVar(
-        //                         err_writer,
-        //                         script_vm,
-        //                         script_ctx,
-        //                         attr.name,
-        //                         value.span,
-        //                     );
-
-        //                     log.debug("code = '{s}', print_cursor: {}, attr_end: {}", .{
-        //                         value.span.slice(tpl.src),
-        //                         (root.Span{ .start = tpl.print_cursor, .end = tpl.print_cursor }).range(tpl.src).start,
-        //                         (root.Span{ .start = attr.name.start, .end = attr.name.end }).range(tpl.src).start,
-        //                     });
-
-        //                     const up_to_attr = tpl.src[tpl.print_cursor..attr.span().start];
-        //                     writer.writeAll(up_to_attr) catch return error.OutIO;
-        //                     const rest_of_start_tag = tpl.src[attr.span().end..start_tag.end];
-        //                     writer.writeAll(rest_of_start_tag) catch return error.OutIO;
-        //                     tpl.print_cursor = start_tag.end;
-
-        //                     switch (var_value) {
-        //                         .string => |s| writer.writeAll(s) catch return error.OutIO,
-        //                         .int => |i| writer.print("{}", .{i}) catch return error.OutIO,
-        //                         else => unreachable,
-        //                     }
-        //                 },
-        //                 .ctx => @panic("TODO: implement ctx"),
-        //             }
-        //         }
-
-        //         if (tpl.stack.popOrNull()) |frame| {
-        //             switch (frame) {
-        //                 .default => {},
-        //                 .loop_iter => |li| {
-        //                     tpl.top_loop_idx = li.loop._up_idx;
-        //                 },
-        //                 .if_condition => |ic| {
-        //                     tpl.top_if_idx = ic.up_idx;
-        //                     continue;
-        //                 },
-        //                 .ctx => |ctx| {
-        //                     tpl.top_ctx_idx = ctx.up_idx;
-        //                     continue;
-        //                 },
-        //                 .loop_condition => unreachable,
-        //             }
-        //             writer.writeAll(
-        //                 tpl.src[tpl.print_cursor..tpl.print_end],
-        //             ) catch return error.OutIO;
-        //             tpl.print_cursor = tpl.print_end;
-        //         }
-        //     }
-
-        //     std.debug.assert(tpl.print_cursor == tpl.print_end);
-        //     return .end;
-        // }
 
         fn evalVar(
             tpl: *Template,
@@ -1487,7 +1104,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             script_ctx: *Context,
             script_attr_name: Span,
             code_span: Span,
-        ) errors.Fatal!Value.Iterator {
+        ) errors.Fatal!*Value.Iterator {
             tpl.setContext(script_ctx);
 
             const result = script_vm.run(
@@ -1566,24 +1183,23 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             );
         }
 
-        pub fn loopUp(ptr: *const anyopaque, frame_idx: u32) Value {
-            const tpl: *const Template = @alignCast(@ptrCast(ptr));
+        pub fn loopUp(tpl: *const Template, frame_idx: u32) Value {
+            // const tpl: *const Template = @alignCast(@ptrCast(ptr));
             if (frame_idx == 0) {
                 return .{
                     .err = "already at the topmost $loop value",
                 };
             } else {
-                const iter_elem = tpl.loop_stack.items[frame_idx - 1].current;
-                return .{
-                    .iterator_element = iter_elem,
-                };
+                const frame = tpl.loop_stack.items[frame_idx - 1];
+                return .{ .iterator = frame.iterator };
             }
         }
 
         pub fn setContext(tpl: Template, script_ctx: *Context) void {
-            script_ctx.loop = if (tpl.loop_stack.getLastOrNull()) |last| .{
-                .iterator_element = last.current,
-            } else null;
+            script_ctx.loop = if (tpl.loop_stack.getLastOrNull()) |last|
+                last.iterator
+            else
+                null;
 
             script_ctx.@"if" = if (tpl.if_stack.getLastOrNull()) |last|
                 last.value
