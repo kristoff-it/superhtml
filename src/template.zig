@@ -382,7 +382,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         writer.writeAll(s.value) catch return error.OutIO;
                                     },
                                     .int => |i| {
-                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                        writer.print("{d}", .{
+                                            i.value,
+                                        }) catch return error.OutIO;
                                     },
                                 },
                                 .text => |text| switch (text) {
@@ -393,7 +395,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         }) catch return error.OutIO;
                                     },
                                     .int => |i| {
-                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                        writer.print("{d}", .{
+                                            i.value,
+                                        }) catch return error.OutIO;
                                     },
                                 },
                             }
@@ -596,7 +600,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         writer.writeAll(s.value) catch return error.OutIO;
                                     },
                                     .int => |i| {
-                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                        writer.print("{d}", .{
+                                            i.value,
+                                        }) catch return error.OutIO;
                                     },
                                 },
                                 .text => |text| switch (text) {
@@ -607,7 +613,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         }) catch return error.OutIO;
                                     },
                                     .int => |i| {
-                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                        writer.print("{d}", .{
+                                            i.value,
+                                        }) catch return error.OutIO;
                                     },
                                 },
                             }
@@ -734,10 +742,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         ) catch return error.OutIO;
                                     },
                                     .int => |i| {
-                                        writer.print(
-                                            "=\"{}\"",
-                                            .{i},
-                                        ) catch return error.OutIO;
+                                        writer.print("=\"{d}\"", .{
+                                            i.value,
+                                        }) catch return error.OutIO;
                                     },
                                 }
                                 continue;
@@ -838,7 +845,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         writer.writeAll(s.value) catch return error.OutIO;
                                     },
                                     .int => |i| {
-                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                        writer.print("{d}", .{
+                                            i.value,
+                                        }) catch return error.OutIO;
                                     },
                                 },
                                 .text => |text| switch (text) {
@@ -849,7 +858,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         }) catch return error.OutIO;
                                     },
                                     .int => |i| {
-                                        writer.print("{}", .{i}) catch return error.OutIO;
+                                        writer.print("{d}", .{
+                                            i.value,
+                                        }) catch return error.OutIO;
                                     },
                                 },
                             }
