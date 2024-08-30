@@ -34,7 +34,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         const IfFrame = struct {
             node_idx: u32,
-            value: Value,
+            value: *const Value.Optional,
         };
 
         const LoopFrame = struct {
@@ -333,7 +333,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         .optional => |opt| if (opt) |v| {
                                             try tpl.if_stack.append(tpl.arena, .{
                                                 .node_idx = ev.idx,
-                                                .value = v.value,
+                                                .value = v,
                                             });
                                         } else {
                                             skip_body = true;
@@ -548,7 +548,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         .optional => |opt| if (opt) |v| {
                                             try tpl.if_stack.append(tpl.arena, .{
                                                 .node_idx = ev.idx,
-                                                .value = v.value,
+                                                .value = v,
                                             });
                                         } else {
                                             skip_body = true;
@@ -794,7 +794,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
                                         .optional => |opt| if (opt) |v| {
                                             try tpl.if_stack.append(tpl.arena, .{
                                                 .node_idx = ev.idx,
-                                                .value = v.value,
+                                                .value = v,
                                             });
                                         } else {
                                             skip_body = true;
