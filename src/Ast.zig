@@ -820,16 +820,17 @@ const Parser = struct {
                     // properly (eg by only printing the id element on
                     // $loop.first)
                     if (node.idAttr()) |id| blk: {
+                        const value = id.value orelse break :blk;
                         if (std.mem.startsWith(
                             u8,
                             "$",
-                            id.name.slice(p.src),
+                            value.span.slice(p.src),
                         )) break :blk;
 
                         var upper = ast.parent(node);
                         while (upper.kind != .root) : (upper = ast.parent(upper)) {
                             const attr = upper.if_loop orelse continue;
-                            if (attr.name.len() == "if".len) break;
+                            if (attr.name.len() == ":if".len) break;
                             try p.errors.append(gpa, .{
                                 .kind = .id_under_loop,
                                 .main_location = id.name,
