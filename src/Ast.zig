@@ -821,11 +821,9 @@ const Parser = struct {
                     // $loop.first)
                     if (node.idAttr()) |id| blk: {
                         const value = id.value orelse break :blk;
-                        if (std.mem.startsWith(
-                            u8,
-                            "$",
-                            value.span.slice(p.src),
-                        )) break :blk;
+                        if (std.mem.startsWith(u8, value.span.slice(p.src), "$")) {
+                            break :blk;
+                        }
 
                         var upper = ast.parent(node);
                         while (upper.kind != .root) : (upper = ast.parent(upper)) {
