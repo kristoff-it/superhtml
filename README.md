@@ -119,9 +119,7 @@ After:
 
 ### Editor support
 #### VSCode
-1. Download a prebuilt version of `superhtml` from the Releases section (or build it yourself).
-2. Put `superhtml` in your `PATH`.
-3. Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/items?itemName=LorisCro.super).
+Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/items?itemName=LorisCro.super).
 
 #### Neovim
 1. Download a prebuilt version of `superhtml` from the Releases section (or build it yourself).
