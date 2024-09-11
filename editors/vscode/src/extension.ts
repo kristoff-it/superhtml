@@ -47,9 +47,6 @@ export async function activate(context: ExtensionContext) {
             channel.append(decoder.decode(data));
         });
 
-        // process.stdin!.write("banana".repeat(10000));
-        // process.stdin!.write("cake");
-
         return startServer(process);
     };
 

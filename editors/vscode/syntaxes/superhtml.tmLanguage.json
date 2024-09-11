@@ -2055,6 +2055,29 @@
 					]
 				},
 				{
+					"begin": "(?i)(<)(super|extend)(?=\\s|/?>)",
+					"beginCaptures": {
+						"1": {
+							"name": "punctuation.definition.tag.begin.html"
+						},
+						"2": {
+							"name": "keyword.control"
+						}
+					},
+					"end": "/?>",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.tag.end.html"
+						}
+					},
+					"name": "meta.tag.metadata.$2.void.html",
+					"patterns": [
+						{
+							"include": "#attribute"
+						}
+					]
+				},
+				{
 					"begin": "(?i)(<)(noscript|title)(?=\\s|/?>)",
 					"beginCaptures": {
 						"1": {

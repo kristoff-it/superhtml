@@ -1,12 +1,12 @@
 {
   "name": "super",
   "displayName": "SuperHTML",
-  "description": "Actually Functional Language Server for HTML Files",
+  "description": "Language Server for HTML and SuperHTML Templates.",
   "repository": "https://github.com/kristoff-it/superhtml/",
   "publisher": "LorisCro",
-  "version": "0.1.4",
+  "version": "0.3.0",
   "engines": {
-    "vscode": "^1.87.0"
+    "vscode": "^1.92.0"
   },
   "categories": [
     "Formatters"
@@ -40,7 +40,7 @@
         "extensions": [
           ".shtml"
         ],
-        "configuration": "./superhtml1.language-configuration.json"
+        "configuration": "./superhtml.language-configuration.json"
       }
     ],
     "grammars": [
@@ -71,19 +71,7 @@
           "meta.tag string.quoted": "other"
         }
       }
-    ],
-    "configuration": {
-      "type": "object",
-      "title": "Super",
-      "properties": {
-        "super.path": {
-          "scope": "machine-overridable",
-          "default": "super",
-          "type": "string",
-          "description": "Set a custom path to the super binary. The string \"super\" means lookup Super in PATH."
-        }
-      }
-    }
+    ]
   },
   "main": "./out/extension",
   "extensionDependencies": [
@@ -92,7 +80,7 @@
   "devDependencies": {
     "@types/mocha": "^2.2.48",
     "@types/node": "^18.0.0",
-    "@types/vscode": "^1.68.0",
+    "@types/vscode": "^1.92.0",
     "@types/which": "^2.0.1",
     "@typescript-eslint/eslint-plugin": "^6.7.0",
     "@typescript-eslint/parser": "^6.7.0",
@@ -107,7 +95,7 @@
     "lodash-es": "^4.17.21",
     "lodash.debounce": "^4.0.8",
     "mkdirp": "^2.1.3",
-    "vscode-languageclient": "^10.0.0-next.13",
+    "vscode-languageclient": "^10.0.0-next.12",
     "which": "^3.0.0"
   },
   "scripts": {
