@@ -21,6 +21,9 @@ General Options:
   --help, -h   Print command specific usage
 ```
 
+>[!WARNING]
+>SuperHTML currently only supports UTF8-encoded HTML and assumes HTML5 compliance (e.g. doesn't support XHTML, regardless of what you define the doctype to be).
+
 ### Diagnostics
 
 ![](.github/vscode.png)
