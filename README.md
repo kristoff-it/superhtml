@@ -161,6 +161,19 @@ See https://helix-editor.com for more information on how to add new language ser
 #### [Flow Control](https://github.com/neurocyte/flow)
 Already defaults to using SuperHTML, just add the executable to your `PATH`.
 
+#### Vim
+Vim should be able to parse the errors that `superhtml check [PATH]`. This
+means that you can use `:make` and the quickfix window to check for syntax
+errors.
+
+Set the `makeprg` to the following in your .vimrc:
+```
+" for any html file, a :make<cr> action will populate the quickfix menu
+autocmd filetype html setlocal makeprg=superhtml\ check\ %
+" if you want to use gq{motion} to format sections or the whole buffer (with gggqG)
+autocmd filetype html setlocal formatprg=superhtml\ fmt\ --stdin
+```
+
 #### Other editors
 Follow your editor specific intructions on how to define a new Language Server for a given language / file format.
 
