@@ -9,13 +9,13 @@ The tool can be used either directly (for example by running it on save), or thr
 
 ```
 $ superhtml
-Usage: super COMMAND [OPTIONS]
+Usage: superhtml COMMAND [OPTIONS]
 
 Commands:
   fmt          Format HTML documents
   lsp          Start the Super LSP
   help         Show this menu and exit
-  version      Print Super's version and exit
+  version      Print SuperHTML version and exit
 
 General Options:
   --help, -h   Print command specific usage
