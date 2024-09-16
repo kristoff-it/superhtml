@@ -2,6 +2,12 @@
 
 All notable changes to the "super" extension will be documented in this file.
 
+## [v0.5.1]
+- This is now a web extension that can be used with vscode.dev, etc.
+
+## [v0.5.0]
+- Updated list of obsolete tags, it previously was based on an outdated HTML spec version.
+- The minor version of this extension is now aliged with the internal language server implementation version.
 
 ## [v0.3.0]
 Now the LSP server is bundled in the extension, no need for a separate download anymore.
