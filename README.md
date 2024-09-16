@@ -125,22 +125,38 @@ Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/i
 1. Download a prebuilt version of `superhtml` from the Releases section (or build it yourself).
 2. Put `superhtml` in your `PATH`.
 3. Configure `superhtml` for your chosen lsp
-    - ##### [LspZero](https://github.com/VonHeikemen/lsp-zero.nvim)
 
-      ```lua
-      local lsp = require("lsp-zero")
-  
-      require('lspconfig.configs').superhtml = { 
-          default_config = { 
-              name = 'superhtml', 
-              cmd = {'superhtml', 'lsp'}, 
-              filetypes = {'html', 'shtml', 'htm'}, 
-              root_dir = require('lspconfig.util').root_pattern('.git') 
-          } 
-      } 
-  
-      lsp.configure('superhtml', {force_setup = true})
-      ```
+	- ##### [Neovim Built-In](https://neovim.io/doc/user/lsp.html#vim.lsp.start())
+
+		```lua
+		vim.api.nvim_create_autocmd("Filetype", {
+			pattern = { "html", "shtml", "htm" },
+			callback = function()
+				vim.lsp.start({
+					name = "superhtml",
+					cmd = { "superhtml", "lsp" },
+					root_dir = vim.fs.dirname(vim.fs.find({".git"}, { upward = true })[1])
+				})
+			end
+		})
+		```
+
+	- ##### [LspZero](https://github.com/VonHeikemen/lsp-zero.nvim)
+
+		```lua
+		local lsp = require("lsp-zero")
+
+		require('lspconfig.configs').superhtml = {
+				default_config = {
+						name = 'superhtml',
+						cmd = {'superhtml', 'lsp'},
+						filetypes = {'html', 'shtml', 'htm'},
+						root_dir = require('lspconfig.util').root_pattern('.git')
+				}
+		}
+
+		lsp.configure('superhtml', {force_setup = true})
+		```
 
 #### Helix
 Add to your `.config/helix/languages.toml`:
