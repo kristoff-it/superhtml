@@ -43,7 +43,7 @@ As an example, HTML allows for closing some tags implicitly. For example the fol
 This will still be reported as an error by SuperHTML because otherwise the following snippet would have to be considered correct (while it's most probably a typo):
 
 ```html
-<h1>Title<h1>
+<li>item<li>
 ```
 
 ### Autoformatting
