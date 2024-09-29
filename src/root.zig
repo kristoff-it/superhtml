@@ -19,6 +19,7 @@ pub const HtmlSafe = struct {
         _ = fmt;
         for (self.bytes) |b| {
             switch (b) {
+                '&' => try out_stream.writeAll("&amp;"),
                 '>' => try out_stream.writeAll("&gt;"),
                 '<' => try out_stream.writeAll("&lt;"),
                 '\'' => try out_stream.writeAll("&apos;"),
