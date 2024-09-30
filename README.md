@@ -159,7 +159,10 @@ Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/i
 		```
 
 #### Helix
-Add to your `.config/helix/languages.toml`:
+
+In versions later than `24.07` `superhtml` is supported out of the box, simply add executable to your `PATH`.
+
+For `24.07` and earlier, add to your `.config/helix/languages.toml`:
 ```toml
 [language-server.superhtml-lsp]
 command = "superhtml"
