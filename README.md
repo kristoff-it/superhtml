@@ -159,7 +159,10 @@ Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/i
 		```
 
 #### Helix
-Add to your `.config/helix/languages.toml`:
+
+In versions later than `24.07` `superhtml` is supported out of the box, simply add executable to your `PATH`.
+
+For `24.07` and earlier, add to your `.config/helix/languages.toml`:
 ```toml
 [language-server.superhtml-lsp]
 command = "superhtml"
@@ -191,9 +194,9 @@ autocmd filetype html setlocal formatprg=superhtml\ fmt\ --stdin
 ```
 
 #### Other editors
-Follow your editor specific intructions on how to define a new Language Server for a given language / file format.
+Follow your editor specific instructions on how to define a new Language Server for a given language / file format.
 
-*(Also feel free to contribute more specific intructions to this readme / add files under the `editors/` subdirectory).*
+*(Also feel free to contribute more specific instructions to this readme / add files under the `editors/` subdirectory).*
 
 ## Templating Language Library
 SuperHTML is also a HTML templating language. More on that soon.
@@ -201,7 +204,7 @@ SuperHTML is also a HTML templating language. More on that soon.
 ## Contributing
 SuperHTML tracks the latest Zig release (0.13.0 at the moment of writing).
 
-### Contributing to the HTML paser & LSP
+### Contributing to the HTML parser & LSP
 Contributing to the HTML parser and LSP doesn't require you to be familiar with the templating language, basically limiting the scope of what you have to worry about to:
 
 - `src/cli.zig`
