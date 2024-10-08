@@ -1127,6 +1127,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
             switch (result.value) {
                 .iterator => |i| return i,
+                .array => |a| return Value.Iterator.fromArray(tpl.arena, a) catch return error.Fatal,
                 else => {
                     tpl.reportError(
                         err_writer,
