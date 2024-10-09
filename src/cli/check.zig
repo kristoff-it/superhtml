@@ -261,8 +261,8 @@ const Command = struct {
             \\
             \\Options:
             \\
-            \\   --stdin          Format bytes from stdin and ouptut to stdout. 
-            \\                    Mutually exclusive with other input aguments.
+            \\   --stdin          Format bytes from stdin and output to stdout.
+            \\                    Mutually exclusive with other input arguments.
             \\
             \\   --stdin-super    Same as --stdin but for SuperHTML files.
             \\

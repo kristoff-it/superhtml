@@ -190,7 +190,7 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
             },
             '"' => return self.string(src),
             '#' => {
-                // TODO: Support escape sequeces
+                // TODO: Support escape sequences
 
                 if (self.peek(src) != null and isIdentChar(self.peek(src).?)) {
                     var token = .{ .hash = self.identSequence(src) };

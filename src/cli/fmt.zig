@@ -293,15 +293,15 @@ const Command = struct {
             \\
             \\Options:
             \\
-            \\   --stdin            Format bytes from stdin and ouptut to stdout. 
-            \\                      Mutually exclusive with other input aguments.    
+            \\   --stdin            Format bytes from stdin and output to stdout.
+            \\                      Mutually exclusive with other input arguments.
             \\
             \\   --stdin-super      Same as --stdin but for SuperHTML files.
             \\
             \\   --check            List non-conforming files and exit with an
             \\                      error if the list is not empty.
             \\
-            \\   --help, -h         Prints this help and extits.
+            \\   --help, -h         Prints this help and exits.
         , .{});
 
         std.process.exit(1);

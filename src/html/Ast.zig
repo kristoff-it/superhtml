@@ -65,7 +65,7 @@ pub const Node = struct {
     open: Span,
     /// Span covering end_tag, diamond brackets included
     /// Unset status is represented by .start = 0 and .end = 0
-    /// not set for doctype, element_void and elment_self_closing
+    /// not set for doctype, element_void and element_self_closing
     close: Span = .{ .start = 0, .end = 0 },
 
     parent_idx: u32 = 0,
@@ -391,7 +391,7 @@ pub fn init(
                                 .return_attrs = true,
                             };
                             const tag_src = current.open.slice(src);
-                            // all early exit brances are in the case of
+                            // all early exit branches are in the case of
                             // malformed HTML and we also expect in all of
                             // those cases that errors were already emitted
                             // by the tokenizer
