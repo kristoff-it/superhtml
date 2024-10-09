@@ -347,7 +347,7 @@ pub const Handler = struct {
         return null;
     }
 
-    /// Handle a reponse that we have received from the client.
+    /// Handle a response that we have received from the client.
     /// Doesn't usually happen unless we explicitly send a request to the client.
     pub fn response(self: Handler, _response: Message.Response) !void {
         _ = self;
