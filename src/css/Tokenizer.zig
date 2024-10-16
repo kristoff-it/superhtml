@@ -7,6 +7,10 @@ const Span = root.Span;
 idx: u32 = 0,
 current: u8 = undefined,
 
+pub const Error = enum {
+    truncated_string,
+};
+
 pub const Token = union(enum) {
     ident: Span,
     function: Span,
@@ -31,6 +35,10 @@ pub const Token = union(enum) {
     close_paren: u32,
     open_curly: u32,
     close_curly: u32,
+    err: struct {
+        tag: Error,
+        span: Span,
+    },
 
     pub const Dimension = struct {
         number: Span,
@@ -67,6 +75,8 @@ pub const Token = union(enum) {
             .open_curly,
             .close_curly,
             => |i| .{ .start = i, .end = i + 1 },
+            .err,
+            => |e| e.span,
         };
     }
 };
@@ -120,10 +130,8 @@ fn wouldStartIdent(self: *Tokenizer, src: []const u8) bool {
 
     _ = char2;
 
-    // TODO: Support escape sequences
     return switch (char0) {
         '-' => isIdentStartChar(char1) or char1 == '-',
-        '\\' => @panic("TODO"),
         else => isIdentStartChar(char0),
     };
 }
@@ -188,10 +196,8 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
 
                 return self.next(src);
             },
-            '"' => return self.string(src),
+            '"', '\'' => return self.string(src),
             '#' => {
-                // TODO: Support escape sequeces
-
                 if (self.peek(src) != null and isIdentChar(self.peek(src).?)) {
                     var token = .{ .hash = self.identSequence(src) };
                     token.hash.start -= 1;
@@ -200,17 +206,15 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
                     return .{ .delim = self.idx - 1 };
                 }
             },
-            '\'' => @panic("TODO"),
             '(' => return .{ .open_paren = self.idx - 1 },
             ')' => return .{ .close_paren = self.idx - 1 },
-            '+' => @panic("TODO"),
             ',' => return .{ .comma = self.idx - 1 },
-            '-' => {
+            '+', '-' => |char| {
                 if (self.wouldStartNumber(src)) {
-                    @panic("TODO");
-                }
-
-                if (self.peek(src)) |first| {
+                    self.reconsume(src);
+                    return self.numeric(src);
+                } else if (char == '-' and self.peek(src) != null) {
+                    const first = self.peek(src);
                     std.debug.assert(self.consume(src));
 
                     if (self.peek(src)) |second| {
@@ -224,26 +228,31 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
                     self.reconsume(src);
                 }
 
-                if (self.wouldStartIdent(src)) {
+                if (char == '-' and self.wouldStartIdent(src)) {
                     self.reconsume(src);
                     return self.identLike(src);
+                } else {
+                    return .{ .delim = self.idx - 1 };
                 }
-
-                return .{ .delim = self.idx - 1 };
             },
             '.' => {
-                if (self.peek(src)) |char| {
-                    switch (char) {
-                        '0'...'9' => @panic("TODO"),
-                        else => {},
-                    }
+                if (self.wouldStartNumber(src)) {
+                    self.reconsume(src);
+                    return self.numeric(src);
                 }
 
                 return .{ .delim = self.idx - 1 };
             },
             ':' => return .{ .colon = self.idx - 1 },
             ';' => return .{ .semicolon = self.idx - 1 },
-            '<' => @panic("TODO"),
+            '<' => {
+                if (self.idx + 2 < src.len and std.mem.eql(u8, src[self.idx .. self.idx + 3], "!--")) {
+                    for (0..3) |_| std.debug.assert(self.consume(src));
+                    return .{ .cdo = self.idx - 4 };
+                } else {
+                    return .{ .delim = self.idx - 1 };
+                }
+            },
             '@' => {
                 if (self.wouldStartIdent(src)) {
                     const name = self.identSequence(src);
@@ -252,9 +261,8 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
                     return .{ .delim = self.idx - 1 };
                 }
             },
-            '[' => @panic("TODO"),
-            '\\' => @panic("TODO"),
-            ']' => @panic("TODO"),
+            '[' => return .{ .open_square = self.idx - 1 },
+            ']' => return .{ .close_square = self.idx - 1 },
             '{' => return .{ .open_curly = self.idx - 1 },
             '}' => return .{ .close_curly = self.idx - 1 },
             '0'...'9' => {
@@ -275,8 +283,6 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
 
 // https://www.w3.org/TR/css-syntax-3/#consume-an-ident-sequence
 fn identSequence(self: *Tokenizer, src: []const u8) Span {
-    // TODO: Support escape sequences
-
     const start = self.idx;
 
     while (true) {
@@ -377,8 +383,14 @@ fn string(self: *Tokenizer, src: []const u8) Token {
     while (true) {
         if (self.consume(src)) {
             switch (self.current) {
-                '\n' => @panic("TODO"),
-                '\\' => @panic("TODO"),
+                '\n' => {
+                    return .{
+                        .err = .{
+                            .tag = .truncated_string,
+                            .span = .{ .start = start, .end = self.idx - 1 },
+                        },
+                    };
+                },
                 else => {
                     if (self.current == ending) {
                         return .{
@@ -388,7 +400,12 @@ fn string(self: *Tokenizer, src: []const u8) Token {
                 },
             }
         } else {
-            @panic("TODO");
+            return .{
+                .err = .{
+                    .tag = .truncated_string,
+                    .span = .{ .start = start, .end = self.idx },
+                },
+            };
         }
     }
 }
