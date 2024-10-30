@@ -2,7 +2,7 @@ import {
     // createStdioOptions,
     startServer
 } from '@vscode/wasm-wasi-lsp';
-import { ProcessOptions, Stdio, Wasm } from '@vscode/wasm-wasi';
+import { ProcessOptions, Stdio, Wasm } from '@vscode/wasm-wasi/v1';
 import { ExtensionContext, languages, Uri, window, workspace } from 'vscode';
 import {
     LanguageClient,
