@@ -714,6 +714,14 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
 
                     // if (std.mem.eql(u8, name, "path")) @breakpoint();
 
+                    const extra: u32 = switch (current.kind) {
+                        .doctype,
+                        .element_void,
+                        .element_self_closing,
+                        => 1,
+                        else => 0,
+                    };
+
                     while (tt.next(src[0..current.open.end])) |maybe_attr| {
                         log.debug("tt: {s}", .{@tagName(maybe_attr)});
                         log.debug("tt: {any}", .{maybe_attr});
@@ -736,7 +744,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                             .attr => |attr| {
                                 if (vertical) {
                                     try w.print("\n", .{});
-                                    for (0..indentation) |_| {
+                                    for (0..indentation + extra) |_| {
                                         try w.print("  ", .{});
                                     }
                                 } else {
