@@ -770,7 +770,7 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     }
                     if (vertical) {
                         try w.print("\n", .{});
-                        for (0..indentation -| 1) |_| {
+                        for (0..indentation + extra -| 1) |_| {
                             try w.print("  ", .{});
                         }
                     }

@@ -261,6 +261,35 @@ fn setupReleaseStep(
 
         release_step.dependOn(&target_output.step);
     }
+
+    // wasm
+    {
+        const super_wasm_lsp = b.addExecutable(.{
+            .name = "superhtml",
+            .root_source_file = b.path("src/wasm.zig"),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .wasm32,
+                .os_tag = .wasi,
+            }),
+            .optimize = .ReleaseSmall,
+            .single_threaded = true,
+            .link_libc = false,
+        });
+
+        super_wasm_lsp.root_module.addImport("superhtml", superhtml);
+        super_wasm_lsp.root_module.addImport("lsp", lsp.module("lsp"));
+        super_wasm_lsp.root_module.addOptions("build_options", options);
+
+        const target_output = b.addInstallArtifact(super_wasm_lsp, .{
+            .dest_dir = .{
+                .override = .{
+                    .custom = "wasm-wasi-lsponly",
+                },
+            },
+        });
+
+        release_step.dependOn(&target_output.step);
+    }
 }
 
 const Version = union(Kind) {
