@@ -207,11 +207,14 @@ pub const Error = struct {
     tag: Tag,
     loc: Span,
 
-    pub const Tag = enum {
-        invalid_at_rule,
-        expected_open_curly,
-        expected_close_curly,
-        expected_media_query,
+    pub const Tag = union(enum) {
+        token: Tokenizer.Error,
+        ast: enum {
+            invalid_at_rule,
+            expected_open_curly,
+            expected_close_curly,
+            expected_media_query,
+        },
     };
 };
 
@@ -235,13 +238,23 @@ const State = struct {
     specifiers: std.ArrayListUnmanaged(Rule.Style.Selector.Simple.Specifier),
     media_queries: std.ArrayListUnmanaged(Span),
 
-    fn consume(self: *State) ?Tokenizer.Token {
+    fn consume(self: *State) error{OutOfMemory}!?Tokenizer.Token {
         if (self.reconsumed) |tok| {
             self.reconsumed = null;
             return tok;
         }
 
-        return self.tokenizer.next(self.src);
+        const token = self.tokenizer.next(self.src) orelse return null;
+        switch (token) {
+            .err => |err| {
+                try self.errors.append(self.allocator, .{
+                    .tag = .{ .token = err.tag },
+                    .loc = err.span,
+                });
+                return self.consume();
+            },
+            else => return token,
+        }
     }
 
     fn reconsume(self: *State, token: Tokenizer.Token) void {
@@ -250,8 +263,8 @@ const State = struct {
         self.reconsumed = token;
     }
 
-    fn peek(self: *State) ?Tokenizer.Token {
-        const token = self.consume();
+    fn peek(self: *State) !?Tokenizer.Token {
+        const token = try self.consume();
         if (token) |tok| self.reconsume(tok);
 
         return token;
@@ -333,7 +346,7 @@ pub fn init(allocator: std.mem.Allocator, src: []const u8) error{OutOfMemory}!As
 
     const first_rule = try parseRules(&state);
 
-    if (state.consume()) |_| {
+    if (try state.consume()) |_| {
         @panic("TODO");
     }
 
@@ -353,7 +366,7 @@ fn parseRules(s: *State) error{OutOfMemory}!?u32 {
     var first_rule: ?u32 = null;
 
     while (true) {
-        if (s.consume()) |token| {
+        if (try s.consume()) |token| {
             switch (token) {
                 .close_curly => {
                     s.reconsume(token);
@@ -393,7 +406,7 @@ fn parseRules(s: *State) error{OutOfMemory}!?u32 {
                         }
 
                         try s.errors.append(s.allocator, .{
-                            .tag = .invalid_at_rule,
+                            .tag = .{ .ast = .invalid_at_rule },
                             .loc = at_keyword,
                         });
 
@@ -403,7 +416,7 @@ fn parseRules(s: *State) error{OutOfMemory}!?u32 {
                         while (true) {
                             if (curly_depth == 0 and past_block) break;
 
-                            if (s.consume()) |t| {
+                            if (try s.consume()) |t| {
                                 switch (t) {
                                     .semicolon => {
                                         if (curly_depth == 0) {
@@ -453,7 +466,7 @@ fn parseRules(s: *State) error{OutOfMemory}!?u32 {
 }
 
 fn parseMediaRule(s: *State) !Rule.Media {
-    const keyword = s.consume();
+    const keyword = try s.consume();
     std.debug.assert(keyword != null);
     std.debug.assert(keyword.? == .at_keyword);
     std.debug.assert(std.ascii.eqlIgnoreCase(keyword.?.at_keyword.slice(s.src), "@media"));
@@ -462,7 +475,7 @@ fn parseMediaRule(s: *State) !Rule.Media {
     var current_query: ?Span = null;
     var paren_depth: usize = 0;
     while (true) {
-        if (s.consume()) |token| {
+        if (try s.consume()) |token| {
             if ((token == .comma or token == .open_curly) and paren_depth == 0) {
                 if (current_query) |q| {
                     try s.media_queries.append(s.allocator, q);
@@ -472,7 +485,7 @@ fn parseMediaRule(s: *State) !Rule.Media {
                     }
                 } else {
                     try s.errors.append(s.allocator, .{
-                        .tag = .expected_media_query,
+                        .tag = .{ .ast = .expected_media_query },
                         .loc = token.span(),
                     });
                 }
@@ -499,12 +512,12 @@ fn parseMediaRule(s: *State) !Rule.Media {
 
     const first_rule = try parseRules(s);
 
-    if (s.consume()) |token| {
+    if (try s.consume()) |token| {
         switch (token) {
             .close_curly => {},
             else => {
                 try s.errors.append(s.allocator, .{
-                    .tag = .expected_close_curly,
+                    .tag = .{ .ast = .expected_close_curly },
                     .loc = token.span(),
                 });
             },
@@ -527,9 +540,9 @@ fn parseStyleRule(s: *State) !Rule.Style {
     const sel_start = s.selectors.items.len - 1;
 
     while (true) {
-        if (s.consume()) |token| {
+        if (try s.consume()) |token| {
             if (token == .comma) {
-                if (s.peek() != null and s.peek().? == .open_curly) break;
+                if (try s.peek() != null and (try s.peek()).? == .open_curly) break;
 
                 try s.selectors.append(s.allocator, try parseSelector(s));
             } else {
@@ -541,12 +554,12 @@ fn parseStyleRule(s: *State) !Rule.Style {
         }
     }
 
-    if (s.consume()) |token| {
+    if (try s.consume()) |token| {
         switch (token) {
             .open_curly => {},
             else => {
                 try s.errors.append(s.allocator, .{
-                    .tag = .expected_open_curly,
+                    .tag = .{ .ast = .expected_open_curly },
                     .loc = token.span(),
                 });
             },
@@ -555,20 +568,20 @@ fn parseStyleRule(s: *State) !Rule.Style {
         @panic("TODO");
     }
 
-    try s.declarations.append(s.allocator, parseDeclaration(s));
+    try s.declarations.append(s.allocator, try parseDeclaration(s));
     const decl_start = s.declarations.items.len - 1;
 
     var multiline_decl = false;
 
     while (true) {
-        if (s.consume()) |token| {
+        if (try s.consume()) |token| {
             if (token == .semicolon) {
-                if (s.peek() != null and s.peek().? == .close_curly) {
+                if (try s.peek() != null and (try s.peek()).? == .close_curly) {
                     multiline_decl = true;
                     break;
                 }
 
-                try s.declarations.append(s.allocator, parseDeclaration(s));
+                try s.declarations.append(s.allocator, try parseDeclaration(s));
             } else {
                 s.reconsume(token);
                 break;
@@ -578,12 +591,12 @@ fn parseStyleRule(s: *State) !Rule.Style {
         }
     }
 
-    if (s.consume()) |token| {
+    if (try s.consume()) |token| {
         switch (token) {
             .close_curly => {},
             else => {
                 try s.errors.append(s.allocator, .{
-                    .tag = .expected_close_curly,
+                    .tag = .{ .ast = .expected_close_curly },
                     .loc = token.span(),
                 });
             },
@@ -607,13 +620,13 @@ fn parseSelector(s: *State) !Rule.Style.Selector {
     };
 }
 
-fn parseDeclaration(s: *State) Rule.Style.Declaration {
-    const property = if (s.consume()) |token| switch (token) {
+fn parseDeclaration(s: *State) error{OutOfMemory}!Rule.Style.Declaration {
+    const property = if (try s.consume()) |token| switch (token) {
         .ident => |ident| ident,
         else => @panic("TODO"),
     } else @panic("TODO");
 
-    if (s.consume()) |token| {
+    if (try s.consume()) |token| {
         switch (token) {
             .colon => {},
             else => @panic("TODO"),
@@ -624,7 +637,7 @@ fn parseDeclaration(s: *State) Rule.Style.Declaration {
 
     return .{
         .property = property,
-        .value = parseDeclarationValue(s),
+        .value = try parseDeclarationValue(s),
     };
 }
 
@@ -633,7 +646,7 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
 
     const spec_start = s.specifiers.items.len;
 
-    if (s.consume()) |token| {
+    if (try s.consume()) |token| {
         switch (token) {
             .ident => |ident| element_name = .{ .name = ident },
             .delim => |delim| switch (s.src[delim]) {
@@ -645,7 +658,7 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
     }
 
     while (true) {
-        if (s.consume()) |token| {
+        if (try s.consume()) |token| {
             switch (token) {
                 .hash => |hash| {
                     var span = hash;
@@ -654,7 +667,7 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
                 },
                 .delim => |delim| switch (s.src[delim]) {
                     '.' => {
-                        const name_token = s.consume() orelse @panic("TODO");
+                        const name_token = (try s.consume()) orelse @panic("TODO");
                         if (name_token != .ident) @panic("TODO");
                         const name = name_token.ident;
 
@@ -664,14 +677,14 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
                 },
                 .open_square => @panic("TODO"),
                 .colon => {
-                    if (s.consume()) |t| {
+                    if (try s.consume()) |t| {
                         switch (t) {
                             .ident => |ident| {
                                 try s.specifiers.append(s.allocator, .{ .pseudo_class = ident });
                             },
                             .function => @panic("TODO"),
                             .colon => {
-                                if (s.consume()) |name_tok| {
+                                if (try s.consume()) |name_tok| {
                                     switch (name_tok) {
                                         .ident => |ident| {
                                             try s.specifiers.append(s.allocator, .{ .pseudo_element = ident });
@@ -710,15 +723,15 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
     };
 }
 
-fn parseDeclarationValue(s: *State) Span {
+fn parseDeclarationValue(s: *State) !Span {
     var start: ?u32 = null;
     var end: u32 = undefined;
 
-    while (s.peek()) |token| {
+    while (try s.peek()) |token| {
         switch (token) {
             .semicolon, .close_curly => break,
             else => {
-                std.debug.assert(s.consume() != null);
+                std.debug.assert(try s.consume() != null);
                 if (start == null) {
                     start = token.span().start;
                 }
@@ -728,10 +741,11 @@ fn parseDeclarationValue(s: *State) Span {
     }
 
     if (start == null) {
-        @panic("TODO");
-    } else {
-        return .{ .start = start.?, .end = end };
+        // TODO: Error?
+        start = end;
     }
+
+    return .{ .start = start.?, .end = end };
 }
 
 pub fn deinit(self: Ast, allocator: std.mem.Allocator) void {
@@ -926,11 +940,11 @@ test "invalid at rule" {
 
     try std.testing.expectEqualDeep(&[_]Error{
         .{
-            .tag = .invalid_at_rule,
+            .tag = .{ .ast = .invalid_at_rule },
             .loc = .{ .start = 0, .end = 6 },
         },
         .{
-            .tag = .invalid_at_rule,
+            .tag = .{ .ast = .invalid_at_rule },
             .loc = .{ .start = 93, .end = 97 },
         },
     }, ast.errors);
@@ -940,6 +954,41 @@ test "pseudo-classes and pseudo-elements" {
     const src =
         \\a:hover::after {
         \\    content: "Hello";
+        \\}
+    ;
+
+    const ast = try Ast.init(std.testing.allocator, src);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expect(ast.errors.len == 0);
+    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+}
+
+test "truncated string" {
+    const src =
+        \\.foo {
+        \\    font-family: "Some font
+        \\}
+    ;
+
+    const ast = try Ast.init(std.testing.allocator, src);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualDeep(&[_]Error{
+        .{
+            .tag = .{ .token = .truncated_string },
+            .loc = .{ .start = 24, .end = 34 },
+        },
+    }, ast.errors);
+}
+
+test "number literals" {
+    const src =
+        \\.foo {
+        \\    a: 1;
+        \\    b: -1;
+        \\    c: +1;
+        \\    d: .1;
         \\}
     ;
 

@@ -2,6 +2,11 @@
 
 All notable changes to the "super" extension will be documented in this file.
 
+## [v0.5.2]
+- Starting from this release, a WASM-WASI build of SuperHTML is available on GitHub (in the Releases section) in case editors other than VSCode might watnt to bundle a wasm build of SuperHTML.
+ 
+- Fixed indentation bug when formatting void elements.
+
 ## [v0.5.1]
 - This is now a web extension that can be used with vscode.dev, etc.
 

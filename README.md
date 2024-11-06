@@ -12,10 +12,12 @@ $ superhtml
 Usage: superhtml COMMAND [OPTIONS]
 
 Commands:
-  fmt          Format HTML documents
-  lsp          Start the SuperHTML LSP
-  help         Show this menu and exit
-  version      Print SuperHTML version and exit
+  check         Check documents for syntax errors
+  interface, i  Print a SuperHTML template's interface
+  fmt           Format documents
+  lsp           Start the Super LSP
+  help          Show this menu and exit
+  version       Print Super's version and exit
 
 General Options:
   --help, -h   Print command specific usage
