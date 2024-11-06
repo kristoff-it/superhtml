@@ -274,7 +274,7 @@ const State = union(enum) {
     doctype_public_identifier_single: Token.Doctype,
     after_doctype_public_identifier: Token.Doctype,
 
-    beteen_doctype_public_and_system_identifiers: Token.Doctype,
+    between_doctype_public_and_system_identifiers: Token.Doctype,
     after_doctype_system_kw: Token.Doctype,
 
     before_doctype_system_identifier: Token.Doctype,
@@ -674,7 +674,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 // Entering this state would have to be triggered by the
                 // parser, but we never do it as we consider plaintext a
                 // deprecated and unsupported tag (ie we emit an error
-                // and treat it like a normal tag to contiue parsing).
+                // and treat it like a normal tag to continue parsing).
                 unreachable;
                 // if (!self.consume(src)) {
                 //     // EOF
@@ -4456,7 +4456,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Switch to the between DOCTYPE public and system identifiers state.
                     '\t', '\n', '\r', form_feed, ' ' => {
                         self.state = .{
-                            .beteen_doctype_public_and_system_identifiers = state,
+                            .between_doctype_public_and_system_identifiers = state,
                         };
                     },
                     // U+0022 QUOTATION MARK (")
@@ -4529,7 +4529,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                 }
             },
             // https://html.spec.whatwg.org/multipage/parsing.html#between-doctype-public-and-system-identifiers-state
-            .beteen_doctype_public_and_system_identifiers => |state| {
+            .between_doctype_public_and_system_identifiers => |state| {
                 if (!self.consume(src)) {
                     // EOF
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.

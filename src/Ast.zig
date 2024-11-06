@@ -296,7 +296,7 @@ pub fn init(
         ) orelse continue;
         const new_node_idx: u32 = @intCast(p.nodes.items.len - 1);
 
-        // Iterface and block mode
+        // Interface and block mode
         switch (new_node.kind) {
             .root, .super_block => unreachable,
             .super, .element, .ctx => {},
@@ -478,7 +478,7 @@ const Parser = struct {
                         //     "unexpected_extend",
                         //     "UNEXPECTED EXTEND TAG",
                         //     \\The <extend> tag can only be present at the beginning of a
-                        //     \\template and it can only be preceeded by HTML comments and
+                        //     \\template and it can only be preceded by HTML comments and
                         //     \\whitespace.
                         //     ,
                         // );
