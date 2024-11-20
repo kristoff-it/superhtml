@@ -1,7 +1,6 @@
 # SuperHTML
 HTML Language Server and Templating Language Library
 
-
 ## HTML Language Server
 The Super CLI Tool offers **syntax checking** and **autoformatting** features for HTML files.
 
@@ -118,6 +117,18 @@ After:
     Foo
 </div>
 ```
+
+### Installation
+#### macOS
+
+    brew install boyanxu/brew/superhtml
+
+#### Manual
+
+    git clone https://github.com/kristoff-it/superhtml
+    cd superhtml
+    zig build --release=safe
+    export PATH="$PWD/zig-out/bin:$PATH"
 
 ### Editor support
 #### VSCode
