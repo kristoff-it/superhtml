@@ -195,6 +195,10 @@ autocmd filetype html setlocal makeprg=superhtml\ check\ %
 autocmd filetype html setlocal formatprg=superhtml\ fmt\ --stdin
 ```
 
+#### Zed
+
+See [WeetHet/superhtml-zed](https://github.com/WeetHet/superhtml-zed).
+
 #### Other editors
 Follow your editor specific instructions on how to define a new Language Server for a given language / file format.
 
