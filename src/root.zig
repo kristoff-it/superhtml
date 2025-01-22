@@ -53,7 +53,7 @@ pub const utils = struct {
             ) !Value {
                 return ctx._map.get(path) orelse .{ .err = "field not found" };
             }
-            pub const description =
+            pub const docs_description =
                 \\A special map that contains all the attributes
                 \\ defined on `<ctx>` in the current scope.
                 \\
