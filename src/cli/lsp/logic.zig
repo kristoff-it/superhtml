@@ -56,7 +56,7 @@ pub fn loadFile(
         }
         res.diagnostics = diags;
     } else {
-        if (doc.super) |super_ast| {
+        if (doc.super_ast) |super_ast| {
             const diags = try arena.alloc(
                 lsp.types.Diagnostic,
                 super_ast.errors.len,

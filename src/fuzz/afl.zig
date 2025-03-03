@@ -2,7 +2,7 @@ const std = @import("std");
 const super = @import("superhtml");
 const astgen = @import("astgen.zig");
 
-pub const std_options = .{ .log_level = .err };
+pub const std_options: std.Options = .{ .log_level = .err };
 
 export fn zig_fuzz_init() void {}
 

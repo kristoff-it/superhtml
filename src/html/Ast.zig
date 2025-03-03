@@ -1,6 +1,7 @@
 const Ast = @This();
 
 const std = @import("std");
+const tracy = @import("../tracy.zig");
 const root = @import("../root.zig");
 const Language = root.Language;
 const Span = root.Span;
@@ -121,6 +122,9 @@ pub const Node = struct {
     };
 
     pub fn startTagIterator(n: Node, src: []const u8, language: Language) TagIterator {
+        const zone = tracy.trace(@src());
+        defer zone.end();
+
         var t: Tokenizer = .{
             .language = language,
             .idx = n.open.start,
@@ -538,12 +542,16 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
     // var last_open_was_vertical = false;
     var pre: u32 = 0;
     while (true) {
+        const zone_outer = tracy.trace(@src());
+        defer zone_outer.end();
         log.debug("looping, ind: {}, dir: {s}", .{
             indentation,
             @tagName(direction),
         });
         switch (direction) {
             .enter => {
+                const zone = tracy.trace(@src());
+                defer zone.end();
                 log.debug("rendering enter ({}): {s} {any}", .{
                     indentation,
                     "",
@@ -573,6 +581,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                 }
             },
             .exit => {
+                const zone = tracy.trace(@src());
+                defer zone.end();
                 std.debug.assert(current.kind != .text);
                 std.debug.assert(current.kind != .element_void);
                 std.debug.assert(current.kind != .element_self_closing);
@@ -608,6 +618,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
         switch (current.kind) {
             .root => switch (direction) {
                 .enter => {
+                    const zone = tracy.trace(@src());
+                    defer zone.end();
                     if (current.first_child_idx == 0) break;
                     current = ast.nodes[current.first_child_idx];
                 },
@@ -615,6 +627,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             },
 
             .text => {
+                const zone = tracy.trace(@src());
+                defer zone.end();
                 std.debug.assert(direction == .enter);
 
                 const txt = current.open.slice(src);
@@ -636,6 +650,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             },
 
             .comment => {
+                const zone = tracy.trace(@src());
+                defer zone.end();
                 std.debug.assert(direction == .enter);
 
                 try w.writeAll(current.open.slice(src));
@@ -650,6 +666,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
             },
 
             .doctype => {
+                const zone = tracy.trace(@src());
+                defer zone.end();
                 last_rbracket = current.open.end;
                 const maybe_name, const maybe_extra = blk: {
                     var tt: Tokenizer = .{ .language = ast.language };
@@ -690,6 +708,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
 
             .element, .element_void, .element_self_closing => switch (direction) {
                 .enter => {
+                    const zone = tracy.trace(@src());
+                    defer zone.end();
                     last_rbracket = current.open.end;
                     var tt: Tokenizer = .{
                         .idx = current.open.start,
@@ -802,6 +822,8 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     }
                 },
                 .exit => {
+                    const zone = tracy.trace(@src());
+                    defer zone.end();
                     std.debug.assert(current.kind != .element_void);
                     std.debug.assert(current.kind != .element_self_closing);
                     last_rbracket = current.close.end;

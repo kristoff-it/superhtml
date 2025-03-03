@@ -1,7 +1,7 @@
 const std = @import("std");
 const super = @import("superhtml");
 
-pub const std_options = .{ .log_level = .err };
+pub const std_options: std.Options = .{ .log_level = .err };
 
 /// This main function is meant to be used via black box fuzzers
 /// and/or to manually weed out test cases that are not valid anymore

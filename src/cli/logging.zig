@@ -18,7 +18,7 @@ pub var log_file: ?std.fs.File = switch (builtin.target.os.tag) {
 
 pub fn logFn(
     comptime level: std.log.Level,
-    comptime scope: @Type(.EnumLiteral),
+    comptime scope: @Type(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {

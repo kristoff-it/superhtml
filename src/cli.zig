@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_options = @import("build_options");
+const known = @import("known-folders");
 const super = @import("super");
 const logging = @import("cli/logging.zig");
 const interface_exe = @import("cli/interface.zig");
@@ -8,7 +9,7 @@ const check_exe = @import("cli/check.zig");
 const fmt_exe = @import("cli/fmt.zig");
 const lsp_exe = @import("cli/lsp.zig");
 
-pub const known_folders_config = .{
+pub const known_folders_config = known.KnownFolderConfig{
     .xdg_force_default = true,
     .xdg_on_mac = true,
 };

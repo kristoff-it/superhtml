@@ -11,10 +11,34 @@ pub fn build(b: *std.Build) !void {
     )) |v| .{ .commit = v } else getVersion(b);
 
     const scripty = b.dependency("scripty", .{});
+
+    const enable_tracy = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
+    const tracy_options = b.addOptions();
+    tracy_options.addOption(bool, "enable_tracy", enable_tracy);
+    tracy_options.addOption(bool, "enable_tracy_allocation", false);
+    tracy_options.addOption(bool, "enable_tracy_callstack", true);
+    tracy_options.addOption(usize, "tracy_callstack_depth", 10);
+
     const superhtml = b.addModule("superhtml", .{
         .root_source_file = b.path("src/root.zig"),
+        .target = target,
     });
     superhtml.addImport("scripty", scripty.module("scripty"));
+    superhtml.addOptions("tracy_options", tracy_options);
+
+    if (enable_tracy) {
+        if (target.result.os.tag == .windows) {
+            superhtml.linkSystemLibrary("dbghelp", .{});
+            superhtml.linkSystemLibrary("ws2_32", .{});
+        }
+
+        // superhtml.addObjectFile(b.path("libTracyClient.a"));
+        //
+        superhtml.linkSystemLibrary("TracyClient", .{});
+        superhtml.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/opt/tracy/lib" });
+        superhtml.link_libc = true;
+        superhtml.link_libcpp = true;
+    }
 
     const options = b.addOptions();
     const verbose_logging = b.option(bool, "log", "Enable verbose logging also in release modes") orelse false;
@@ -24,8 +48,8 @@ pub fn build(b: *std.Build) !void {
     options.addOption([]const u8, "version", version.string());
     options.addOption(Version.Kind, "version_kind", version);
 
-    const folders = b.dependency("known-folders", .{});
-    const lsp = b.dependency("zig-lsp-kit", .{});
+    const folders = b.dependency("known_folders", .{});
+    const lsp = b.dependency("lsp_kit", .{});
 
     setupTestStep(b, target, superhtml);
     setupCliTool(b, target, optimize, options, superhtml, folders, lsp);
@@ -62,7 +86,7 @@ fn setupCheckStep(
 
     super_cli_check.root_module.addImport("superhtml", superhtml);
     super_cli_check.root_module.addImport(
-        "known-folders",
+        "known_folders",
         folders.module("known-folders"),
     );
     super_cli_check.root_module.addImport("lsp", lsp.module("lsp"));
@@ -109,7 +133,7 @@ fn setupFuzzStep(
     target: std.Build.ResolvedTarget,
     superhtml: *std.Build.Module,
 ) void {
-    const afl = b.lazyImport(@This(), "zig-afl-kit") orelse return;
+    const afl = b.lazyImport(@This(), "afl_kit") orelse return;
     const afl_obj = b.addObject(.{
         .name = "superfuzz-afl",
         .root_source_file = b.path("src/fuzz/afl.zig"),
@@ -125,9 +149,12 @@ fn setupFuzzStep(
         b,
         target,
         .ReleaseSafe,
+        null,
+        false,
         afl_obj,
-    );
+    ) orelse return;
     b.getInstallStep().dependOn(&b.addInstallFile(afl_fuzz, "superfuzz-afl").step);
+    // b.installArtifact(afl_fuzz);
 
     const super_fuzz = b.addExecutable(.{
         .name = "superfuzz",
@@ -169,7 +196,7 @@ fn setupCliTool(
 
     super_cli.root_module.addImport("superhtml", superhtml);
     super_cli.root_module.addImport(
-        "known-folders",
+        "known_folders",
         folders.module("known-folders"),
     );
     super_cli.root_module.addImport("lsp", lsp.module("lsp"));
@@ -245,8 +272,8 @@ fn setupReleaseStep(
 
         super_exe_release.root_module.addImport("superhtml", superhtml);
         super_exe_release.root_module.addImport(
-            "known-folders",
-            folders.module("known-folders"),
+            "known_folders",
+            folders.module("known_folders"),
         );
         super_exe_release.root_module.addImport("lsp", lsp.module("lsp"));
         super_exe_release.root_module.addOptions("build_options", options);

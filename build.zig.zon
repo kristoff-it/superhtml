@@ -1,23 +1,25 @@
 .{
-    .name = "superhtml",
+    .name = .superhtml,
     .version = "0.4.0",
+    .fingerprint = 0xc5e9aede3c1db363,
+    .minimum_zig_version = "0.14.0-dev.3451+d8d2aa9af",
     .dependencies = .{
-        .@"zig-lsp-kit" = .{
-            .url = "git+https://github.com/kristoff-it/zig-lsp-kit#b4bf61d7fbf9cf7cfdb6f01b211947d2de3e42fd",
-            .hash = "1220b9ce6dc0e1fbcd9e7b406ab164344f81774351495f860a90729187c3c058ef4f",
-        },
-        .@"known-folders" = .{
-            .url = "git+https://github.com/ziglibs/known-folders#1cceeb70e77dec941a4178160ff6c8d05a74de6f",
-            .hash = "12205f5e7505c96573f6fc5144592ec38942fb0a326d692f9cddc0c7dd38f9028f29",
+        .lsp_kit = .{
+            .url = "git+https://github.com/kristoff-it/zig-lsp-kit#87ff3d537a0c852442e180137d9557711963802c",
+            .hash = "lsp_kit-0.1.0-hAAxO9S9AADv_5D0iplASFtNCFXAPk54M0u-3jj2MRFk",
         },
         .scripty = .{
-            .url = "git+https://github.com/kristoff-it/scripty#c76ef31dd5429725220de30504bde89a68565ece",
-            .hash = "1220c242654fe9bdd1be1fdb7b8e142842adc9adcc987efe7eb64af6451f45cbbc34",
+            .url = "git+https://github.com/kristoff-it/scripty#458ed4724feeae91727da4771ffccc5d3ea20a12",
+            .hash = "scripty-0.1.0-LKK5O5--AAAYA23ErngQEPW9Il_kiljcfTRUkDgwK2G4",
         },
-        .@"zig-afl-kit" = .{
-            .url = "git+https://github.com/kristoff-it/zig-afl-kit#f003bfe714f2964c90939fdc940d5993190a66ec",
-            .hash = "1220f2d8402bb7bbc4786b9c0aad73910929ea209cbd3b063842371d68abfed33c1e",
+        .afl_kit = .{
+            .url = "git+https://github.com/kristoff-it/zig-afl-kit?ref=zig-0.14.0#1e9fcaa08361307d16a9bde82b4a7fd4560ce502",
+            .hash = "afl_kit-0.1.0-uhOgGDkdAAALG16McR2B4b8QwRUQ2sa9XdgDTFXRWQTY",
             .lazy = true,
+        },
+        .known_folders = .{
+            .url = "git+https://github.com/ziglibs/known-folders#aa24df42183ad415d10bc0a33e6238c437fc0f59",
+            .hash = "known_folders-0.0.0-Fy-PJtLDAADGDOwYwMkVydMSTp_aN-nfjCZw6qPQ2ECL",
         },
     },
     .paths = .{

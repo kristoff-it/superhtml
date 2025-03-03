@@ -9,11 +9,11 @@ const log = std.log.scoped(.lsp_document);
 language: super.Language,
 src: []const u8,
 html: super.html.Ast,
-super: ?super.Ast = null,
+super_ast: ?super.Ast = null,
 
 pub fn deinit(doc: *Document, gpa: std.mem.Allocator) void {
     doc.html.deinit(gpa);
-    if (doc.super) |s| s.deinit(gpa);
+    if (doc.super_ast) |s| s.deinit(gpa);
 }
 
 pub fn init(
@@ -31,7 +31,7 @@ pub fn init(
     if (language == .superhtml and doc.html.errors.len == 0) {
         const super_ast = try super.Ast.init(gpa, doc.html, src);
         errdefer super_ast.deinit(gpa);
-        doc.super = super_ast;
+        doc.super_ast = super_ast;
     }
 
     return doc;
@@ -43,9 +43,9 @@ pub fn reparse(doc: *Document, gpa: std.mem.Allocator) !void {
     errdefer doc.html.deinit(gpa);
 
     if (doc.language == .superhtml and doc.html.errors.len == 0) {
-        doc.super = try super.Ast.init(gpa, doc.html, doc.src);
+        doc.super_ast = try super.Ast.init(gpa, doc.html, doc.src);
     } else {
-        doc.super = null;
+        doc.super_ast = null;
     }
 
     return;
