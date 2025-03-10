@@ -284,6 +284,14 @@ pub const Handler = struct {
         };
     }
 
+    pub fn documentSymbol(
+        _: Handler,
+        _: std.mem.Allocator,
+        _: types.DocumentSymbolParams,
+    ) !ResultType("textDocument/documentSymbol") {
+        return null;
+    }
+
     pub fn references(
         _: Handler,
         arena: std.mem.Allocator,
@@ -353,7 +361,7 @@ pub const Handler = struct {
         _ = self;
         const id: []const u8 = switch (_response.id) {
             .string => |id| id,
-            .integer => |id| {
+            .number => |id| {
                 log.warn("received response from client with id '{d}' that has no handler!", .{id});
                 return;
             },

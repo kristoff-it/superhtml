@@ -51,10 +51,10 @@ pub fn build(b: *std.Build) !void {
     const folders = b.dependency("known_folders", .{});
     const lsp = b.dependency("lsp_kit", .{});
 
-    setupTestStep(b, target, superhtml);
+    const check = setupCheckStep(b, target, optimize, options, superhtml, folders, lsp);
+    setupTestStep(b, target, superhtml, check);
     setupCliTool(b, target, optimize, options, superhtml, folders, lsp);
     setupWasmStep(b, optimize, options, superhtml, lsp);
-    setupCheckStep(b, target, optimize, options, superhtml, folders, lsp);
     if (version == .tag) {
         setupReleaseStep(b, options, superhtml, folders, lsp);
     }
@@ -76,7 +76,8 @@ fn setupCheckStep(
     superhtml: *std.Build.Module,
     folders: *std.Build.Dependency,
     lsp: *std.Build.Dependency,
-) void {
+) *std.Build.Step {
+    const check = b.step("check", "Check if the SuperHTML CLI compiles");
     const super_cli_check = b.addExecutable(.{
         .name = "superhtml",
         .root_source_file = b.path("src/cli.zig"),
@@ -92,15 +93,17 @@ fn setupCheckStep(
     super_cli_check.root_module.addImport("lsp", lsp.module("lsp"));
     super_cli_check.root_module.addOptions("build_options", options);
 
-    const check = b.step("check", "Check if the SuperHTML CLI compiles");
     check.dependOn(&super_cli_check.step);
+    return check;
 }
 fn setupTestStep(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     superhtml: *std.Build.Module,
+    check: *std.Build.Step,
 ) void {
     const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(check);
 
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/root.zig"),
@@ -273,7 +276,7 @@ fn setupReleaseStep(
         super_exe_release.root_module.addImport("superhtml", superhtml);
         super_exe_release.root_module.addImport(
             "known_folders",
-            folders.module("known_folders"),
+            folders.module("known-folders"),
         );
         super_exe_release.root_module.addImport("lsp", lsp.module("lsp"));
         super_exe_release.root_module.addOptions("build_options", options);

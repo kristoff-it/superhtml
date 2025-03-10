@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_options = @import("build_options");
-const folders = @import("known-folders");
+const folders = @import("known_folders");
 
 pub var log_file: ?std.fs.File = switch (builtin.target.os.tag) {
     .linux, .macos => std.io.getStdErr(),
