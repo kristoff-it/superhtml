@@ -9,8 +9,8 @@
             .hash = "lsp_kit-0.1.0-hAAxO9S9AADv_5D0iplASFtNCFXAPk54M0u-3jj2MRFk",
         },
         .scripty = .{
-            .url = "git+https://github.com/kristoff-it/scripty#7bd74607d3c087ecf1959f105ef80c81ecba7820",
-            .hash = "scripty-0.1.0-LKK5O7y_AAB8jPuXhqVAPeomvFRXp7-drWYMnjssAWQS",
+            .url = "git+https://github.com/kristoff-it/scripty#37dad0cc4a527d9b8148db7b8bfce5cc3670e3fa",
+            .hash = "scripty-0.1.0-LKK5O93AAAAsHaPH44imnLqQ9dKHj-y-jOapdwBe4Dxs",
         },
         .afl_kit = .{
             .url = "git+https://github.com/kristoff-it/zig-afl-kit?ref=zig-0.14.0#1e9fcaa08361307d16a9bde82b4a7fd4560ce502",
