@@ -2,6 +2,9 @@
 
 All notable changes to the "super" extension will be documented in this file.
 
+## [v0.5.3]
+- Fixes remaining bug when formatting void elements vertically.
+ 
 ## [v0.5.2]
 - Starting from this release, a WASM-WASI build of SuperHTML is available on GitHub (in the Releases section) in case editors other than VSCode might watnt to bundle a wasm build of SuperHTML.
  
