@@ -13,18 +13,15 @@ pub fn build(b: *std.Build) !void {
     const scripty = b.dependency("scripty", .{});
 
     const enable_tracy = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
-    const tracy_options = b.addOptions();
-    tracy_options.addOption(bool, "enable_tracy", enable_tracy);
-    tracy_options.addOption(bool, "enable_tracy_allocation", false);
-    tracy_options.addOption(bool, "enable_tracy_callstack", true);
-    tracy_options.addOption(usize, "tracy_callstack_depth", 10);
+
+    const tracy = b.dependency("tracy", .{ .enable = enable_tracy });
 
     const superhtml = b.addModule("superhtml", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
     superhtml.addImport("scripty", scripty.module("scripty"));
-    superhtml.addOptions("tracy_options", tracy_options);
+    superhtml.addImport("tracy", tracy.module("tracy"));
 
     if (enable_tracy) {
         if (target.result.os.tag == .windows) {
@@ -106,14 +103,12 @@ fn setupTestStep(
     test_step.dependOn(check);
 
     const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
+        .root_module = superhtml,
         .target = target,
         .optimize = .Debug,
         // .strip = true,
         // .filter = "if-else-loop",
     });
-
-    unit_tests.root_module.addImport("superhtml", superhtml);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);

@@ -1,8 +1,8 @@
 const std = @import("std");
 const scripty = @import("scripty");
+const tracy = @import("tracy");
 const errors = @import("errors.zig");
 const template = @import("template.zig");
-
 const root = @import("root.zig");
 const utils = root.utils;
 const Span = root.Span;
@@ -73,6 +73,8 @@ pub fn VM(
             name: []const u8,
             path: []const u8,
             src: []const u8,
+            html_ast: html.Ast,
+            super_ast: Ast,
             is_xml: bool,
         };
 
@@ -82,6 +84,8 @@ pub fn VM(
             layout_name: []const u8,
             layout_path: []const u8,
             layout_src: []const u8,
+            layout_html_ast: html.Ast,
+            layout_super_ast: Ast,
             layout_is_xml: bool,
             content_name: []const u8,
             out_writer: OutWriter,
@@ -98,6 +102,8 @@ pub fn VM(
                         .name = layout_name,
                         .path = layout_path,
                         .src = layout_src,
+                        .html_ast = layout_html_ast,
+                        .super_ast = layout_super_ast,
                         .is_xml = layout_is_xml,
                     },
                 },
@@ -116,6 +122,8 @@ pub fn VM(
             vm: *Self,
             path: []const u8,
             src: []const u8,
+            html_ast: html.Ast,
+            super_ast: Ast,
             is_xml: bool,
         ) void {
             const name = vm.state.want_template.name;
@@ -124,6 +132,8 @@ pub fn VM(
                     .name = name,
                     .path = path,
                     .src = src,
+                    .html_ast = html_ast,
+                    .super_ast = super_ast,
                     .is_xml = is_xml,
                 },
             };
@@ -173,6 +183,8 @@ pub fn VM(
         }
 
         fn runInternal(vm: *Self) Exception!void {
+            const zone = tracy.trace(@src());
+            defer zone.end();
             while (true) switch (vm.state) {
                 .done, .want_template, .want_snippet, .fatal => unreachable,
                 .running => break,
@@ -255,25 +267,13 @@ pub fn VM(
         fn loadLayout(vm: *Self) errors.FatalOOM!void {
             const cartridge = vm.state.init;
 
-            const html_ast = try html.Ast.init(
-                vm.arena,
-                cartridge.src,
-                if (cartridge.is_xml) .xml else .superhtml,
-            );
-
-            const super_ast = try Ast.init(
-                vm.arena,
-                html_ast,
-                cartridge.src,
-            );
-
             const layout = try Template.init(
                 vm.arena,
                 cartridge.path,
                 cartridge.name,
                 cartridge.src,
-                html_ast,
-                super_ast,
+                cartridge.html_ast,
+                cartridge.super_ast,
                 .layout,
             );
 
@@ -342,25 +342,14 @@ pub fn VM(
 
         fn loadTemplate(vm: *Self) !void {
             const cartridge = vm.state.loaded_template;
-            const html_ast = try html.Ast.init(
-                vm.arena,
-                cartridge.src,
-                if (cartridge.is_xml) .xml else .superhtml,
-            );
-
-            const super_ast = try Ast.init(
-                vm.arena,
-                html_ast,
-                cartridge.src,
-            );
 
             const t = try Template.init(
                 vm.arena,
                 cartridge.path,
                 cartridge.name,
                 cartridge.src,
-                html_ast,
-                super_ast,
+                cartridge.html_ast,
+                cartridge.super_ast,
                 .template,
             );
 

@@ -12,7 +12,6 @@ const named_character_references = @import("named_character_references.zig");
 
 const std = @import("std");
 const root = @import("../root.zig");
-const tracy = @import("../tracy.zig");
 const Language = root.Language;
 const Span = root.Span;
 
@@ -397,9 +396,6 @@ pub fn getName(tokenizer: *Tokenizer, tag_src: []const u8) ?Span {
 }
 
 pub fn next(self: *Tokenizer, src: []const u8) ?Token {
-    const zone = tracy.trace(@src());
-    defer zone.end();
-
     if (self.deferred_token) |t| {
         const token_copy = t;
         self.deferred_token = null;

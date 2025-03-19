@@ -1,7 +1,7 @@
 const Ast = @This();
 
 const std = @import("std");
-const tracy = @import("../tracy.zig");
+const tracy = @import("tracy");
 const root = @import("../root.zig");
 const Language = root.Language;
 const Span = root.Span;

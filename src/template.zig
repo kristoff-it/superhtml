@@ -1,5 +1,6 @@
 const std = @import("std");
 const scripty = @import("scripty");
+const tracy = @import("tracy");
 const root = @import("root.zig");
 const errors = @import("errors.zig");
 const html = @import("html.zig");
@@ -247,6 +248,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             writer: OutWriter,
             err_writer: errors.ErrWriter,
         ) errors.FatalShowOOM!Continuation {
+            const zone = tracy.trace(@src());
+            defer zone.end();
+
             scripty_vm.reset();
             scripty_ctx.ctx._map = &tpl.ctx;
             std.debug.assert(tpl.cursor.current() != null);
@@ -924,6 +928,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             script_attr_name: Span,
             code_span: Span,
         ) errors.Fatal!Value {
+            const zone = tracy.trace(@src());
+            defer zone.end();
+
             tpl.setContext(script_ctx);
 
             const result = script_vm.run(
@@ -974,6 +981,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             script_attr_name: Span,
             code_span: Span,
         ) errors.Fatal!Value {
+            const zone = tracy.trace(@src());
+            defer zone.end();
+
             tpl.setContext(script_ctx);
 
             const result = script_vm.run(
@@ -1022,6 +1032,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             script_attr_name: Span,
             code_span: Span,
         ) errors.Fatal!ScriptyVM.Result {
+            const zone = tracy.trace(@src());
+            defer zone.end();
+
             tpl.setContext(script_ctx);
             const result = script_vm.run(
                 tpl.arena,
@@ -1067,6 +1080,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             script_attr_name: Span,
             code_span: Span,
         ) errors.Fatal!Value {
+            const zone = tracy.trace(@src());
+            defer zone.end();
+
             tpl.setContext(script_ctx);
             const result = script_vm.run(
                 tpl.arena,
@@ -1116,6 +1132,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             script_attr_name: Span,
             code_span: Span,
         ) errors.Fatal!*Value.Iterator {
+            const zone = tracy.trace(@src());
+            defer zone.end();
+
             tpl.setContext(script_ctx);
 
             const result = script_vm.run(
