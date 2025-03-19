@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const html = @import("html.zig");
 const Span = @import("root.zig").Span;
 
-pub const ErrWriter = std.fs.File.Writer;
+pub const ErrWriter = std.ArrayList(u8).Writer;
 
 /// Used to catch programming errors where a function fails to report
 /// correctly that an error has occurred.
