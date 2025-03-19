@@ -10,11 +10,14 @@ pub fn build(b: *std.Build) !void {
         "When building the SuperHTML CLI tool force a specific version, bypassing 'git describe'",
     )) |v| .{ .commit = v } else getVersion(b);
 
-    const scripty = b.dependency("scripty", .{});
-
     const enable_tracy = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
 
     const tracy = b.dependency("tracy", .{ .enable = enable_tracy });
+    const scripty = b.dependency("scripty", .{
+        .target = target,
+        .optimize = optimize,
+        .tracy = enable_tracy,
+    });
 
     const superhtml = b.addModule("superhtml", .{
         .root_source_file = b.path("src/root.zig"),
