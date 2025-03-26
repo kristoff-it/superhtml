@@ -930,6 +930,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         ) errors.Fatal!Value {
             const zone = tracy.trace(@src());
             defer zone.end();
+            tracy.messageCopy(code_span.slice(tpl.src));
 
             tpl.setContext(script_ctx);
 
@@ -983,6 +984,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         ) errors.Fatal!Value {
             const zone = tracy.trace(@src());
             defer zone.end();
+            tracy.messageCopy(code_span.slice(tpl.src));
 
             tpl.setContext(script_ctx);
 
@@ -1034,6 +1036,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         ) errors.Fatal!ScriptyVM.Result {
             const zone = tracy.trace(@src());
             defer zone.end();
+            tracy.messageCopy(code_span.slice(tpl.src));
 
             tpl.setContext(script_ctx);
             const result = script_vm.run(
@@ -1082,6 +1085,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         ) errors.Fatal!Value {
             const zone = tracy.trace(@src());
             defer zone.end();
+            tracy.messageCopy(code_span.slice(tpl.src));
 
             tpl.setContext(script_ctx);
             const result = script_vm.run(
@@ -1134,6 +1138,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
         ) errors.Fatal!*Value.Iterator {
             const zone = tracy.trace(@src());
             defer zone.end();
+            tracy.messageCopy(code_span.slice(tpl.src));
 
             tpl.setContext(script_ctx);
 
