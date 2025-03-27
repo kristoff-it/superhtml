@@ -49,7 +49,7 @@ pub fn VM(
         }) = .{},
 
         const ScriptyVM = scripty.VM(Context, Value);
-        const OutWriter = std.io.BufferedWriter(4096, std.fs.File.Writer).Writer;
+        const OutWriter = std.ArrayListUnmanaged(u8).Writer;
         const ErrWriter = errors.ErrWriter;
         const Self = @This();
 
