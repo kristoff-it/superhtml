@@ -168,10 +168,15 @@ pub fn cursor(ast: Ast, idx: u32) Cursor {
     return .{ .ast = ast, .idx = idx, .dir = .in };
 }
 
-pub fn printErrors(ast: Ast, src: []const u8, path: ?[]const u8) void {
+pub fn printErrors(
+    ast: Ast,
+    src: []const u8,
+    path: ?[]const u8,
+    w: anytype,
+) !void {
     for (ast.errors) |err| {
         const range = err.main_location.range(src);
-        std.debug.print("{s}:{}:{}: {s}\n", .{
+        try w.print("{s}:{}:{}: {s}\n", .{
             path orelse "<stdin>",
             range.start.row,
             range.start.col,
