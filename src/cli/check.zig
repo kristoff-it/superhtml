@@ -148,7 +148,7 @@ pub fn checkHtml(
 ) !void {
     const ast = try super.html.Ast.init(arena, code, .html);
     if (ast.errors.len > 0) {
-        ast.printErrors(code, path);
+        try ast.printErrors(code, path, std.io.getStdErr().writer());
         std.process.exit(1);
     }
 }
@@ -160,13 +160,13 @@ fn checkSuper(
 ) !void {
     const html = try super.html.Ast.init(arena, code, .superhtml);
     if (html.errors.len > 0) {
-        html.printErrors(code, path);
+        try html.printErrors(code, path, std.io.getStdErr().writer());
         std.process.exit(1);
     }
 
     const s = try super.Ast.init(arena, html, code);
     if (s.errors.len > 0) {
-        s.printErrors(code, path);
+        try s.printErrors(code, path, std.io.getStdErr().writer());
         std.process.exit(1);
     }
 }

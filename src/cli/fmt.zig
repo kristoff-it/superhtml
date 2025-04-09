@@ -170,7 +170,7 @@ pub fn fmtHtml(
 ) ![]const u8 {
     const ast = try super.html.Ast.init(arena, code, .html);
     if (ast.errors.len > 0) {
-        ast.printErrors(code, path);
+        try ast.printErrors(code, path, std.io.getStdErr().writer());
         std.process.exit(1);
     }
 
@@ -184,7 +184,7 @@ fn fmtSuper(
 ) ![]const u8 {
     const ast = try super.html.Ast.init(arena, code, .superhtml);
     if (ast.errors.len > 0) {
-        ast.printErrors(code, path);
+        try ast.printErrors(code, path, std.io.getStdErr().writer());
         std.process.exit(1);
     }
 
