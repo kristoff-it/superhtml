@@ -91,6 +91,7 @@ pub const TokenError = enum {
     unexpected_equals_sign_before_attribute_name,
     unexpected_null_character,
     unexpected_solidus_in_tag,
+    unrecognized_element,
 
     missing_semicolon_after_character_reference,
     unknown_named_character_reference,
