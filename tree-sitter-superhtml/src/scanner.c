@@ -43,15 +43,15 @@ static unsigned serialize(Scanner *scanner, char *buffer) {
             if (size + 2 + name_length >= TREE_SITTER_SERIALIZATION_BUFFER_SIZE) {
                 break;
             }
-            buffer[size++] = (char)tag.type;
-            buffer[size++] = (char)name_length;
+            buffer[size++] = (uint8_t)tag.type;
+            buffer[size++] = (uint8_t)name_length;
             strncpy(&buffer[size], tag.custom_tag_name.contents, name_length);
             size += name_length;
         } else {
             if (size + 1 >= TREE_SITTER_SERIALIZATION_BUFFER_SIZE) {
                 break;
             }
-            buffer[size++] = (char)tag.type;
+            buffer[size++] = (uint8_t)tag.type;
         }
     }
 
@@ -81,7 +81,7 @@ static void deserialize(Scanner *scanner, const char *buffer, unsigned length) {
             unsigned iter = 0;
             for (iter = 0; iter < serialized_tag_count; iter++) {
                 Tag tag = tag_new();
-                tag.type = (TagType)buffer[size++];
+                tag.type = (TagType)(uint8_t)buffer[size++];
                 if (tag.type == CUSTOM) {
                     uint16_t name_length = (uint8_t)buffer[size++];
                     array_reserve(&tag.custom_tag_name, name_length);
