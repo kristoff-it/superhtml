@@ -591,7 +591,10 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                 std.debug.assert(current.kind != .text);
                 std.debug.assert(current.kind != .element_void);
                 std.debug.assert(current.kind != .element_self_closing);
-                if (current.kind == .root) return;
+                if (current.kind == .root) {
+                    try w.writeAll("\n");
+                    return;
+                }
 
                 log.debug("rendering exit ({}): {s} {any}", .{
                     indentation,
@@ -951,7 +954,7 @@ fn debugNodes(nodes: []const Node, src: []const u8) void {
 }
 
 test "basics" {
-    const case = "<html><head></head><body><div><link></div></body></html>";
+    const case = "<html><head></head><body><div><link></div></body></html>\n";
 
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
@@ -962,7 +965,7 @@ test "basics" {
 test "basics - attributes" {
     const case = "<html><head></head><body>" ++
         \\<div id="foo" class="bar">
-    ++ "<link></div></body></html>";
+    ++ "<link></div></body></html>\n";
 
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
@@ -979,6 +982,7 @@ test "newlines" {
         \\    <div><link></div>
         \\  </body>
         \\</html>
+        \\
     ;
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
@@ -1017,6 +1021,7 @@ test "formatting - simple" {
         \\    <div><link></div>
         \\  </body>
         \\</html>
+        \\
     ;
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
@@ -1034,7 +1039,7 @@ test "formatting - attributes" {
         \\      ></div>
         \\    </div>
         \\  </body>
-        \\</html>     
+        \\</html>
     ;
     const expected =
         \\<html>
@@ -1049,6 +1054,7 @@ test "formatting - attributes" {
         \\    </div>
         \\  </body>
         \\</html>
+        \\
     ;
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
@@ -1065,6 +1071,7 @@ test "pre" {
         \\<b>
         \\</b>
         \\<pre>      </pre>
+        \\
     ;
 
     const ast = try Ast.init(std.testing.allocator, case, .html);
@@ -1083,6 +1090,7 @@ test "pre text" {
         \\  banana
         \\</b>
         \\<pre>   banana   </pre>
+        \\
     ;
 
     const ast = try Ast.init(std.testing.allocator, case, .html);
@@ -1119,6 +1127,7 @@ test "what" {
         \\  </body>
         \\</html>
         \\<a href="#">foo</a>
+        \\
     ;
 
     const ast = try Ast.init(std.testing.allocator, case, .html);
@@ -1155,6 +1164,7 @@ test "spans" {
         \\    <span>World</span>
         \\  </body>
         \\</html>
+        \\
     ;
 
     const ast = try Ast.init(std.testing.allocator, case, .html);
@@ -1169,6 +1179,7 @@ test "arrow span" {
     const expected =
         \\<a href="$if.permalink()">←
         \\  <span var="$if.title"></span></a>
+        \\
     ;
 
     const ast = try Ast.init(std.testing.allocator, case, .html);
@@ -1185,7 +1196,7 @@ test "self-closing tag complex example" {
         \\<svg viewBox="0 0 24 24">
         \\<path d="M14.4,6H20V16H13L12.6,14H7V21H5V4H14L14.4,6M14,14H16V12H18V10H16V8H14V10L13,8V6H11V8H9V6H7V8H9V10H7V12H9V10H11V12H13V10L14,12V14M11,10V8H13V10H11M14,10H16V12H14V10Z" />
         \\</svg>
-        \\</div>        
+        \\</div>
     ;
     const expected =
         \\extend template="base.html"/>
@@ -1194,6 +1205,7 @@ test "self-closing tag complex example" {
         \\    <path d="M14.4,6H20V16H13L12.6,14H7V21H5V4H14L14.4,6M14,14H16V12H18V10H16V8H14V10L13,8V6H11V8H9V6H7V8H9V10H7V12H9V10H11V12H13V10L14,12V14M11,10V8H13V10H11M14,10H16V12H14V10Z"/>
         \\  </svg>
         \\</div>
+        \\
     ;
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
