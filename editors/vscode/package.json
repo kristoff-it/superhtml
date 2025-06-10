@@ -71,7 +71,24 @@
           "meta.tag string.quoted": "other"
         }
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "SuperHTML",
+      "properties": {
+        "superhtml.trace.server": {
+          "scope": "window",
+          "type": "string",
+          "description": "Traces the communication between VS Code and the language server.",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off"
+        }
+      }
+    }
   },
   "main": "./out/extension",
   "browser": "./out/extension",
