@@ -992,9 +992,14 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     }
                 }
 
+                const child_start = ast.nodes[current.first_child_idx].open.start;
+                const child_is_vertical =
+                    current.first_child_idx != 0 and
+                    src[current.open.end..child_start].len > 0;
                 if (!current.self_closing and
                     current.kind.isElement() and
-                    !current.kind.isVoid())
+                    !current.kind.isVoid() and
+                    child_is_vertical)
                 {
                     indentation += 1;
                 }
@@ -1017,9 +1022,14 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     current,
                 });
 
+                const child_start = ast.nodes[current.first_child_idx].open.start;
+                const child_was_vertical =
+                    current.first_child_idx != 0 and
+                    src[current.open.end..child_start].len > 0;
                 if (!current.self_closing and
                     current.kind.isElement() and
-                    !current.kind.isVoid())
+                    !current.kind.isVoid() and
+                    child_was_vertical)
                 {
                     indentation -= 1;
                 }
@@ -1648,6 +1658,24 @@ test "newlines" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "tight tags inner indentation" {
+    const case =
+        \\<!DOCTYPE html>
+        \\<html>
+        \\  <head></head>
+        \\  <body>
+        \\    <div><nav><ul>
+        \\      <li></li>
+        \\    </ul></nav></div>
+        \\  </body>
+        \\</html>
+    ;
+    const ast = try Ast.init(std.testing.allocator, case, .html);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
 }
 
 test "bad html" {
