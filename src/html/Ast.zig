@@ -580,14 +580,12 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     }
                 }
 
-                const child_start = ast.nodes[current.first_child_idx].open.start;
-                const child_is_vertical =
-                    current.first_child_idx != 0 and
-                    src[current.open.end..child_start].len > 0;
                 switch (current.kind) {
                     else => {},
-                    .element => if (child_is_vertical) {
-                        indentation += 1;
+                    .element => if (ast.child(current)) |c| {
+                        const maybe_ws_c = src[current.open.end..c.open.start];
+                        if (c.kind == .text or maybe_ws_c.len > 0)
+                            indentation += 1;
                     },
                 }
             },
@@ -605,15 +603,12 @@ pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
                     current,
                 });
 
-                const child_start = ast.nodes[current.first_child_idx].open.start;
-                const child_was_vertical =
-                    current.first_child_idx != 0 and
-                    src[current.open.end..child_start].len > 0;
-
                 switch (current.kind) {
                     else => {},
-                    .element => if (child_was_vertical) {
-                        indentation -= 1;
+                    .element => if (ast.child(current)) |c| {
+                        const maybe_ws_c = src[current.open.end..c.open.start];
+                        if (c.kind == .text or maybe_ws_c.len > 0)
+                            indentation -= 1;
                     },
                 }
 
