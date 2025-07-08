@@ -1,5 +1,6 @@
 const std = @import("std");
 const super = @import("superhtml");
+const ElementValidationMode = super.html.Ast.ElementValidationMode;
 
 const FileType = enum { html, super };
 
@@ -168,7 +169,12 @@ pub fn fmtHtml(
     path: ?[]const u8,
     code: [:0]const u8,
 ) ![]const u8 {
-    const ast = try super.html.Ast.init(arena, code, .html);
+    const ast = try super.html.Ast.init(
+        arena,
+        code,
+        .html,
+        ElementValidationMode.off,
+    );
     if (ast.errors.len > 0) {
         try ast.printErrors(code, path, std.io.getStdErr().writer());
         std.process.exit(1);
@@ -182,7 +188,12 @@ fn fmtSuper(
     path: ?[]const u8,
     code: [:0]const u8,
 ) ![]const u8 {
-    const ast = try super.html.Ast.init(arena, code, .superhtml);
+    const ast = try super.html.Ast.init(
+        arena,
+        code,
+        .superhtml,
+        ElementValidationMode.off,
+    );
     if (ast.errors.len > 0) {
         try ast.printErrors(code, path, std.io.getStdErr().writer());
         std.process.exit(1);

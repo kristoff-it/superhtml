@@ -1,5 +1,6 @@
 const std = @import("std");
 const super = @import("superhtml");
+const ElementValidationMode = super.html.Ast.ElementValidationMode;
 
 const FileType = enum { html, super };
 
@@ -73,7 +74,12 @@ fn renderInterface(
     path: ?[]const u8,
     code: [:0]const u8,
 ) ![]const u8 {
-    const html_ast = try super.html.Ast.init(arena, code, .superhtml);
+    const html_ast = try super.html.Ast.init(
+        arena,
+        code,
+        .superhtml,
+        ElementValidationMode.off,
+    );
     if (html_ast.errors.len > 0) {
         try html_ast.printErrors(code, path, std.io.getStdErr().writer());
         std.process.exit(1);

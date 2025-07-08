@@ -42,7 +42,12 @@ test "afl++ fuzz cases" {
 
     for (cases) |c| {
         // std.debug.print("test: \n\n{s}\n\n", .{c});
-        const ast = try super.html.Ast.init(std.testing.allocator, c, .html);
+        const ast = try super.html.Ast.init(
+            std.testing.allocator,
+            c,
+            .html,
+            super.html.Ast.ElementValidationMode.off,
+        );
         defer ast.deinit(std.testing.allocator);
         if (ast.errors.len == 0) {
             try ast.render(c, std.io.null_writer);
