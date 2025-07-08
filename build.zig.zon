@@ -2,11 +2,11 @@
     .name = .superhtml,
     .version = "0.4.0",
     .fingerprint = 0xc5e9aede3c1db363,
-    .minimum_zig_version = "0.14.0-dev.3451+d8d2aa9af",
+    .minimum_zig_version = "0.14.0",
     .dependencies = .{
-        .lsp_kit = .{
-            .url = "git+https://github.com/kristoff-it/zig-lsp-kit#46e2b958c02dc4ed2d4784f8841ba7d2076da783",
-            .hash = "lsp_kit-0.1.0-hAAxO8G9AACr9SwC5FsYac37Bn7yi968x2UMq4wxKlgr",
+        .lsp_codegen = .{
+            .url = "git+https://github.com/zigtools/zig-lsp-codegen.git#eab79f82a583cf537c59009840f00d686b32d49a",
+            .hash = "lsp_codegen-0.1.0-CMjjo61BCgB43M7Rfw_zGkIn_zigAe7MMlE_Cu9p3HZ6",
         },
         .afl_kit = .{
             .url = "git+https://github.com/kristoff-it/zig-afl-kit#39c33d45dbe3605a9ef7cab863620d1ca78a3623",
