@@ -9,8 +9,8 @@
             .hash = "lsp_kit-0.1.0-hAAxO8G9AACr9SwC5FsYac37Bn7yi968x2UMq4wxKlgr",
         },
         .afl_kit = .{
-            .url = "git+https://github.com/kristoff-it/zig-afl-kit?ref=zig-0.14.0#1e9fcaa08361307d16a9bde82b4a7fd4560ce502",
-            .hash = "afl_kit-0.1.0-uhOgGDkdAAALG16McR2B4b8QwRUQ2sa9XdgDTFXRWQTY",
+            .url = "git+https://github.com/kristoff-it/zig-afl-kit#39c33d45dbe3605a9ef7cab863620d1ca78a3623",
+            .hash = "zig_afl_kit-0.1.0-3k74fQAdAABrirJM84Lo-lnl9mnUMwtJCSPPyIJ0OzAr",
             .lazy = true,
         },
         .known_folders = .{
@@ -22,8 +22,8 @@
             .hash = "tracy-0.0.0-4Xw-1pwwAABTfMgoDP1unCbZDZhJEfict7XCBGF6IdIn",
         },
         .scripty = .{
-            .url = "git+https://github.com/kristoff-it/scripty#57056571abcc6fe69fcb171c10b0c9e5962f53b0",
-            .hash = "scripty-0.1.0-LKK5O9jDAADwZbkwkzYcmtTD3xIStr1SNYWL0kcGf8sk",
+            .url = "git+https://github.com/kristoff-it/scripty#131704ebf9b3557c9480248787bd7b640a6ac98d",
+            .hash = "scripty-0.1.0-LKK5O83DAACoGpVDkm8JxzgevTE76bkf0n3mHyTej9nb",
         },
     },
     .paths = .{
