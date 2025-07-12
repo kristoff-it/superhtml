@@ -1,6 +1,10 @@
-.vscode/**
-.vscode-test/**
-*.vsix
-src/** 
-node_modules/** 
-.gitignore
+**
+!out/**
+!syntaxes/**
+!wasm/**
+!CHANGELOG.md
+!LICENSE
+!package.json
+!README.md
+!superhtml.language-configuration.json
+!vscode.png
