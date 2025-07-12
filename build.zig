@@ -49,7 +49,7 @@ pub fn build(b: *std.Build) !void {
     options.addOption(Version.Kind, "version_kind", version);
 
     const folders = b.dependency("known_folders", .{});
-    const lsp = b.dependency("lsp_kit", .{});
+    const lsp = b.dependency("lsp_codegen", .{});
 
     const check = setupCheckStep(b, target, optimize, options, superhtml, folders, lsp);
     setupTestStep(b, target, superhtml, check);
