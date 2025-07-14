@@ -3,14 +3,12 @@ import {
     startServer
 } from '@vscode/wasm-wasi-lsp';
 import { ProcessOptions, Stdio, Wasm } from '@vscode/wasm-wasi/v1';
-import { ExtensionContext, languages, Uri, window, workspace } from 'vscode';
+import { ExtensionContext, Uri, window, workspace } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
     ServerOptions
 } from 'vscode-languageclient/node';
-import { SuperFormatProvider } from './formatter';
-
 
 let client: LanguageClient;
 export async function activate(context: ExtensionContext) {
@@ -65,27 +63,7 @@ export async function activate(context: ExtensionContext) {
         clientOptions
     );
 
-    context.subscriptions.push(
-        languages.registerDocumentFormattingEditProvider(
-            [{ scheme: "file", language: "html" }],
-            new SuperFormatProvider(client),
-        ),
-        languages.registerDocumentRangeFormattingEditProvider(
-            [{ scheme: "file", language: "html" }],
-            new SuperFormatProvider(client),
-        ),
-        languages.registerDocumentFormattingEditProvider(
-            [{ scheme: "file", language: "superhtml" }],
-            new SuperFormatProvider(client),
-        ),
-        languages.registerDocumentRangeFormattingEditProvider(
-            [{ scheme: "file", language: "superhtml" }],
-            new SuperFormatProvider(client),
-        ),
-    );
-
     await client.start();
-
 }
 
 export function deactivate(): Thenable<void> | undefined {
