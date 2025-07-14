@@ -7,12 +7,12 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     const cmd = Command.parse(args);
     switch (cmd.mode) {
         .stdin => {
-            var buf = std.ArrayList(u8).init(gpa);
-            try std.io.getStdIn().reader().readAllArrayList(&buf, super.max_size);
-            const in_bytes = try buf.toOwnedSliceSentinel(0);
-
+            var fr = std.fs.File.stdin().reader(&.{});
+            var aw: std.Io.Writer.Allocating = .init(gpa);
+            _ = try fr.interface.streamRemaining(&aw.writer);
+            const in_bytes = try aw.toOwnedSliceSentinel(0);
             const out_bytes = try renderInterface(gpa, null, in_bytes);
-            try std.io.getStdOut().writeAll(out_bytes);
+            try std.fs.File.stdout().writeAll(out_bytes);
         },
         .path => |path| {
             var arena_impl = std.heap.ArenaAllocator.init(gpa);
@@ -37,7 +37,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                 },
             };
 
-            try std.io.getStdOut().writeAll(out_bytes);
+            try std.fs.File.stdout().writeAll(out_bytes);
         },
     }
 }
@@ -51,19 +51,14 @@ fn printInterfaceFromFile(
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
 
-    const file = try base_dir.openFile(sub_path, .{});
-    defer file.close();
-
-    const stat = try file.stat();
-    if (stat.kind == .directory)
-        return error.IsDir;
-
-    var buf = std.ArrayList(u8).init(arena);
-    defer buf.deinit();
-
-    try file.reader().readAllArrayList(&buf, super.max_size);
-
-    const in_bytes = try buf.toOwnedSliceSentinel(0);
+    const in_bytes = try base_dir.readFileAllocOptions(
+        arena,
+        sub_path,
+        1024 * 1024 * 4,
+        null,
+        .of(u8),
+        0,
+    );
 
     return renderInterface(arena, full_path, in_bytes);
 }
@@ -75,17 +70,19 @@ fn renderInterface(
 ) ![]const u8 {
     const html_ast = try super.html.Ast.init(arena, code, .superhtml);
     if (html_ast.errors.len > 0) {
-        try html_ast.printErrors(code, path, std.io.getStdErr().writer());
+        var ew = std.fs.File.stderr().writer(&.{});
+        try html_ast.printErrors(code, path, &ew.interface);
         std.process.exit(1);
     }
 
     const s = try super.Ast.init(arena, html_ast, code);
     if (s.errors.len > 0) {
-        try s.printErrors(code, path, std.io.getStdErr().writer());
+        var ew = std.fs.File.stderr().writer(&.{});
+        try s.printErrors(code, path, &ew.interface);
         std.process.exit(1);
     }
 
-    return std.fmt.allocPrint(arena, "{}", .{
+    return std.fmt.allocPrint(arena, "{f}", .{
         s.interfaceFormatter(html_ast, path),
     });
 }

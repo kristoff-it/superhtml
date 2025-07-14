@@ -30,13 +30,14 @@ pub fn panic(
     ret_addr: ?usize,
 ) noreturn {
     if (lsp_mode) {
-        std.log.err("{s}\n\n{?}", .{ msg, trace });
+        std.log.err("{s}\n\n{?f}", .{ msg, trace });
     } else {
-        std.debug.print("{s}\n\n{?}", .{ msg, trace });
+        std.debug.print("{s}\n\n{?f}", .{ msg, trace });
     }
     blk: {
-        const out = if (!lsp_mode) std.io.getStdErr() else logging.log_file orelse break :blk;
-        const w = out.writer();
+        const out: std.fs.File = if (!lsp_mode) std.fs.File.stderr() else logging.log_file orelse break :blk;
+        var writer = out.writer(&.{});
+        const w = &writer.interface;
         if (builtin.strip_debug_info) {
             w.print("Unable to dump stack trace: debug info stripped\n", .{}) catch return;
             break :blk;
@@ -46,7 +47,7 @@ pub fn panic(
             break :blk;
         };
         std.debug.writeCurrentStackTrace(w, debug_info, .no_color, ret_addr) catch |err| {
-            w.print("Unable to dump stack trace: {s}\n", .{@errorName(err)}) catch break :blk;
+            w.print("Unable to dump stack trace: {t}\n", .{err}) catch break :blk;
             break :blk;
         };
     }
@@ -89,7 +90,7 @@ pub fn main() !void {
         .lsp => lsp_exe.run(gpa, args[2..]),
         .help => fatalHelp(),
         .version => printVersion(),
-    } catch |err| fatal("unexpected error: {s}\n", .{@errorName(err)});
+    } catch |err| fatal("unexpected error: {t}\n", .{err});
 }
 
 fn fatal(comptime fmt: []const u8, args: anytype) noreturn {

@@ -16,20 +16,22 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
 
     log.debug("SuperHTML LSP started!", .{});
 
-    var transport: lsp.TransportOverStdio = .init(
-        std.io.getStdIn(),
-        std.io.getStdOut(),
+    var buf: [4096]u8 = undefined;
+    var stdio: lsp.Transport.Stdio = .init(
+        &buf,
+        std.fs.File.stdin(),
+        std.fs.File.stdout(),
     );
 
     var handler: Handler = .{
         .gpa = gpa,
-        .transport = transport.any(),
+        .transport = &stdio.transport,
     };
     defer handler.deinit();
 
     try lsp.basic_server.run(
         gpa,
-        transport.any(),
+        &stdio.transport,
         &handler,
         log.err,
     );
@@ -38,7 +40,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
 pub const Handler = @This();
 
 gpa: std.mem.Allocator,
-transport: lsp.AnyTransport,
+transport: *lsp.Transport,
 files: std.StringHashMapUnmanaged(Document) = .{},
 offset_encoding: offsets.Encoding = .@"utf-16",
 

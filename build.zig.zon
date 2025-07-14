@@ -2,15 +2,11 @@
     .name = .superhtml,
     .version = "0.4.0",
     .fingerprint = 0xc5e9aede3c1db363,
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.0-dev.1034+bd97b6618",
     .dependencies = .{
-        .lsp_codegen = .{
-            .url = "git+https://github.com/zigtools/zig-lsp-codegen.git#eab79f82a583cf537c59009840f00d686b32d49a",
-            .hash = "lsp_codegen-0.1.0-CMjjo61BCgB43M7Rfw_zGkIn_zigAe7MMlE_Cu9p3HZ6",
-        },
         .afl_kit = .{
-            .url = "git+https://github.com/kristoff-it/zig-afl-kit#39c33d45dbe3605a9ef7cab863620d1ca78a3623",
-            .hash = "zig_afl_kit-0.1.0-3k74fQAdAABrirJM84Lo-lnl9mnUMwtJCSPPyIJ0OzAr",
+            .url = "git+https://github.com/kristoff-it/zig-afl-kit#8ef04d1db48650345dca68da1e1b8f2615125c40",
+            .hash = "afl_kit-0.1.0-NdJ3cvscAACLEvjZTB017IAks_Uq5ux1qpA-klDe384Y",
             .lazy = true,
         },
         .known_folders = .{
@@ -21,9 +17,13 @@
             .url = "git+https://github.com/kristoff-it/tracy#67d2d89e351048c76fc6d161e0ac09d8a831dc60",
             .hash = "tracy-0.0.0-4Xw-1pwwAABTfMgoDP1unCbZDZhJEfict7XCBGF6IdIn",
         },
+        .lsp_kit = .{
+            .url = "git+https://github.com/zigtools/lsp-kit#e58d398b4058eea09d984d5d039eddd243e535ad",
+            .hash = "lsp_kit-0.1.0-bi_PL5IyCgCh6ZNq1VaDklFqV0u23xNSXONjfDpYceJr",
+        },
         .scripty = .{
-            .url = "git+https://github.com/kristoff-it/scripty#131704ebf9b3557c9480248787bd7b640a6ac98d",
-            .hash = "scripty-0.1.0-LKK5O83DAACoGpVDkm8JxzgevTE76bkf0n3mHyTej9nb",
+            .url = "git+https://github.com/kristoff-it/scripty#3d56bb62a1aec0b07b634aea42ec46e72e017e33",
+            .hash = "scripty-0.1.0-LKK5O2zEAADkO2rJa_QbMWwC_YmFnUKC384wwMeBGOQv",
         },
     },
     .paths = .{

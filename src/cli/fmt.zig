@@ -8,20 +8,23 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     var any_error = false;
     switch (cmd.mode) {
         .stdin => {
-            var buf = std.ArrayList(u8).init(gpa);
-            try std.io.getStdIn().reader().readAllArrayList(&buf, super.max_size);
-            const in_bytes = try buf.toOwnedSliceSentinel(0);
+            var fr = std.fs.File.stdin().reader(&.{});
+            var aw: std.Io.Writer.Allocating = .init(gpa);
+            _ = try fr.interface.streamRemaining(&aw.writer);
+            const in_bytes = try aw.toOwnedSliceSentinel(0);
 
             const out_bytes = try fmtHtml(gpa, null, in_bytes);
-            try std.io.getStdOut().writeAll(out_bytes);
+
+            try std.fs.File.stdout().writeAll(out_bytes);
         },
         .stdin_super => {
-            var buf = std.ArrayList(u8).init(gpa);
-            try std.io.getStdIn().reader().readAllArrayList(&buf, super.max_size);
-            const in_bytes = try buf.toOwnedSliceSentinel(0);
+            var fr = std.fs.File.stdin().reader(&.{});
+            var aw: std.Io.Writer.Allocating = .init(gpa);
+            _ = try fr.interface.streamRemaining(&aw.writer);
+            const in_bytes = try aw.toOwnedSliceSentinel(0);
 
             const out_bytes = try fmtSuper(gpa, null, in_bytes);
-            try std.io.getStdOut().writeAll(out_bytes);
+            try std.fs.File.stdout().writeAll(out_bytes);
         },
         .paths => |paths| {
             // checkFile will reset the arena at the end of each call
@@ -105,12 +108,14 @@ fn formatFile(
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
 
-    const file = try base_dir.openFile(sub_path, .{});
-    defer file.close();
-
-    const stat = try file.stat();
-    if (stat.kind == .directory)
-        return error.IsDir;
+    const in_bytes = try base_dir.readFileAllocOptions(
+        arena,
+        sub_path,
+        super.max_size,
+        null,
+        .of(u8),
+        0,
+    );
 
     const file_type: FileType = blk: {
         const ext = std.fs.path.extension(sub_path);
@@ -125,13 +130,6 @@ fn formatFile(
         }
         return;
     };
-
-    var buf = std.ArrayList(u8).init(arena);
-    defer buf.deinit();
-
-    try file.reader().readAllArrayList(&buf, super.max_size);
-
-    const in_bytes = try buf.toOwnedSliceSentinel(0);
 
     const out_bytes = switch (file_type) {
         .html => try fmtHtml(
@@ -148,14 +146,15 @@ fn formatFile(
 
     if (std.mem.eql(u8, out_bytes, in_bytes)) return;
 
-    const stdout = std.io.getStdOut().writer();
+    var stdout_writer = std.fs.File.stdout().writer(&.{});
+    const stdout = &stdout_writer.interface;
     if (check) {
         any_error.* = true;
         try stdout.print("{s}\n", .{full_path});
         return;
     }
 
-    var af = try base_dir.atomicFile(sub_path, .{ .mode = stat.mode });
+    var af = try base_dir.atomicFile(sub_path, .{});
     defer af.deinit();
 
     try af.file.writeAll(out_bytes);
@@ -170,11 +169,12 @@ pub fn fmtHtml(
 ) ![]const u8 {
     const ast = try super.html.Ast.init(arena, code, .html);
     if (ast.errors.len > 0) {
-        try ast.printErrors(code, path, std.io.getStdErr().writer());
+        var ew = std.fs.File.stderr().writer(&.{});
+        try ast.printErrors(code, path, &ew.interface);
         std.process.exit(1);
     }
 
-    return std.fmt.allocPrint(arena, "{}", .{ast.formatter(code)});
+    return std.fmt.allocPrint(arena, "{f}", .{ast.formatter(code)});
 }
 
 fn fmtSuper(
@@ -184,11 +184,12 @@ fn fmtSuper(
 ) ![]const u8 {
     const ast = try super.html.Ast.init(arena, code, .superhtml);
     if (ast.errors.len > 0) {
-        try ast.printErrors(code, path, std.io.getStdErr().writer());
+        var ew = std.fs.File.stderr().writer(&.{});
+        try ast.printErrors(code, path, &ew.interface);
         std.process.exit(1);
     }
 
-    return std.fmt.allocPrint(arena, "{}", .{ast.formatter(code)});
+    return std.fmt.allocPrint(arena, "{f}", .{ast.formatter(code)});
 }
 
 fn oom() noreturn {

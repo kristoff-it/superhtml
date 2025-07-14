@@ -8,16 +8,18 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     var any_error = false;
     switch (cmd.mode) {
         .stdin => {
-            var buf = std.ArrayList(u8).init(gpa);
-            try std.io.getStdIn().reader().readAllArrayList(&buf, super.max_size);
-            const in_bytes = try buf.toOwnedSliceSentinel(0);
+            var fr = std.fs.File.stdin().reader(&.{});
+            var aw: std.Io.Writer.Allocating = .init(gpa);
+            _ = try fr.interface.streamRemaining(&aw.writer);
+            const in_bytes = try aw.toOwnedSliceSentinel(0);
 
             try checkHtml(gpa, null, in_bytes);
         },
         .stdin_super => {
-            var buf = std.ArrayList(u8).init(gpa);
-            try std.io.getStdIn().reader().readAllArrayList(&buf, super.max_size);
-            const in_bytes = try buf.toOwnedSliceSentinel(0);
+            var fr = std.fs.File.stdin().reader(&.{});
+            var aw: std.Io.Writer.Allocating = .init(gpa);
+            _ = try fr.interface.streamRemaining(&aw.writer);
+            const in_bytes = try aw.toOwnedSliceSentinel(0);
 
             try checkSuper(gpa, null, in_bytes);
         },
@@ -39,16 +41,16 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                             path,
                             &any_error,
                         ) catch |dir_err| {
-                            std.debug.print("Error walking dir '{s}': {s}\n", .{
+                            std.debug.print("Error walking dir '{s}': {t}\n", .{
                                 path,
-                                @errorName(dir_err),
+                                dir_err,
                             });
                             std.process.exit(1);
                         };
                     },
                     else => {
-                        std.debug.print("Error while accessing '{s}': {s}\n", .{
-                            path, @errorName(err),
+                        std.debug.print("Error while accessing '{s}': {t}\n", .{
+                            path, err,
                         });
                         std.process.exit(1);
                     },
@@ -99,12 +101,14 @@ fn checkFile(
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
 
-    const file = try base_dir.openFile(sub_path, .{});
-    defer file.close();
-
-    const stat = try file.stat();
-    if (stat.kind == .directory)
-        return error.IsDir;
+    const in_bytes = try base_dir.readFileAllocOptions(
+        arena,
+        sub_path,
+        super.max_size,
+        null,
+        .of(u8),
+        0,
+    );
 
     const file_type: FileType = blk: {
         const ext = std.fs.path.extension(sub_path);
@@ -119,13 +123,6 @@ fn checkFile(
         }
         return;
     };
-
-    var buf = std.ArrayList(u8).init(arena);
-    defer buf.deinit();
-
-    try file.reader().readAllArrayList(&buf, super.max_size);
-
-    const in_bytes = try buf.toOwnedSliceSentinel(0);
 
     switch (file_type) {
         .html => try checkHtml(
@@ -148,7 +145,8 @@ pub fn checkHtml(
 ) !void {
     const ast = try super.html.Ast.init(arena, code, .html);
     if (ast.errors.len > 0) {
-        try ast.printErrors(code, path, std.io.getStdErr().writer());
+        var stderr = std.fs.File.stderr().writer(&.{});
+        try ast.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }
 }
@@ -160,13 +158,15 @@ fn checkSuper(
 ) !void {
     const html = try super.html.Ast.init(arena, code, .superhtml);
     if (html.errors.len > 0) {
-        try html.printErrors(code, path, std.io.getStdErr().writer());
+        var stderr = std.fs.File.stderr().writer(&.{});
+        try html.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }
 
     const s = try super.Ast.init(arena, html, code);
     if (s.errors.len > 0) {
-        try s.printErrors(code, path, std.io.getStdErr().writer());
+        var stderr = std.fs.File.stderr().writer(&.{});
+        try s.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }
 }

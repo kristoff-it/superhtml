@@ -891,15 +891,7 @@ const Formatter = struct {
     ast: Ast,
     src: []const u8,
 
-    pub fn format(
-        f: Formatter,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        out_stream: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(f: Formatter, out_stream: anytype) !void {
         try f.ast.render(f.src, out_stream);
     }
 };
@@ -956,7 +948,7 @@ test "basics" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
 }
 
 test "basics - attributes" {
@@ -967,7 +959,7 @@ test "basics - attributes" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
 }
 
 test "newlines" {
@@ -983,7 +975,7 @@ test "newlines" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
 }
 
 test "bad html" {
@@ -1000,7 +992,7 @@ test "bad html" {
     const ast = try Ast.init(std.testing.allocator, case);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
 }
 
 test "formatting - simple" {
@@ -1021,7 +1013,7 @@ test "formatting - simple" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
 
 test "formatting - attributes" {
@@ -1053,7 +1045,7 @@ test "formatting - attributes" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
 
 test "pre" {
@@ -1070,7 +1062,7 @@ test "pre" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
 
 test "pre text" {
@@ -1088,7 +1080,7 @@ test "pre text" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
 
 test "what" {
@@ -1124,7 +1116,7 @@ test "what" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
 
 test "spans" {
@@ -1160,7 +1152,7 @@ test "spans" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
 test "arrow span" {
     const case =
@@ -1174,7 +1166,7 @@ test "arrow span" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
 
 test "self-closing tag complex example" {
@@ -1198,7 +1190,7 @@ test "self-closing tag complex example" {
     const ast = try Ast.init(std.testing.allocator, case, .html);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
 
 pub const Cursor = struct {
