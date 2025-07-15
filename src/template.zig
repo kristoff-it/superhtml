@@ -1,4 +1,5 @@
 const std = @import("std");
+const Writer = std.Io.Writer;
 const scripty = @import("scripty");
 const tracy = @import("tracy");
 const root = @import("root.zig");
@@ -11,7 +12,7 @@ const Node = Ast.Node;
 
 const log = std.log.scoped(.supertemplate);
 
-pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
+pub fn SuperTemplate(comptime ScriptyVM: type) type {
     return struct {
         arena: std.mem.Allocator,
         name: []const u8,
@@ -82,7 +83,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             std.debug.assert(tpl.print_cursor == tpl.print_end);
         }
 
-        pub fn showBlocks(tpl: Template, err_writer: errors.ErrWriter) error{ErrIO}!void {
+        pub fn showBlocks(tpl: Template, err_writer: *Writer) error{ErrIO}!void {
             var found_first = false;
             var it = tpl.ast.blocks.iterator();
             while (it.next()) |kv| {
@@ -111,7 +112,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             err_writer.print("\n", .{}) catch return error.ErrIO;
         }
 
-        pub fn showInterface(tpl: Template, err_writer: errors.ErrWriter) error{ErrIO}!void {
+        pub fn showInterface(tpl: Template, err_writer: *Writer) error{ErrIO}!void {
             var found_first = false;
             var it = tpl.ast.interface.iterator();
             while (it.next()) |kv| {
@@ -144,8 +145,8 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             super_id: []const u8,
-            writer: OutWriter,
-            err_writer: errors.ErrWriter,
+            writer: *Writer,
+            err_writer: *Writer,
         ) errors.FatalOOM!void {
             _ = script_vm;
             _ = script_ctx;
@@ -245,8 +246,8 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
             tpl: *Template,
             scripty_vm: *ScriptyVM,
             scripty_ctx: *Context,
-            writer: OutWriter,
-            err_writer: errors.ErrWriter,
+            writer: *Writer,
+            err_writer: *Writer,
         ) errors.FatalShowOOM!Continuation {
             const zone = tracy.trace(@src());
             defer zone.end();
@@ -922,7 +923,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         fn evalVar(
             tpl: *Template,
-            err_writer: errors.ErrWriter,
+            err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             script_attr_name: Span,
@@ -976,7 +977,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         fn evalCtx(
             tpl: *Template,
-            err_writer: errors.ErrWriter,
+            err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             script_attr_name: Span,
@@ -1028,7 +1029,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         fn evalAttr(
             tpl: *Template,
-            err_writer: errors.ErrWriter,
+            err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             script_attr_name: Span,
@@ -1077,7 +1078,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         fn evalIf(
             tpl: *Template,
-            err_writer: errors.ErrWriter,
+            err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             script_attr_name: Span,
@@ -1130,7 +1131,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         fn evalLoop(
             tpl: *Template,
-            err_writer: errors.ErrWriter,
+            err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: *Context,
             script_attr_name: Span,
@@ -1183,7 +1184,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         pub fn reportError(
             self: Template,
-            err_writer: errors.ErrWriter,
+            err_writer: *Writer,
             bad_node: Span,
             error_code: []const u8,
             comptime title: []const u8,
@@ -1203,7 +1204,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type, comptime OutWriter: type) type {
 
         pub fn diagnostic(
             tpl: Template,
-            err_writer: errors.ErrWriter,
+            err_writer: *Writer,
             bracket: bool,
             note_line: []const u8,
             bad_node: Span,

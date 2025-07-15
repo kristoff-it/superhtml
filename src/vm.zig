@@ -1,4 +1,5 @@
 const std = @import("std");
+const Writer = std.Io.Writer;
 const scripty = @import("scripty");
 const tracy = @import("tracy");
 const errors = @import("errors.zig");
@@ -33,8 +34,8 @@ pub fn VM(
     return struct {
         arena: std.mem.Allocator,
         content_name: []const u8,
-        out: OutWriter,
-        err: ErrWriter,
+        out: *Writer,
+        err: *Writer,
 
         state: State,
         quota: usize = 100,
@@ -49,11 +50,9 @@ pub fn VM(
         }) = .{},
 
         const ScriptyVM = scripty.VM(Context, Value);
-        const OutWriter = std.ArrayListUnmanaged(u8).Writer;
-        const ErrWriter = errors.ErrWriter;
         const Self = @This();
 
-        pub const Template = SuperTemplate(ScriptyVM, OutWriter);
+        pub const Template = SuperTemplate(ScriptyVM);
         pub const State = union(enum) {
             init: TemplateCartridge,
             discovering_templates,
@@ -88,8 +87,8 @@ pub fn VM(
             layout_super_ast: Ast,
             layout_is_xml: bool,
             content_name: []const u8,
-            out_writer: OutWriter,
-            err_writer: ErrWriter,
+            out_writer: *Writer,
+            err_writer: *Writer,
         ) Self {
             return .{
                 .arena = arena,
@@ -568,7 +567,7 @@ pub fn VM(
         fn fatalTrace(
             content_name: []const u8,
             items: []const Template,
-            err_writer: errors.ErrWriter,
+            err_writer: *Writer,
         ) errors.Fatal {
             err_writer.print("trace:\n", .{}) catch return error.ErrIO;
             var cursor = items.len - 1;

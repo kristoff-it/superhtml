@@ -1,9 +1,8 @@
 const std = @import("std");
+const Writer = std.Io.Writer;
 const builtin = @import("builtin");
 const html = @import("html.zig");
 const Span = @import("root.zig").Span;
-
-pub const ErrWriter = std.ArrayListUnmanaged(u8).Writer;
 
 /// Used to catch programming errors where a function fails to report
 /// correctly that an error has occurred.
@@ -29,7 +28,7 @@ pub const FatalShow = Fatal || error{
 pub const FatalShowOOM = error{OutOfMemory} || FatalShow;
 
 pub fn report(
-    writer: ErrWriter,
+    writer: *Writer,
     template_name: []const u8,
     template_path: []const u8,
     bad_node: Span,
@@ -52,7 +51,7 @@ pub fn report(
 }
 
 pub fn diagnostic(
-    writer: ErrWriter,
+    writer: *Writer,
     template_name: []const u8,
     template_path: []const u8,
     bracket_line: bool,
@@ -102,7 +101,7 @@ pub fn diagnostic(
 }
 
 pub fn header(
-    writer: ErrWriter,
+    writer: *Writer,
     comptime title: []const u8,
     comptime msg: []const u8,
 ) error{ErrIO}!void {
@@ -116,7 +115,7 @@ pub fn header(
 }
 
 pub fn fatal(
-    writer: ErrWriter,
+    writer: *Writer,
     comptime fmt: []const u8,
     args: anytype,
 ) Fatal {
