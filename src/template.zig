@@ -395,7 +395,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                 .text => |text| switch (text) {
                                     else => unreachable,
                                     .string => |s| {
-                                        writer.print("{}", .{
+                                        writer.print("{f}", .{
                                             HtmlSafe{ .bytes = s.value },
                                         }) catch return error.OutIO;
                                     },
@@ -613,7 +613,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                 .text => |text| switch (text) {
                                     else => unreachable,
                                     .string => |s| {
-                                        writer.print("{}", .{
+                                        writer.print("{f}", .{
                                             HtmlSafe{ .bytes = s.value },
                                         }) catch return error.OutIO;
                                     },
@@ -738,7 +738,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                     else => unreachable,
                                     .string => |s| {
                                         writer.print(
-                                            "=\"{s}\"",
+                                            "=\"{f}\"",
                                             .{
                                                 HtmlSafe{
                                                     .bytes = s.value,
@@ -858,7 +858,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                 .text => |text| switch (text) {
                                     else => unreachable,
                                     .string => |s| {
-                                        writer.print("{}", .{
+                                        writer.print("{f}", .{
                                             HtmlSafe{ .bytes = s.value },
                                         }) catch return error.OutIO;
                                     },
