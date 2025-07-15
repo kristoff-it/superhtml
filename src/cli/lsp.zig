@@ -225,12 +225,12 @@ pub fn @"textDocument/formatting"(
 
     log.debug("format!!", .{});
 
-    var buf = std.ArrayList(u8).init(arena);
-    try doc.html.render(doc.src, buf.writer());
+    var aw = std.Io.Writer.Allocating.init(arena);
+    try doc.html.render(doc.src, &aw.writer);
 
     return try arena.dupe(types.TextEdit, &.{.{
         .range = range,
-        .newText = buf.items,
+        .newText = aw.getWritten(),
     }});
 }
 

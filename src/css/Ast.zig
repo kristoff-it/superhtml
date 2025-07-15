@@ -1,9 +1,10 @@
+const Ast = @This();
+
 const std = @import("std");
+const Writer = std.Io.Writer();
 const Tokenizer = @import("Tokenizer.zig");
 const root = @import("../root.zig");
 const Span = root.Span;
-
-const Ast = @This();
 
 const at_rules = &.{
     .{ .name = "media", .func = parseMediaRule },
@@ -41,29 +42,39 @@ pub const Rule = struct {
                     pseudo_element: Span,
                 };
 
-                pub fn render(self: Simple, ast: Ast, src: []const u8, out_stream: anytype) !void {
+                pub fn render(
+                    self: Simple,
+                    ast: Ast,
+                    src: []const u8,
+                    w: *Writer,
+                ) !void {
                     if (self.element_name) |element_name| {
                         switch (element_name) {
-                            .name => |name| _ = try out_stream.write(name.slice(src)),
-                            .all => _ = try out_stream.write("*"),
+                            .name => |name| _ = try w.write(name.slice(src)),
+                            .all => _ = try w.write("*"),
                         }
                     }
 
                     for (ast.specifiers[self.specifiers.start..self.specifiers.end]) |specifier| {
                         switch (specifier) {
-                            .hash => |hash| try out_stream.print("#{s}", .{hash.slice(src)}),
-                            .class => |class| try out_stream.print(".{s}", .{class.slice(src)}),
+                            .hash => |hash| try w.print("#{s}", .{hash.slice(src)}),
+                            .class => |class| try w.print(".{s}", .{class.slice(src)}),
                             .attrib => @panic("TODO"),
-                            .pseudo_class => |pseudo_class| try out_stream.print(":{s}", .{pseudo_class.slice(src)}),
-                            .pseudo_element => |pseudo_element| try out_stream.print("::{s}", .{pseudo_element.slice(src)}),
+                            .pseudo_class => |pseudo_class| try w.print(":{s}", .{pseudo_class.slice(src)}),
+                            .pseudo_element => |pseudo_element| try w.print("::{s}", .{pseudo_element.slice(src)}),
                         }
                     }
                 }
             };
 
-            pub fn render(self: Selector, ast: Ast, src: []const u8, out_stream: anytype) !void {
-                switch (self) {
-                    inline else => |sel| try sel.render(ast, src, out_stream),
+            pub fn render(
+                selector: Selector,
+                ast: Ast,
+                src: []const u8,
+                w: *Writer,
+            ) !void {
+                switch (selector) {
+                    inline else => |sel| try sel.render(ast, src, w),
                 }
             }
         };
@@ -72,45 +83,55 @@ pub const Rule = struct {
             property: Span,
             value: Span,
 
-            pub fn render(self: Declaration, src: []const u8, out_stream: anytype) !void {
-                _ = try out_stream.write(self.property.slice(src));
-                _ = try out_stream.write(": ");
-                try renderValue(self.value.slice(src), out_stream);
+            pub fn render(
+                declaration: Declaration,
+                src: []const u8,
+                w: *Writer,
+            ) !void {
+                _ = try w.write(declaration.property.slice(src));
+                _ = try w.write(": ");
+                try renderValue(declaration.value.slice(src), w);
             }
         };
 
-        pub fn render(self: Style, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) !void {
-            for (0..depth) |_| _ = try out_stream.write("    ");
-            for (ast.selectors[self.selectors.start..self.selectors.end], 0..) |selector, i| {
+        pub fn render(
+            style: Style,
+            ast: Ast,
+            src: []const u8,
+            w: *Writer,
+            depth: usize,
+        ) !void {
+            for (0..depth) |_| _ = try w.write("    ");
+            for (ast.selectors[style.selectors.start..style.selectors.end], 0..) |selector, i| {
                 if (i != 0) {
-                    _ = try out_stream.write(", ");
+                    _ = try w.write(", ");
                 }
 
-                try selector.render(ast, src, out_stream);
+                try selector.render(ast, src, w);
             }
 
-            _ = try out_stream.write(" {");
+            _ = try w.write(" {");
 
-            if (self.multiline_decl) {
-                _ = try out_stream.write("\n");
+            if (style.multiline_decl) {
+                _ = try w.write("\n");
 
-                for (ast.declarations[self.declarations.start..self.declarations.end]) |declaration| {
-                    for (0..depth + 1) |_| _ = try out_stream.write("    ");
-                    try declaration.render(src, out_stream);
-                    _ = try out_stream.write(";\n");
+                for (ast.declarations[style.declarations.start..style.declarations.end]) |declaration| {
+                    for (0..depth + 1) |_| _ = try w.write("    ");
+                    try declaration.render(src, w);
+                    _ = try w.write(";\n");
                 }
 
-                for (0..depth) |_| _ = try out_stream.write("    ");
+                for (0..depth) |_| _ = try w.write("    ");
             } else {
-                _ = try out_stream.write(" ");
-                for (ast.declarations[self.declarations.start..self.declarations.end], 0..) |declaration, i| {
-                    if (i != 0) _ = try out_stream.write("; ");
-                    try declaration.render(src, out_stream);
+                _ = try w.write(" ");
+                for (ast.declarations[style.declarations.start..style.declarations.end], 0..) |declaration, i| {
+                    if (i != 0) _ = try w.write("; ");
+                    try declaration.render(src, w);
                 }
-                _ = try out_stream.write(" ");
+                _ = try w.write(" ");
             }
 
-            _ = try out_stream.write("}");
+            _ = try w.write("}");
         }
     };
 
@@ -118,18 +139,21 @@ pub const Rule = struct {
         queries: Span,
         first_rule: ?u32,
 
-        fn renderMediaQuery(query: []const u8, out_stream: anytype) !void {
+        fn renderMediaQuery(
+            query: []const u8,
+            w: *Writer,
+        ) !void {
             var query_tokenizer: Tokenizer = .{};
 
             while (query_tokenizer.next(query)) |token| {
                 switch (token) {
-                    .ident => |ident| _ = try out_stream.write(ident.slice(query)),
+                    .ident => |ident| _ = try w.write(ident.slice(query)),
                     .open_paren => {
-                        _ = try out_stream.write("(");
-                        _ = try out_stream.write(query_tokenizer.next(query).?.ident.slice(query));
+                        _ = try w.write("(");
+                        _ = try w.write(query_tokenizer.next(query).?.ident.slice(query));
                         switch (query_tokenizer.next(query).?) {
                             .colon => {
-                                _ = try out_stream.write(": ");
+                                _ = try w.write(": ");
 
                                 var span: ?Span = null;
                                 while (true) {
@@ -145,60 +169,72 @@ pub const Rule = struct {
 
                                 std.debug.assert(span != null);
 
-                                try renderValue(span.?.slice(query), out_stream);
+                                try renderValue(span.?.slice(query), w);
                             },
                             .close_paren => {},
                             else => unreachable,
                         }
-                        _ = try out_stream.write(")");
+                        _ = try w.write(")");
                     },
                     else => unreachable,
                 }
             }
         }
 
-        pub fn render(self: Media, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) !void {
-            for (0..depth) |_| _ = try out_stream.write("    ");
+        pub fn render(
+            media: Media,
+            ast: Ast,
+            src: []const u8,
+            w: *Writer,
+            depth: usize,
+        ) !void {
+            for (0..depth) |_| _ = try w.write("    ");
 
-            _ = try out_stream.write("@media ");
+            _ = try w.write("@media ");
 
-            for (ast.media_queries[self.queries.start..self.queries.end], 0..) |query, i| {
+            for (ast.media_queries[media.queries.start..media.queries.end], 0..) |query, i| {
                 if (i != 0) {
-                    _ = try out_stream.write(", ");
+                    _ = try w.write(", ");
                 }
 
-                try renderMediaQuery(query.slice(src), out_stream);
+                try renderMediaQuery(query.slice(src), w);
             }
 
-            _ = try out_stream.write(" {");
+            _ = try w.write(" {");
 
-            if (self.first_rule) |first_rule| {
-                _ = try out_stream.write("\n");
+            if (media.first_rule) |first_rule| {
+                _ = try w.write("\n");
 
                 var first = true;
                 var rule = ast.rules[first_rule];
                 while (true) {
                     if (!first) {
-                        _ = try out_stream.write("\n\n");
+                        _ = try w.write("\n\n");
                     }
                     first = false;
 
-                    try rule.render(ast, src, out_stream, depth + 1);
+                    try rule.render(ast, src, w, depth + 1);
 
                     rule = ast.rules[rule.next orelse break];
                 }
-                _ = try out_stream.write("\n");
+                _ = try w.write("\n");
             }
 
-            for (0..depth) |_| _ = try out_stream.write("    ");
-            _ = try out_stream.write("}");
+            for (0..depth) |_| _ = try w.write("    ");
+            _ = try w.write("}");
         }
     };
 
-    pub fn render(self: Rule, ast: Ast, src: []const u8, out_stream: anytype, depth: usize) anyerror!void {
-        switch (self.type) {
-            .style => |style| try style.render(ast, src, out_stream, depth),
-            .media => |media| try media.render(ast, src, out_stream, depth),
+    pub fn render(
+        rule: Rule,
+        ast: Ast,
+        src: []const u8,
+        w: *Writer,
+        depth: usize,
+    ) anyerror!void {
+        switch (rule.type) {
+            .style => |style| try style.render(ast, src, w, depth),
+            .media => |media| try media.render(ast, src, w, depth),
         }
     }
 };
@@ -275,16 +311,8 @@ const Formatter = struct {
     ast: Ast,
     src: []const u8,
 
-    pub fn format(
-        f: Formatter,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        out_stream: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
-        try f.ast.render(f.src, out_stream);
+    pub fn format(f: Formatter, w: *Writer) !void {
+        try f.ast.render(f.src, w);
     }
 };
 
@@ -295,22 +323,22 @@ pub fn formatter(self: Ast, src: []const u8) Formatter {
     };
 }
 
-pub fn render(self: Ast, src: []const u8, out_stream: anytype) !void {
+pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
     var first = true;
-    var rule = self.rules[self.first_rule orelse return];
+    var rule = ast.rules[ast.first_rule orelse return];
     while (true) {
         if (!first) {
-            _ = try out_stream.write("\n\n");
+            _ = try w.write("\n\n");
         }
         first = false;
 
-        try rule.render(self, src, out_stream, 0);
+        try rule.render(ast, src, w, 0);
 
-        rule = self.rules[rule.next orelse break];
+        rule = ast.rules[rule.next orelse break];
     }
 }
 
-fn renderValue(value: []const u8, out_stream: anytype) !void {
+fn renderValue(value: []const u8, w: *Writer) !void {
     var value_tokenizer: Tokenizer = .{};
 
     var last_token: ?Tokenizer.Token = null;
@@ -322,9 +350,9 @@ fn renderValue(value: []const u8, out_stream: anytype) !void {
             .function => false,
             else => true,
         } else false) {
-            _ = try out_stream.write(" ");
+            _ = try w.write(" ");
         }
-        _ = try out_stream.write(token.span().slice(value));
+        _ = try w.write(token.span().slice(value));
     }
 }
 

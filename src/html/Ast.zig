@@ -1,6 +1,7 @@
 const Ast = @This();
 
 const std = @import("std");
+const Writer = std.Io.Writer;
 const tracy = @import("tracy");
 const root = @import("../root.zig");
 const Language = root.Language;
@@ -172,7 +173,7 @@ pub fn printErrors(
     ast: Ast,
     src: []const u8,
     path: ?[]const u8,
-    w: anytype,
+    w: *Writer,
 ) !void {
     for (ast.errors) |err| {
         const range = err.main_location.range(src);
@@ -537,7 +538,7 @@ pub fn init(
     };
 }
 
-pub fn render(ast: Ast, src: []const u8, w: anytype) !void {
+pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
     std.debug.assert(ast.errors.len == 0);
 
     var indentation: u32 = 0;
@@ -891,8 +892,8 @@ const Formatter = struct {
     ast: Ast,
     src: []const u8,
 
-    pub fn format(f: Formatter, out_stream: anytype) !void {
-        try f.ast.render(f.src, out_stream);
+    pub fn format(f: Formatter, w: *Writer) !void {
+        try f.ast.render(f.src, w);
     }
 };
 

@@ -1,4 +1,6 @@
 const std = @import("std");
+const Writer = std.Io.Writer;
+
 const builtin = @import("builtin");
 const super = @import("superhtml");
 
@@ -77,7 +79,7 @@ const Element = struct {
 
     pub fn commit(
         e: *Element,
-        w: anytype,
+        w: *Writer,
         src: []const u8,
         ends: *std.ArrayList(Tag),
     ) !void {
@@ -208,7 +210,7 @@ pub fn build(gpa: std.mem.Allocator, src: []const u8) ![]const u8 {
     return out.items;
 }
 pub fn buildInternal(
-    w: anytype,
+    w: *Writer,
     src: []const u8,
     ends: *std.ArrayList(Element.Tag),
     current: *Element,
