@@ -13,12 +13,8 @@ pub const HtmlSafe = struct {
 
     pub fn format(
         self: HtmlSafe,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
         out_stream: *Writer,
     ) !void {
-        _ = options;
-        _ = fmt;
         for (self.bytes) |b| {
             switch (b) {
                 '&' => try out_stream.writeAll("&amp;"),
