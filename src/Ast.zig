@@ -233,9 +233,10 @@ pub fn childrenCount(ast: Ast, node: Node) usize {
     return count;
 }
 
-pub fn deinit(ast: Ast, gpa: std.mem.Allocator) void {
-    @constCast(&ast).interface.deinit(gpa);
-    @constCast(&ast).blocks.deinit(gpa);
+pub fn deinit(ast: *const Ast, gpa: std.mem.Allocator) void {
+    var mut_ast = ast.*;
+    mut_ast.interface.deinit(gpa);
+    mut_ast.blocks.deinit(gpa);
     gpa.free(ast.nodes);
     gpa.free(ast.errors);
 }
