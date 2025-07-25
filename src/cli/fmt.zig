@@ -154,10 +154,7 @@ fn formatFile(
         return;
     }
 
-    var wbuf: [1024]u8 = undefined;
-    var af = try base_dir.atomicFile(sub_path, .{
-        .write_buffer = &wbuf,
-    });
+    var af = try base_dir.atomicFile(sub_path, .{ .write_buffer = &.{} });
     defer af.deinit();
 
     try af.file_writer.interface.writeAll(out_bytes);
