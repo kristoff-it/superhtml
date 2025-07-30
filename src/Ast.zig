@@ -1,11 +1,13 @@
 const Ast = @This();
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Writer = std.Io.Writer;
 const builtin = @import("builtin");
+const scripty = @import("scripty");
 const html = @import("html.zig");
 const HtmlNode = html.Ast.Node;
 const Span = @import("root.zig").Span;
-const Writer = std.Io.Writer;
 
 const log = std.log.scoped(.ast);
 
@@ -45,6 +47,18 @@ const Error = struct {
         text_and_html_are_mutually_exclusive,
         text_and_html_require_an_empty_element,
         duplicate_block: Span,
+        scripty: scripty.Parser.Node.Tag,
+
+        pub fn message(k: @This()) []const u8 {
+            return switch (k) {
+                else => @tagName(k),
+                .scripty => |s| s.errorMessage(),
+            };
+        }
+
+        pub fn format(k: @This(), w: *Writer) !void {
+            try w.print("{s}", .{k.message()});
+        }
     },
 
     main_location: Span,
@@ -233,7 +247,7 @@ pub fn childrenCount(ast: Ast, node: Node) usize {
     return count;
 }
 
-pub fn deinit(ast: *const Ast, gpa: std.mem.Allocator) void {
+pub fn deinit(ast: *const Ast, gpa: Allocator) void {
     var mut_ast = ast.*;
     mut_ast.interface.deinit(gpa);
     mut_ast.blocks.deinit(gpa);
@@ -242,7 +256,7 @@ pub fn deinit(ast: *const Ast, gpa: std.mem.Allocator) void {
 }
 
 pub fn init(
-    gpa: std.mem.Allocator,
+    gpa: Allocator,
     html_ast: html.Ast,
     src: []const u8,
 ) error{OutOfMemory}!Ast {
@@ -406,7 +420,7 @@ const Parser = struct {
     interface: std.StringArrayHashMapUnmanaged(u32) = .{},
     blocks: std.StringHashMapUnmanaged(u32) = .{},
 
-    pub fn deinit(p: *Parser, gpa: std.mem.Allocator) void {
+    pub fn deinit(p: *Parser, gpa: Allocator) void {
         p.nodes.deinit(gpa);
         p.errors.deinit(gpa);
         p.interface.deinit(gpa);
@@ -432,7 +446,7 @@ const Parser = struct {
 
     fn buildNode(
         p: *Parser,
-        gpa: std.mem.Allocator,
+        gpa: Allocator,
         elem_idx: u32,
         depth: u32,
         seen_non_comment_elems: bool,
@@ -657,6 +671,8 @@ const Parser = struct {
                                 .main_location = value.span,
                             });
                         }
+
+                        try p.validateScripty(gpa, value.span);
                     } else {
                         if (tmp_result.kind == .ctx) {
                             try p.errors.append(gpa, .{
@@ -710,24 +726,23 @@ const Parser = struct {
                 return null;
             }
 
-            const code = if (attr.value) |v|
-                v.span.slice(p.src)
-            else blk: {
+            if (attr.value) |v| {
+                try p.validateScripty(gpa, v.span);
+            } else {
                 try p.errors.append(gpa, .{
                     .kind = .missing_attribute_value,
                     .main_location = name,
                 });
-                break :blk "";
-            };
-
-            if (code.len > 0 and
-                std.mem.indexOfScalar(u8, code, '$') == null)
-            {
-                try p.errors.append(gpa, .{
-                    .kind = .unscripted_attr,
-                    .main_location = name,
-                });
             }
+
+            // if (code.len > 0 and
+            //     std.mem.indexOfScalar(u8, code, '$') == null)
+            // {
+            //     try p.errors.append(gpa, .{
+            //         .kind = .unscripted_attr,
+            //         .main_location = name,
+            //     });
+            // }
 
             switch (special_attr) {
                 .@":text", .@":html" => {
@@ -805,7 +820,7 @@ const Parser = struct {
         return new_node;
     }
 
-    fn validate(p: *Parser, gpa: std.mem.Allocator) !void {
+    fn validate(p: *Parser, gpa: Allocator) !void {
         var ast: Ast = undefined;
         ast.nodes = p.nodes.items;
         var c = ast.cursor(0);
@@ -992,6 +1007,28 @@ const Parser = struct {
         //     },
         // }
     }
+
+    fn validateScripty(p: *Parser, gpa: Allocator, attr_value: Span) error{OutOfMemory}!void {
+        const code = attr_value.slice(p.src);
+        var scripty_parser: scripty.Parser = .{};
+
+        while (scripty_parser.next(code)) |node| {
+            if (node.tag.isError()) {
+                try p.errors.append(gpa, .{
+                    .kind = .{
+                        .scripty = node.tag,
+                    },
+
+                    .main_location = .{
+                        .start = node.loc.start + attr_value.start,
+                        .end = node.loc.end + attr_value.start,
+                    },
+                });
+
+                return;
+            }
+        }
+    }
 };
 
 pub fn printInterfaceAsHtml(
@@ -1040,7 +1077,7 @@ pub fn printErrors(
 ) !void {
     for (ast.errors) |err| {
         const range = err.main_location.range(src);
-        try w.print("{s}:{}:{}: {t}\n", .{
+        try w.print("{s}:{}:{}: {f}\n", .{
             path orelse "<stdin>",
             range.start.row,
             range.start.col,

@@ -81,7 +81,7 @@ pub fn main() !void {
         fatalHelp();
     };
 
-    if (cmd == .lsp) lsp_mode = true;
+    // if (cmd == .lsp) lsp_mode = true;
 
     _ = switch (cmd) {
         .check => check_exe.run(gpa, args[2..]),

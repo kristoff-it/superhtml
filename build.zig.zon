@@ -22,8 +22,8 @@
             .hash = "lsp_kit-0.1.0-bi_PL18tCgAMyrZ0tgn_0PXnGEvxGWeNkkRygfe9pX9u",
         },
         .scripty = .{
-            .url = "git+https://github.com/kristoff-it/scripty#3d56bb62a1aec0b07b634aea42ec46e72e017e33",
-            .hash = "scripty-0.1.0-LKK5O2zEAADkO2rJa_QbMWwC_YmFnUKC384wwMeBGOQv",
+            .url = "git+https://github.com/kristoff-it/scripty#76581b7e442f98e2a73769125fa68f07d2a7841b",
+            .hash = "scripty-0.1.0-LKK5O6T4AADsciwZGm29PGEI4kwVR5cKOZGIdCGMTTi4",
         },
     },
     .paths = .{

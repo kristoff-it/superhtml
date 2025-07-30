@@ -66,7 +66,7 @@ pub fn loadFile(
                 d.* = .{
                     .range = range,
                     .severity = .Error,
-                    .message = @tagName(err.kind),
+                    .message = err.kind.message(),
                 };
             }
             res.diagnostics = diags;
