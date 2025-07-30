@@ -3,6 +3,7 @@ const Document = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 const super = @import("superhtml");
+const ElementValidationMode = super.html.Ast.ElementValidationMode;
 
 const log = std.log.scoped(.lsp_document);
 
@@ -24,7 +25,12 @@ pub fn init(
     var doc: Document = .{
         .src = src,
         .language = language,
-        .html = try super.html.Ast.init(gpa, src, language),
+        .html = try super.html.Ast.init(
+            gpa,
+            src,
+            language,
+            ElementValidationMode.off,
+        ),
     };
     errdefer doc.html.deinit(gpa);
 
