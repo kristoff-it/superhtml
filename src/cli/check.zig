@@ -1,5 +1,6 @@
 const std = @import("std");
 const super = @import("superhtml");
+const ElementValidationMode = super.html.Ast.ElementValidationMode;
 
 const FileType = enum { html, super };
 
@@ -13,7 +14,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkHtml(gpa, null, in_bytes);
+            try checkHtml(gpa, null, in_bytes, cmd.validationMode);
         },
         .stdin_super => {
             var fr = std.fs.File.stdin().reader(&.{});
@@ -21,7 +22,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkSuper(gpa, null, in_bytes);
+            try checkSuper(gpa, null, in_bytes, cmd.validationMode);
         },
         .paths => |paths| {
             // checkFile will reset the arena at the end of each call
@@ -33,6 +34,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                     path,
                     path,
                     &any_error,
+                    cmd.validationMode,
                 ) catch |err| switch (err) {
                     error.IsDir, error.AccessDenied => {
                         checkDir(
@@ -40,6 +42,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                             &arena_impl,
                             path,
                             &any_error,
+                            cmd.validationMode,
                         ) catch |dir_err| {
                             std.debug.print("Error walking dir '{s}': {t}\n", .{
                                 path,
@@ -69,6 +72,7 @@ fn checkDir(
     arena_impl: *std.heap.ArenaAllocator,
     path: []const u8,
     any_error: *bool,
+    validation_mode: ElementValidationMode,
 ) !void {
     var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer dir.close();
@@ -83,6 +87,7 @@ fn checkDir(
                     item.basename,
                     item.path,
                     any_error,
+                    validation_mode,
                 );
             },
             else => {},
@@ -96,6 +101,7 @@ fn checkFile(
     sub_path: []const u8,
     full_path: []const u8,
     any_error: *bool,
+    validation_mode: ElementValidationMode,
 ) !void {
     _ = any_error;
     defer _ = arena_impl.reset(.retain_capacity);
@@ -125,16 +131,8 @@ fn checkFile(
     };
 
     switch (file_type) {
-        .html => try checkHtml(
-            arena,
-            full_path,
-            in_bytes,
-        ),
-        .super => try checkSuper(
-            arena,
-            full_path,
-            in_bytes,
-        ),
+        .html => try checkHtml(arena, full_path, in_bytes, validation_mode),
+        .super => try checkSuper(arena, full_path, in_bytes, validation_mode),
     }
 }
 
@@ -142,8 +140,9 @@ pub fn checkHtml(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
+    validation_mode: ElementValidationMode,
 ) !void {
-    const ast = try super.html.Ast.init(arena, code, .html);
+    const ast = try super.html.Ast.init(arena, code, .html, validation_mode);
     if (ast.errors.len > 0) {
         var stderr = std.fs.File.stderr().writer(&.{});
         try ast.printErrors(code, path, &stderr.interface);
@@ -155,8 +154,9 @@ fn checkSuper(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
+    validation_mode: ElementValidationMode,
 ) !void {
-    const html = try super.html.Ast.init(arena, code, .superhtml);
+    const html = try super.html.Ast.init(arena, code, .superhtml, validation_mode);
     if (html.errors.len > 0) {
         var stderr = std.fs.File.stderr().writer(&.{});
         try html.printErrors(code, path, &stderr.interface);
@@ -178,6 +178,7 @@ fn oom() noreturn {
 
 const Command = struct {
     mode: Mode,
+    validationMode: ElementValidationMode,
 
     const Mode = union(enum) {
         stdin,
@@ -187,6 +188,7 @@ const Command = struct {
 
     fn parse(args: []const []const u8) Command {
         var mode: ?Mode = null;
+        var element_validation_mode = ElementValidationMode.off;
 
         var idx: usize = 0;
         while (idx < args.len) : (idx += 1) {
@@ -195,6 +197,21 @@ const Command = struct {
                 std.mem.eql(u8, arg, "-h"))
             {
                 fatalHelp();
+            }
+            if (std.mem.startsWith(u8, arg, "--element-validation=")) {
+                const value = arg["--element-validation=".len..];
+                if (std.mem.eql(u8, value, "off")) {
+                    element_validation_mode = .off;
+                } else if (std.mem.eql(u8, value, "standard")) {
+                    element_validation_mode = .standard;
+                } else if (std.mem.eql(u8, value, "web-components")) {
+                    element_validation_mode = .webComponents;
+                } else {
+                    std.debug.print("invalid value for --element-validation: '{s}'\n", .{value});
+                    std.debug.print("valid values are: off, standard, web-components\n", .{});
+                    std.process.exit(1);
+                }
+                continue;
             }
 
             if (std.mem.startsWith(u8, arg, "-")) {
@@ -236,7 +253,9 @@ const Command = struct {
                 }
 
                 const paths = args[paths_start .. idx + 1];
-                mode = .{ .paths = paths };
+                mode = .{
+                    .paths = paths,
+                };
             }
         }
 
@@ -245,7 +264,7 @@ const Command = struct {
             fatalHelp();
         };
 
-        return .{ .mode = m };
+        return .{ .mode = m, .validationMode = element_validation_mode };
     }
 
     fn fatalHelp() noreturn {
@@ -263,6 +282,13 @@ const Command = struct {
             \\
             \\   --stdin          Format bytes from stdin and output to stdout.
             \\                    Mutually exclusive with other input arguments.
+            \\
+            \\   --element-validation=MODE
+            \\                    Control HTML element validation mode:
+            \\                      off            - No validation (default)
+            \\                      standard       - Only allow standard HTML tags
+            \\                      web-components - Allow standard tags
+            \\                                       and web components
             \\
             \\   --stdin-super    Same as --stdin but for SuperHTML files.
             \\

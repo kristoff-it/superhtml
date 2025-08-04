@@ -10,6 +10,15 @@ const Tokenizer = @import("Tokenizer.zig");
 
 const log = std.log.scoped(.@"html/ast");
 
+pub const ElementValidationMode = enum {
+    /// No element validation (default)
+    off,
+    /// Only allow standard HTML elements
+    standard,
+    /// Allow standard HTML elements and web components (with dashes)
+    webComponents,
+};
+
 const TagNameMap = std.StaticStringMapWithEql(
     void,
     std.static_string_map.eqlAsciiIgnoreCase,
@@ -27,6 +36,156 @@ const rawtext_names = TagNameMap.initComptime(.{
     .{ "noembed", {} },
     .{ "noframes", {} },
     .{ "noscript", {} },
+});
+
+const valid_tag_names = TagNameMap.initComptime(.{
+    .{ "a", {} },
+    .{ "abbr", {} },
+    .{ "acronym", {} },
+    .{ "address", {} },
+    .{ "applet", {} },
+    .{ "area", {} },
+    .{ "article", {} },
+    .{ "aside", {} },
+    .{ "audio", {} },
+    .{ "b", {} },
+    .{ "base", {} },
+    .{ "basefont", {} },
+    .{ "bdi", {} },
+    .{ "bdo", {} },
+    .{ "bgsound", {} },
+    .{ "big", {} },
+    .{ "blink", {} },
+    .{ "blockquote", {} },
+    .{ "body", {} },
+    .{ "br", {} },
+    .{ "button", {} },
+    .{ "canvas", {} },
+    .{ "caption", {} },
+    .{ "center", {} },
+    .{ "cite", {} },
+    .{ "code", {} },
+    .{ "col", {} },
+    .{ "colgroup", {} },
+    .{ "content", {} },
+    .{ "data", {} },
+    .{ "datalist", {} },
+    .{ "dd", {} },
+    .{ "del", {} },
+    .{ "details", {} },
+    .{ "dfn", {} },
+    .{ "dialog", {} },
+    .{ "dir", {} },
+    .{ "div", {} },
+    .{ "dl", {} },
+    .{ "dt", {} },
+    .{ "element", {} },
+    .{ "em", {} },
+    .{ "embed", {} },
+    .{ "fieldset", {} },
+    .{ "figcaption", {} },
+    .{ "figure", {} },
+    .{ "font", {} },
+    .{ "footer", {} },
+    .{ "form", {} },
+    .{ "frame", {} },
+    .{ "frameset", {} },
+    .{ "h1", {} },
+    .{ "h2", {} },
+    .{ "h3", {} },
+    .{ "h4", {} },
+    .{ "h5", {} },
+    .{ "h6", {} },
+    .{ "head", {} },
+    .{ "header", {} },
+    .{ "hgroup", {} },
+    .{ "hr", {} },
+    .{ "html", {} },
+    .{ "i", {} },
+    .{ "iframe", {} },
+    .{ "image", {} },
+    .{ "img", {} },
+    .{ "input", {} },
+    .{ "ins", {} },
+    .{ "isindex", {} },
+    .{ "kbd", {} },
+    .{ "keygen", {} },
+    .{ "label", {} },
+    .{ "legend", {} },
+    .{ "li", {} },
+    .{ "link", {} },
+    .{ "listing", {} },
+    .{ "main", {} },
+    .{ "map", {} },
+    .{ "mark", {} },
+    .{ "marquee", {} },
+    .{ "math", {} },
+    .{ "menu", {} },
+    .{ "menuitem", {} },
+    .{ "meta", {} },
+    .{ "meter", {} },
+    .{ "multicol", {} },
+    .{ "nav", {} },
+    .{ "nextid", {} },
+    .{ "nobr", {} },
+    .{ "noembed", {} },
+    .{ "noframes", {} },
+    .{ "noscript", {} },
+    .{ "object", {} },
+    .{ "ol", {} },
+    .{ "optgroup", {} },
+    .{ "option", {} },
+    .{ "output", {} },
+    .{ "p", {} },
+    .{ "param", {} },
+    .{ "picture", {} },
+    .{ "plaintext", {} },
+    .{ "pre", {} },
+    .{ "progress", {} },
+    .{ "q", {} },
+    .{ "rb", {} },
+    .{ "rp", {} },
+    .{ "rt", {} },
+    .{ "rtc", {} },
+    .{ "ruby", {} },
+    .{ "s", {} },
+    .{ "samp", {} },
+    .{ "script", {} },
+    .{ "search", {} },
+    .{ "section", {} },
+    .{ "select", {} },
+    .{ "shadow", {} },
+    .{ "slot", {} },
+    .{ "small", {} },
+    .{ "source", {} },
+    .{ "spacer", {} },
+    .{ "span", {} },
+    .{ "strike", {} },
+    .{ "strong", {} },
+    .{ "style", {} },
+    .{ "sub", {} },
+    .{ "summary", {} },
+    .{ "sup", {} },
+    .{ "svg", {} },
+    .{ "table", {} },
+    .{ "tbody", {} },
+    .{ "td", {} },
+    .{ "template", {} },
+    .{ "textarea", {} },
+    .{ "tfoot", {} },
+    .{ "th", {} },
+    .{ "thead", {} },
+    .{ "time", {} },
+    .{ "title", {} },
+    .{ "tr", {} },
+    .{ "track", {} },
+    .{ "tt", {} },
+    .{ "u", {} },
+    .{ "ul", {} },
+    .{ "var", {} },
+    .{ "video", {} },
+    .{ "wbr", {} },
+    .{ "xmp", {} },
 });
 
 const unsupported_names = TagNameMap.initComptime(.{
@@ -152,6 +311,7 @@ pub const Error = struct {
         token: Tokenizer.TokenError,
         ast: enum {
             html_elements_cant_self_close,
+            unrecognized_element,
             missing_end_tag,
             erroneous_end_tag,
             duplicate_attribute_name,
@@ -197,6 +357,7 @@ pub fn init(
     gpa: std.mem.Allocator,
     src: []const u8,
     language: Language,
+    validation_mode: ElementValidationMode,
 ) error{OutOfMemory}!Ast {
     if (src.len > std.math.maxInt(u32)) @panic("too long");
 
@@ -263,6 +424,24 @@ pub fn init(
                 .start,
                 .start_self,
                 => {
+                    const tag_name = tag.name.slice(src);
+                    var is_valid_tag = false;
+
+                    switch (validation_mode) {
+                        .off => is_valid_tag = true,
+                        .standard => is_valid_tag = valid_tag_names.has(tag_name),
+                        .webComponents => is_valid_tag =
+                            valid_tag_names.has(tag_name) or
+                            std.mem.containsAtLeast(u8, tag_name, 1, "-"),
+                    }
+
+                    if (validation_mode != .off and !is_valid_tag) {
+                        try errors.append(.{
+                            .tag = .{ .ast = .unrecognized_element },
+                            .main_location = tag.name,
+                        });
+                    }
+
                     const node_kind: Node.Kind = switch (tag.kind) {
                         else => unreachable,
                         .start_self => blk: {
@@ -946,7 +1125,12 @@ fn debugNodes(nodes: []const Node, src: []const u8) void {
 test "basics" {
     const case = "<html><head></head><body><div><link></div></body></html>";
 
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
@@ -957,7 +1141,12 @@ test "basics - attributes" {
         \\<div id="foo" class="bar">
     ++ "<link></div></body></html>";
 
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
@@ -973,7 +1162,12 @@ test "newlines" {
         \\  </body>
         \\</html>
     ;
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
@@ -1011,7 +1205,12 @@ test "formatting - simple" {
         \\  </body>
         \\</html>
     ;
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1043,7 +1242,12 @@ test "formatting - attributes" {
         \\  </body>
         \\</html>
     ;
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1060,7 +1264,12 @@ test "pre" {
         \\<pre>      </pre>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1078,7 +1287,12 @@ test "pre text" {
         \\<pre>   banana   </pre>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1114,7 +1328,12 @@ test "what" {
         \\<a href="#">foo</a>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1150,7 +1369,12 @@ test "spans" {
         \\</html>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1164,7 +1388,12 @@ test "arrow span" {
         \\  <span var="$if.title"></span></a>
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1188,10 +1417,82 @@ test "self-closing tag complex example" {
         \\  </svg>
         \\</div>
     ;
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        ElementValidationMode.off,
+    );
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "standard validation mode - valid HTML tags" {
+    const case = "<div><p>Hello</p></div>";
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        Ast.ElementValidationMode.standard,
+    );
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), ast.errors.len);
+}
+
+test "standard validation mode - invalid tag" {
+    const case = "<div><custom-tag>Hello</custom-tag></div>";
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        Ast.ElementValidationMode.standard,
+    );
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), ast.errors.len);
+    try std.testing.expectEqualStrings("unrecognized_element", @tagName(ast.errors[0].tag.ast));
+}
+
+test "webComponents validation mode - standard HTML tags" {
+    const case = "<div><p>Hello</p></div>";
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        Ast.ElementValidationMode.webComponents,
+    );
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), ast.errors.len);
+}
+
+test "webComponents validation mode - valid web component tag" {
+    const case = "<div><my-component>Hello</my-component></div>";
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        Ast.ElementValidationMode.webComponents,
+    );
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), ast.errors.len);
+}
+
+test "webComponents validation mode - invalid tag without dash" {
+    const case = "<div><customtag>Hello</customtag></div>";
+    const ast = try Ast.init(
+        std.testing.allocator,
+        case,
+        .html,
+        Ast.ElementValidationMode.webComponents,
+    );
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), ast.errors.len);
+    try std.testing.expectEqualStrings("unrecognized_element", @tagName(ast.errors[0].tag.ast));
 }
 
 pub const Cursor = struct {
