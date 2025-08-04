@@ -26,12 +26,18 @@ pub fn build(b: *std.Build) !void {
     superhtml.addImport("scripty", scripty.module("scripty"));
     superhtml.addImport("tracy", tracy.module("tracy"));
 
+    if (target.result.os.tag == .windows) {
+        superhtml.linkSystemLibrary("advapi32", .{});
+
+        // Remove this if/when known-folders adds this:
+        superhtml.linkSystemLibrary("shell32", .{});
+        superhtml.linkSystemLibrary("ole32", .{});
+    }
+
     if (enable_tracy) {
         if (target.result.os.tag == .windows) {
             superhtml.linkSystemLibrary("dbghelp", .{});
-            superhtml.linkSystemLibrary("ws2_32", .{});
         }
-
         // superhtml.addObjectFile(b.path("libTracyClient.a"));
         //
         superhtml.linkSystemLibrary("TracyClient", .{});
