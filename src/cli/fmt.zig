@@ -13,7 +13,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            const out_bytes = try fmtHtml(gpa, null, in_bytes);
+            const out_bytes = try fmtHtml(gpa, null, in_bytes, cmd.strict);
 
             try std.fs.File.stdout().writeAll(out_bytes);
         },
@@ -23,7 +23,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            const out_bytes = try fmtSuper(gpa, null, in_bytes);
+            const out_bytes = try fmtSuper(gpa, null, in_bytes, cmd.strict);
             try std.fs.File.stdout().writeAll(out_bytes);
         },
         .paths => |paths| {
@@ -37,6 +37,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                     path,
                     path,
                     &any_error,
+                    cmd.strict,
                 ) catch |err| switch (err) {
                     error.IsDir, error.AccessDenied => {
                         formatDir(
@@ -45,6 +46,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                             cmd.check,
                             path,
                             &any_error,
+                            cmd.strict,
                         ) catch |dir_err| {
                             std.debug.print("Error walking dir '{s}': {s}\n", .{
                                 path,
@@ -75,6 +77,7 @@ fn formatDir(
     check: bool,
     path: []const u8,
     any_error: *bool,
+    strict: bool,
 ) !void {
     var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer dir.close();
@@ -90,6 +93,7 @@ fn formatDir(
                     item.basename,
                     item.path,
                     any_error,
+                    strict,
                 );
             },
             else => {},
@@ -104,6 +108,7 @@ fn formatFile(
     sub_path: []const u8,
     full_path: []const u8,
     any_error: *bool,
+    strict: bool,
 ) !void {
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
@@ -136,11 +141,13 @@ fn formatFile(
             arena,
             full_path,
             in_bytes,
+            strict,
         ),
         .super => try fmtSuper(
             arena,
             full_path,
             in_bytes,
+            strict,
         ),
     };
 
@@ -166,8 +173,9 @@ pub fn fmtHtml(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
+    strict: bool,
 ) ![]const u8 {
-    const ast = try super.html.Ast.init(arena, code, .html);
+    const ast = try super.html.Ast.init(arena, code, .html, strict);
     if (ast.errors.len > 0) {
         var ew = std.fs.File.stderr().writer(&.{});
         try ast.printErrors(code, path, &ew.interface);
@@ -181,8 +189,9 @@ fn fmtSuper(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
+    strict: bool,
 ) ![]const u8 {
-    const ast = try super.html.Ast.init(arena, code, .superhtml);
+    const ast = try super.html.Ast.init(arena, code, .superhtml, strict);
     if (ast.errors.len > 0) {
         var ew = std.fs.File.stderr().writer(&.{});
         try ast.printErrors(code, path, &ew.interface);
@@ -200,6 +209,7 @@ fn oom() noreturn {
 const Command = struct {
     check: bool,
     mode: Mode,
+    strict: bool,
 
     const Mode = union(enum) {
         stdin,
@@ -210,6 +220,7 @@ const Command = struct {
     fn parse(args: []const []const u8) Command {
         var check: bool = false;
         var mode: ?Mode = null;
+        var strict: ?bool = null;
 
         var idx: usize = 0;
         while (idx < args.len) : (idx += 1) {
@@ -221,12 +232,12 @@ const Command = struct {
             }
 
             if (std.mem.eql(u8, arg, "--check")) {
-                if (check) {
-                    std.debug.print("error: duplicate '--check' flag\n\n", .{});
-                    std.process.exit(1);
-                }
-
                 check = true;
+                continue;
+            }
+
+            if (std.mem.eql(u8, arg, "--no-strict-tags")) {
+                strict = true;
                 continue;
             }
 
@@ -278,7 +289,11 @@ const Command = struct {
             fatalHelp();
         };
 
-        return .{ .check = check, .mode = m };
+        return .{
+            .check = check,
+            .mode = m,
+            .strict = strict orelse true,
+        };
     }
 
     fn fatalHelp() noreturn {
@@ -301,6 +316,9 @@ const Command = struct {
             \\
             \\   --check            List non-conforming files and exit with an
             \\                      error if the list is not empty.
+            \\
+            \\  --no-strict-tags    Disable strict checking of tag names in HTML
+            \\                      and SuperHTML files. 
             \\
             \\   --help, -h         Prints this help and exits.
         , .{});

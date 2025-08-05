@@ -16,7 +16,7 @@ pub fn main() !void {
     const src = try stdin.readToEndAlloc(gpa, std.math.maxInt(usize));
     defer gpa.free(src);
 
-    const ast = try super.html.Ast.init(gpa, src, .html);
+    const ast = try super.html.Ast.init(gpa, src, .html, true);
     defer ast.deinit(gpa);
 
     if (ast.errors.len == 0) {
@@ -43,7 +43,7 @@ test "afl++ fuzz cases" {
 
     for (cases) |c| {
         // std.debug.print("test: \n\n{s}\n\n", .{c});
-        const ast = try super.html.Ast.init(std.testing.allocator, c, .html);
+        const ast = try super.html.Ast.init(std.testing.allocator, c, .html, true);
         defer ast.deinit(std.testing.allocator);
         if (ast.errors.len == 0) {
             var dw: std.Io.Writer.Discarding = .init(&.{});

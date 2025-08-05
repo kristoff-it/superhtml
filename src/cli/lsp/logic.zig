@@ -26,6 +26,7 @@ pub fn loadFile(
         self.gpa,
         new_text,
         language,
+        self.strict,
     );
 
     log.debug("document init", .{});

@@ -1116,6 +1116,7 @@ test "basics" {
         std.testing.allocator,
         case,
         .superhtml,
+        true,
     );
     defer html_ast.deinit(std.testing.allocator);
     const tree = try Ast.init(std.testing.allocator, html_ast, case);
@@ -1151,6 +1152,7 @@ test "text/html - errors" {
             std.testing.allocator,
             case,
             .superhtml,
+            true,
         );
         defer html_ast.deinit(std.testing.allocator);
         const tree = try Ast.init(std.testing.allocator, html_ast, case);
@@ -1175,6 +1177,7 @@ test "siblings" {
         std.testing.allocator,
         case,
         .superhtml,
+        true,
     );
     defer html_ast.deinit(std.testing.allocator);
     const tree = try Ast.init(std.testing.allocator, html_ast, case);
@@ -1209,6 +1212,7 @@ test "nesting" {
         std.testing.allocator,
         case,
         .superhtml,
+        true,
     );
     defer html_ast.deinit(std.testing.allocator);
     const tree = try Ast.init(std.testing.allocator, html_ast, case);
@@ -1245,6 +1249,7 @@ test "deeper nesting" {
         std.testing.allocator,
         case,
         .superhtml,
+        true,
     );
     defer html_ast.deinit(std.testing.allocator);
     const tree = try Ast.init(std.testing.allocator, html_ast, case);
@@ -1286,6 +1291,7 @@ test "complex example" {
         std.testing.allocator,
         case,
         .superhtml,
+        true,
     );
     defer html_ast.deinit(std.testing.allocator);
     const tree = try Ast.init(std.testing.allocator, html_ast, case);
@@ -1332,6 +1338,7 @@ test "if-else-loop errors" {
             std.testing.allocator,
             case,
             .superhtml,
+            true,
         );
         defer html_ast.deinit(std.testing.allocator);
         const tree = try Ast.init(std.testing.allocator, html_ast, case);
@@ -1361,6 +1368,7 @@ test "super" {
         std.testing.allocator,
         case,
         .superhtml,
+        true,
     );
     defer html_ast.deinit(std.testing.allocator);
     const tree = try Ast.init(std.testing.allocator, html_ast, case);

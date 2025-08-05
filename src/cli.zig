@@ -120,8 +120,9 @@ fn fatalHelp() noreturn {
         \\  version       Print Super's version and exit
         \\
         \\General Options:
-        \\  --help, -h   Print command specific usage
-        \\
+        \\  --help, -h        Print command specific usage
+        \\  --no-strict-tags  Disable strict checking of tag names
+        \\                    in HTML and SuperHTML files. 
         \\
     , .{});
 }

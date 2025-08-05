@@ -11,7 +11,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             var aw: std.Io.Writer.Allocating = .init(gpa);
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
-            const out_bytes = try renderInterface(gpa, null, in_bytes);
+            const out_bytes = try renderInterface(gpa, null, in_bytes, cmd.strict);
             try std.fs.File.stdout().writeAll(out_bytes);
         },
         .path => |path| {
@@ -21,6 +21,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                 std.fs.cwd(),
                 path,
                 path,
+                cmd.strict,
             ) catch |err| switch (err) {
                 error.IsDir => {
                     std.debug.print("error: '{s}' is a directory\n\n", .{
@@ -47,6 +48,7 @@ fn printInterfaceFromFile(
     base_dir: std.fs.Dir,
     sub_path: []const u8,
     full_path: []const u8,
+    strict: bool,
 ) ![]const u8 {
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
@@ -60,15 +62,16 @@ fn printInterfaceFromFile(
         0,
     );
 
-    return renderInterface(arena, full_path, in_bytes);
+    return renderInterface(arena, full_path, in_bytes, strict);
 }
 
 fn renderInterface(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
+    strict: bool,
 ) ![]const u8 {
-    const html_ast = try super.html.Ast.init(arena, code, .superhtml);
+    const html_ast = try super.html.Ast.init(arena, code, .superhtml, strict);
     if (html_ast.errors.len > 0) {
         var ew = std.fs.File.stderr().writer(&.{});
         try html_ast.printErrors(code, path, &ew.interface);
@@ -94,6 +97,7 @@ fn oom() noreturn {
 
 const Command = struct {
     mode: Mode,
+    strict: bool,
 
     const Mode = union(enum) {
         stdin,
@@ -102,6 +106,7 @@ const Command = struct {
 
     fn parse(args: []const []const u8) Command {
         var mode: ?Mode = null;
+        var strict: ?bool = null;
 
         var idx: usize = 0;
         while (idx < args.len) : (idx += 1) {
@@ -110,6 +115,11 @@ const Command = struct {
                 std.mem.eql(u8, arg, "-h"))
             {
                 fatalHelp();
+            }
+
+            if (std.mem.eql(u8, arg, "--no-strict-tags")) {
+                strict = false;
+                continue;
             }
 
             if (std.mem.startsWith(u8, arg, "-")) {
@@ -144,7 +154,10 @@ const Command = struct {
             fatalHelp();
         };
 
-        return .{ .mode = m };
+        return .{
+            .mode = m,
+            .strict = strict orelse true,
+        };
     }
 
     fn fatalHelp() noreturn {
@@ -157,6 +170,9 @@ const Command = struct {
             \\
             \\   --stdin          Read the template from stdin instead of 
             \\                    reading from a file.
+            \\
+            \\  --no-strict-tags  Disable strict checking of tag names in HTML
+            \\                    and SuperHTML files. 
             \\
             \\   --help, -h       Prints this help and exits.
         , .{});

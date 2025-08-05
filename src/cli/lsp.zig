@@ -26,6 +26,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     var handler: Handler = .{
         .gpa = gpa,
         .transport = &stdio.transport,
+        .strict = true,
     };
     defer handler.deinit();
 
@@ -43,6 +44,7 @@ gpa: std.mem.Allocator,
 transport: *lsp.Transport,
 files: std.StringHashMapUnmanaged(Document) = .{},
 offset_encoding: offsets.Encoding = .@"utf-16",
+strict: bool,
 
 fn deinit(self: *Handler) void {
     var file_it = self.files.valueIterator();
@@ -97,12 +99,18 @@ pub fn initialize(
             .@"utf-16" => .@"utf-16",
             .@"utf-32" => .@"utf-32",
         },
+
         .textDocumentSync = .{
             .TextDocumentSyncOptions = .{
                 .openClose = true,
                 .change = .Full,
             },
         },
+
+        // .completionProvider = .{
+        //     .triggerCharacters = &.{ "<", "/" },
+        // },
+
         .documentFormattingProvider = .{ .bool = true },
     };
 
@@ -232,6 +240,24 @@ pub fn @"textDocument/formatting"(
         .range = range,
         .newText = aw.getWritten(),
     }});
+}
+
+pub fn @"textDocument/completion"(
+    self: *Handler,
+    arena: std.mem.Allocator,
+    request: types.CompletionParams,
+) error{OutOfMemory}!lsp.ResultType("textDocument/completion") {
+    const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
+    const offset = lsp.offsets.positionToIndex(
+        doc.src,
+        request.position,
+        self.offset_encoding,
+    );
+
+    const completions = doc.html.completions(arena, @intCast(offset));
+
+    _ = completions;
+    @panic("TODO");
 }
 
 pub fn onResponse(
