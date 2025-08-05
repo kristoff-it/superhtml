@@ -291,6 +291,7 @@ pub const Error = struct {
         },
     },
     main_location: Span,
+    node_idx: u32, // 0 = missing node
 };
 
 language: Language,
@@ -407,6 +408,7 @@ pub fn init(
                                         .ast = .html_elements_cant_self_close,
                                     },
                                     .main_location = tag.name,
+                                    .node_idx = current_idx + 1,
                                 });
                             }
                             break :blk .element_self_closing;
@@ -431,6 +433,7 @@ pub fn init(
                                 .ast = .invalid_html_tag_name,
                             },
                             .main_location = tag.name,
+                            .node_idx = current_idx + 1,
                         });
                     }
 
@@ -464,6 +467,7 @@ pub fn init(
                                 .ast = .deprecated_and_unsupported,
                             },
                             .main_location = tag.name,
+                            .node_idx = current_idx,
                         });
                     }
 
@@ -501,6 +505,7 @@ pub fn init(
                                                 .start = attr.name.start,
                                                 .end = attr.name.end,
                                             },
+                                            .node_idx = current_idx,
                                         });
                                     }
                                 },
@@ -515,6 +520,7 @@ pub fn init(
                                 .ast = .erroneous_end_tag,
                             },
                             .main_location = tag.name,
+                            .node_idx = 0,
                         });
                         continue;
                     }
@@ -538,6 +544,7 @@ pub fn init(
                             try errors.append(.{
                                 .tag = .{ .ast = .erroneous_end_tag },
                                 .main_location = tag.name,
+                                .node_idx = 0,
                             });
                             break;
                         }
@@ -587,6 +594,7 @@ pub fn init(
                                     try errors.append(.{
                                         .tag = .{ .ast = .missing_end_tag },
                                         .main_location = cur_name,
+                                        .node_idx = current_idx,
                                     });
                                 }
 
@@ -661,6 +669,7 @@ pub fn init(
                         .token = pe.tag,
                     },
                     .main_location = pe.span,
+                    .node_idx = current_idx,
                 });
             },
         }
@@ -672,9 +681,11 @@ pub fn init(
             try errors.append(.{
                 .tag = .{ .ast = .missing_end_tag },
                 .main_location = current.open,
+                .node_idx = current_idx,
             });
         }
 
+        current_idx = current.parent_idx;
         current = &nodes.items[current.parent_idx];
     }
 

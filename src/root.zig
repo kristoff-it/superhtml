@@ -94,7 +94,7 @@ pub const Language = enum {
 };
 pub const max_size = 4 * 1024 * 1024 * 1024;
 
-const Range = struct {
+pub const Range = struct {
     start: Pos,
     end: Pos,
 

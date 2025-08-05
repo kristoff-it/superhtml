@@ -107,9 +107,13 @@ pub fn initialize(
             },
         },
 
-        // .completionProvider = .{
-        //     .triggerCharacters = &.{ "<", "/" },
-        // },
+        .codeActionProvider = .{ .bool = true },
+
+        .renameProvider = .{ .bool = true },
+
+        .completionProvider = .{
+            .triggerCharacters = &.{ "<", "/" },
+        },
 
         .documentFormattingProvider = .{ .bool = true },
     };
@@ -240,6 +244,182 @@ pub fn @"textDocument/formatting"(
         .range = range,
         .newText = aw.getWritten(),
     }});
+}
+
+pub fn @"textDocument/codeAction"(
+    self: *Handler,
+    arena: std.mem.Allocator,
+    request: types.CodeActionParams,
+) error{OutOfMemory}!lsp.ResultType("textDocument/codeAction") {
+    const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
+    const offset = lsp.offsets.positionToIndex(
+        doc.src,
+        request.range.start,
+        self.offset_encoding,
+    );
+
+    if (!self.strict) return null;
+
+    for (doc.html.errors) |err| {
+        if (err.tag != .ast or err.tag.ast != .invalid_html_tag_name) continue;
+
+        const span = err.main_location;
+        if (span.start <= offset and span.end > offset) {
+            const edits = try arena.alloc(lsp.types.TextEdit, 2);
+            edits[0] = .{
+                .range = getRange(span, doc.src),
+                .newText = "div",
+            };
+
+            const edits_len: usize = if (err.node_idx != 0) blk: {
+                const node = doc.html.nodes[err.node_idx];
+                if (node.kind != .element) break :blk 1;
+
+                const close = node.close;
+                if (close.end < 2 or close.start > close.end - 2) break :blk 1;
+
+                edits[1] = .{
+                    .range = getRange(.{
+                        .start = close.start + 1,
+                        .end = close.end - 1,
+                    }, doc.src),
+                    .newText = "/div",
+                };
+
+                break :blk 2;
+            } else 1;
+
+            const result: lsp.ResultType("textDocument/codeAction") = &.{
+                .{
+                    .CodeAction = .{
+                        .title = "Replace with 'div'",
+                        .kind = .quickfix,
+                        .isPreferred = true,
+                        .edit = .{
+                            .changes = .{
+                                .map = try .init(
+                                    arena,
+                                    &.{request.textDocument.uri},
+                                    &.{edits[0..edits_len]},
+                                ),
+                            },
+                        },
+                    },
+                },
+            };
+
+            return try arena.dupe(@typeInfo(@TypeOf(result.?)).pointer.child, result.?);
+        }
+    }
+
+    return null;
+}
+
+pub fn @"textDocument/rename"(
+    self: *Handler,
+    arena: std.mem.Allocator,
+    request: types.RenameParams,
+) error{OutOfMemory}!lsp.ResultType("textDocument/rename") {
+    const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
+    const offset = lsp.offsets.positionToIndex(
+        doc.src,
+        request.position,
+        self.offset_encoding,
+    );
+
+    const node_idx: u32 = for (doc.html.errors) |err| {
+        // Find erroneous end tags in the error list but also any other error that
+        // has a node associated that happens to match our offset.
+        const span = err.main_location;
+        if (span.start <= offset and span.end > offset) {
+            if (err.tag == .ast and err.tag.ast == .erroneous_end_tag) {
+                const edits = try arena.alloc(lsp.types.TextEdit, 1);
+                edits[0] = .{
+                    .range = getRange(span, doc.src),
+                    .newText = request.newName,
+                };
+                return .{
+                    .changes = .{
+                        .map = try .init(
+                            arena,
+                            &.{request.textDocument.uri},
+                            &.{edits},
+                        ),
+                    },
+                };
+            }
+            if (err.node_idx != 0) break err.node_idx;
+        }
+    } else blk: {
+        // No match found in the error list, must navigate the AST
+        if (doc.html.nodes.len < 2) return null;
+        var cur_idx: u32 = 1;
+        while (cur_idx != 0) {
+            const n = doc.html.nodes[cur_idx];
+            if (n.open.start <= offset and n.open.end > offset) {
+                break;
+            }
+            if (n.close.end != 0 and n.close.start <= offset and n.close.end > offset) {
+                break;
+            }
+
+            if (n.open.end <= offset and n.close.start > offset) {
+                cur_idx = n.first_child_idx;
+            } else {
+                cur_idx = n.next_idx;
+            }
+        }
+
+        break :blk cur_idx;
+    };
+
+    const node = doc.html.nodes[node_idx];
+    var edits: []lsp.types.TextEdit = undefined;
+    blk: switch (node.kind) {
+        else => return null,
+        .element => {
+            edits = try arena.alloc(lsp.types.TextEdit, 2);
+
+            const it = node.startTagIterator(doc.src, doc.language);
+            edits[0] = .{
+                .range = getRange(it.name_span, doc.src),
+                .newText = request.newName,
+            };
+
+            const close = node.close;
+            if (close.end < 2 or close.start > close.end - 2) {
+                edits = edits[0..1];
+                break :blk;
+            }
+
+            edits[1] = .{
+                .range = getRange(.{
+                    .start = close.start + 1,
+                    .end = close.end - 1,
+                }, doc.src),
+                .newText = try std.fmt.allocPrint(arena, "/{s}", .{request.newName}),
+            };
+        },
+        .element_void, .element_self_closing => {
+            edits = try arena.alloc(lsp.types.TextEdit, 1);
+
+            const it = node.startTagIterator(doc.src, doc.language);
+            edits[0] = .{
+                .range = getRange(it.name_span, doc.src),
+                .newText = request.newName,
+            };
+        },
+    }
+
+    return .{
+        .changes = .{
+            .map = try .init(
+                arena,
+                &.{request.textDocument.uri},
+                &.{edits},
+            ),
+        },
+    };
 }
 
 pub fn @"textDocument/completion"(
