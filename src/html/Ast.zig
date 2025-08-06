@@ -753,7 +753,11 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
 
                 switch (current.kind) {
                     else => {},
-                    .element => indentation += 1,
+                    .element => if (ast.child(current)) |c| {
+                        const maybe_ws_c = src[current.open.end..c.open.start];
+                        if (c.kind == .text or maybe_ws_c.len > 0)
+                            indentation += 1;
+                    },
                 }
             },
             .exit => {
@@ -775,7 +779,11 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
 
                 switch (current.kind) {
                     else => {},
-                    .element => indentation -= 1,
+                    .element => if (ast.child(current)) |c| {
+                        const maybe_ws_c = src[current.open.end..c.open.start];
+                        if (c.kind == .text or maybe_ws_c.len > 0)
+                            indentation -= 1;
+                    },
                 }
 
                 const open_was_vertical = std.ascii.isWhitespace(src[current.open.end]);
@@ -943,7 +951,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                             .attr => |attr| {
                                 if (vertical) {
                                     try w.print("\n", .{});
-                                    for (0..indentation + extra) |_| {
+                                    for (0..indentation + extra + 1) |_| {
                                         try w.print("  ", .{});
                                     }
                                 } else {
@@ -969,7 +977,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     }
                     if (vertical) {
                         try w.print("\n", .{});
-                        for (0..indentation + extra -| 1) |_| {
+                        for (0..indentation + extra) |_| {
                             try w.print("  ", .{});
                         }
                     }
@@ -1158,6 +1166,24 @@ test "newlines" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
+}
+
+test "tight tags inner indentation" {
+    const case =
+        \\<!DOCTYPE html>
+        \\<html>
+        \\  <head></head>
+        \\  <body>
+        \\    <div><nav><ul>
+        \\      <li></li>
+        \\    </ul></nav></div>
+        \\  </body>
+        \\</html>
+    ;
+    const ast = try Ast.init(std.testing.allocator, case, .html);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
 }
 
 test "bad html" {
