@@ -6,7 +6,7 @@ const Handler = lsp_namespace.Handler;
 const getRange = Handler.getRange;
 const Document = @import("Document.zig");
 
-const log = std.log.scoped(.ziggy_lsp);
+const log = std.log.scoped(.logic);
 
 pub fn loadFile(
     self: *Handler,

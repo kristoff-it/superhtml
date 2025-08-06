@@ -525,10 +525,12 @@ pub fn @"textDocument/completion"(
         self.offset_encoding,
     );
 
-    const completions = doc.html.completions(arena, @intCast(offset));
+    _ = offset;
+    _ = arena;
+    return null;
+    // const completions = doc.html.completions(arena, @intCast(offset));
 
-    _ = completions;
-    @panic("TODO");
+    // _ = completions;
 }
 
 pub fn onResponse(

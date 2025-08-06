@@ -1038,7 +1038,7 @@ pub fn completions(ast: Ast, gpa: Allocator, offset: u32) []const []const u8 {
     _ = ast;
     _ = gpa;
     _ = offset;
-    @panic("TODOv");
+    return &.{};
 }
 
 fn at(ast: Ast, idx: u32) ?Node {
