@@ -710,9 +710,10 @@ pub fn init(
 
 pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
     std.debug.assert(ast.errors.len == 0);
+    if (ast.nodes.len < 2) return;
 
     var indentation: u32 = 0;
-    var current = ast.nodes[0];
+    var current = ast.nodes[1];
     var direction: enum { enter, exit } = .enter;
     var last_rbracket: u32 = 0;
     // var last_open_was_vertical = false;
@@ -744,7 +745,15 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
 
                     if (vertical) {
                         log.debug("adding a newline", .{});
-                        try w.writeAll("\n");
+                        const lines = std.mem.count(u8, maybe_ws, "\n");
+                        if (last_rbracket > 0) {
+                            if (lines >= 2) {
+                                try w.writeAll("\n\n");
+                            } else {
+                                try w.writeAll("\n");
+                            }
+                        }
+
                         for (0..indentation) |_| {
                             try w.writeAll("  ");
                         }
@@ -1296,6 +1305,7 @@ test "what" {
         \\    </a>
         \\  </body>
         \\</html>
+        \\
         \\<a href="#">foo</a>
         \\
     ;
@@ -1370,10 +1380,64 @@ test "self-closing tag complex example" {
     ;
     const expected =
         \\extend template="base.html"/>
+        \\
         \\<div id="content">
         \\  <svg viewBox="0 0 24 24">
         \\    <path d="M14.4,6H20V16H13L12.6,14H7V21H5V4H14L14.4,6M14,14H16V12H18V10H16V8H14V10L13,8V6H11V8H9V6H7V8H9V10H7V12H9V10H11V12H13V10L14,12V14M11,10V8H13V10H11M14,10H16V12H14V10Z"/>
         \\  </svg>
+        \\</div>
+        \\
+    ;
+    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "respect empty lines" {
+    const case =
+        \\
+        \\<div> a
+        \\</div>
+        \\
+        \\<div></div>
+        \\
+        \\<div></div>
+        \\<div></div>
+        \\
+        \\
+        \\<div></div>
+        \\
+        \\
+        \\
+        \\<div></div>
+        \\<div> a
+        \\</div>
+        \\
+        \\
+        \\
+        \\<div> a
+        \\</div>
+    ;
+    const expected =
+        \\<div>
+        \\  a
+        \\</div>
+        \\
+        \\<div></div>
+        \\
+        \\<div></div>
+        \\<div></div>
+        \\
+        \\<div></div>
+        \\
+        \\<div></div>
+        \\<div>
+        \\  a
+        \\</div>
+        \\
+        \\<div>
+        \\  a
         \\</div>
         \\
     ;
