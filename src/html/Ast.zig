@@ -927,9 +927,10 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                         .element_void,
                         .element_self_closing,
                         => 1,
-                        else => 0,
+                        else => @intCast(name.len),
                     };
 
+                    var first = true;
                     while (tt.next(src[0..current.open.end])) |maybe_attr| {
                         log.debug("tt: {s}", .{@tagName(maybe_attr)});
                         log.debug("tt: {any}", .{maybe_attr});
@@ -951,9 +952,14 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                             .tag => break,
                             .attr => |attr| {
                                 if (vertical) {
-                                    try w.print("\n", .{});
-                                    for (0..indentation + extra) |_| {
-                                        try w.print("  ", .{});
+                                    if (first) {
+                                        first = false;
+                                        try w.print(" ", .{});
+                                    } else {
+                                        try w.print("\n", .{});
+                                        for (0..(indentation * 2) + extra) |_| {
+                                            try w.print(" ", .{});
+                                        }
                                     }
                                 } else {
                                     try w.print(" ", .{});
@@ -978,7 +984,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     }
                     if (vertical) {
                         try w.print("\n", .{});
-                        for (0..indentation + extra -| 1) |_| {
+                        for (0..indentation -| 1) |_| {
                             try w.print("  ", .{});
                         }
                     }
@@ -1225,10 +1231,9 @@ test "formatting - attributes" {
         \\  <body>
         \\    <div>
         \\      <link>
-        \\      <div
-        \\        id="foo"
-        \\        class="bar"
-        \\        style="tarstarstarstarstarstarstarst"
+        \\      <div id="foo"
+        \\           class="bar"
+        \\           style="tarstarstarstarstarstarstarst"
         \\      ></div>
         \\    </div>
         \\  </body>
