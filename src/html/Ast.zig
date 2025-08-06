@@ -365,6 +365,7 @@ pub fn init(
     var current: *Node = &nodes.items[0];
     var current_idx: u32 = 0;
     var svg_lvl: u32 = 0;
+    var math_lvl: u32 = 0;
     while (tokenizer.next(src)) |t| {
         log.debug("cur_idx: {} cur_kind: {s} tok: {any}", .{
             current_idx,
@@ -423,8 +424,16 @@ pub fn init(
                     if (std.ascii.eqlIgnoreCase(tag.name.slice(src), "svg")) {
                         svg_lvl += 1;
                     }
+                    if (std.ascii.eqlIgnoreCase(tag.name.slice(src), "math")) {
+                        math_lvl += 1;
+                    }
 
-                    if (language != .xml and strict_tag_names and svg_lvl == 0) blk: {
+                    if (language != .xml and
+                        strict_tag_names and
+                        svg_lvl == 0 and
+                        math_lvl == 0 and
+                        std.mem.indexOfScalar(u8, name, '-') == null)
+                    blk: {
                         const valid_html = valid_html_tags.has(name);
                         const valid_shtml = valid_shtml_tags.has(name);
                         if (valid_html or (language == .superhtml and valid_shtml)) break :blk;
@@ -574,6 +583,9 @@ pub fn init(
                         )) {
                             if (std.ascii.eqlIgnoreCase(current_name, "svg")) {
                                 svg_lvl -= 1;
+                            }
+                            if (std.ascii.eqlIgnoreCase(current_name, "math")) {
+                                math_lvl -= 1;
                             }
                             current.close = tag.span;
                             var cur = original_current;

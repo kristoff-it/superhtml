@@ -57,7 +57,7 @@ fn setupInternal(gpa: std.mem.Allocator) !void {
     var cache_base = try folders.open(gpa, .cache, .{}) orelse return error.Failure;
     errdefer cache_base.close();
 
-    const log_path = "superhtml.log1";
+    const log_path = "superhtml.log";
     const file = try cache_base.createFile(log_path, .{ .truncate = false });
     errdefer file.close();
 

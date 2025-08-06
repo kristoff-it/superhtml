@@ -109,7 +109,13 @@ pub fn initialize(
 
         .codeActionProvider = .{ .bool = true },
 
-        .renameProvider = .{ .bool = true },
+        .renameProvider = .{
+            .RenameOptions = .{
+                .prepareProvider = true,
+            },
+        },
+
+        .referencesProvider = .{ .bool = true },
 
         .completionProvider = .{
             .triggerCharacters = &.{ "<", "/" },
@@ -315,6 +321,35 @@ pub fn @"textDocument/codeAction"(
     return null;
 }
 
+pub fn @"textDocument/prepareRename"(
+    self: *Handler,
+    arena: std.mem.Allocator,
+    request: types.PrepareRenameParams,
+) error{OutOfMemory}!lsp.ResultType("textDocument/prepareRename") {
+    _ = arena;
+
+    const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
+    const offset = lsp.offsets.positionToIndex(
+        doc.src,
+        request.position,
+        self.offset_encoding,
+    );
+
+    const node_idx = findNode(doc, @intCast(offset));
+    if (node_idx == 0) return null;
+
+    const node = doc.html.nodes[node_idx];
+    const it = node.startTagIterator(doc.src, doc.language);
+
+    const range = lsp.offsets.locToRange(doc.src, .{
+        .start = it.name_span.start,
+        .end = it.name_span.end,
+    }, self.offset_encoding);
+
+    return .{
+        .Range = range,
+    };
+}
 pub fn @"textDocument/rename"(
     self: *Handler,
     arena: std.mem.Allocator,
@@ -350,28 +385,7 @@ pub fn @"textDocument/rename"(
             }
             if (err.node_idx != 0) break err.node_idx;
         }
-    } else blk: {
-        // No match found in the error list, must navigate the AST
-        if (doc.html.nodes.len < 2) return null;
-        var cur_idx: u32 = 1;
-        while (cur_idx != 0) {
-            const n = doc.html.nodes[cur_idx];
-            if (n.open.start <= offset and n.open.end > offset) {
-                break;
-            }
-            if (n.close.end != 0 and n.close.start <= offset and n.close.end > offset) {
-                break;
-            }
-
-            if (n.open.end <= offset and n.close.start > offset) {
-                cur_idx = n.first_child_idx;
-            } else {
-                cur_idx = n.next_idx;
-            }
-        }
-
-        break :blk cur_idx;
-    };
+    } else findNode(doc, @intCast(offset));
 
     const node = doc.html.nodes[node_idx];
     var edits: []lsp.types.TextEdit = undefined;
@@ -422,6 +436,83 @@ pub fn @"textDocument/rename"(
     };
 }
 
+pub fn @"textDocument/references"(
+    self: *Handler,
+    arena: std.mem.Allocator,
+    request: types.ReferenceParams,
+) error{OutOfMemory}!lsp.ResultType("textDocument/references") {
+    const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
+    const offset = lsp.offsets.positionToIndex(
+        doc.src,
+        request.position,
+        self.offset_encoding,
+    );
+
+    const node_idx = findNode(doc, @intCast(offset));
+    log.debug("------ References request! (node: {}) ------", .{node_idx});
+    if (node_idx == 0) return null;
+
+    const class = blk: {
+        const node = doc.html.nodes[node_idx];
+        var it = node.startTagIterator(doc.src, doc.language);
+        while (it.next(doc.src)) |attr| {
+            if (std.ascii.eqlIgnoreCase(attr.name.slice(doc.src), "class")) {
+                const value = attr.value orelse return null;
+                const slice = value.span.slice(doc.src);
+                if (slice.len == 0 or slice[0] == '$') return null;
+                if (offset < value.span.start or offset >= value.span.end) return null;
+
+                const rel_offset = offset - value.span.start;
+
+                var vit = std.mem.tokenizeScalar(u8, slice, ' ');
+
+                while (vit.next()) |cls| {
+                    if (rel_offset < vit.index - cls.len) return null;
+                    if (vit.index > rel_offset) {
+                        break :blk cls;
+                    }
+                } else return null;
+            }
+        } else return null;
+    };
+
+    log.debug("------ CLASS: '{s}' ------", .{class});
+
+    var locations: std.ArrayListUnmanaged(lsp.types.Location) = .empty;
+    for (doc.html.nodes) |n| {
+        switch (n.kind) {
+            .element, .element_void, .element_self_closing => {},
+            else => continue,
+        }
+
+        var it = n.startTagIterator(doc.src, doc.language);
+        outer: while (it.next(doc.src)) |attr| {
+            if (std.ascii.eqlIgnoreCase(attr.name.slice(doc.src), "class")) {
+                const value = attr.value orelse break :outer;
+                const slice = value.span.slice(doc.src);
+                if (slice.len == 0 or slice[0] == '$') break :outer;
+                var vit = std.mem.tokenizeScalar(u8, slice, ' ');
+                while (vit.next()) |cls| {
+                    if (std.mem.eql(u8, class, cls)) {
+                        const range = lsp.offsets.locToRange(doc.src, .{
+                            .start = value.span.start + vit.index - cls.len,
+                            .end = value.span.start + vit.index,
+                        }, self.offset_encoding);
+
+                        try locations.append(arena, .{
+                            .uri = request.textDocument.uri,
+                            .range = range,
+                        });
+                        break :outer;
+                    }
+                }
+            }
+        }
+    }
+
+    return locations.items;
+}
+
 pub fn @"textDocument/completion"(
     self: *Handler,
     arena: std.mem.Allocator,
@@ -454,4 +545,27 @@ pub fn getRange(span: super.Span, src: []const u8) types.Range {
         .start = .{ .line = r.start.row, .character = r.start.col },
         .end = .{ .line = r.end.row, .character = r.end.col },
     };
+}
+
+// Returns a node index, 0 == not found
+pub fn findNode(doc: *const Document, offset: u32) u32 {
+    if (doc.html.nodes.len < 2) return 0;
+    var cur_idx: u32 = 1;
+    while (cur_idx != 0) {
+        const n = doc.html.nodes[cur_idx];
+        if (n.open.start <= offset and n.open.end > offset) {
+            break;
+        }
+        if (n.close.end != 0 and n.close.start <= offset and n.close.end > offset) {
+            break;
+        }
+
+        if (n.open.end <= offset and n.close.start > offset) {
+            cur_idx = n.first_child_idx;
+        } else {
+            cur_idx = n.next_idx;
+        }
+    }
+
+    return cur_idx;
 }
