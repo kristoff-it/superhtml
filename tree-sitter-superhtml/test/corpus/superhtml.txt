@@ -1,0 +1,158 @@
+==================================
+Ctx Tag
+==================================
+
+<ctx about="$site.page('about')">
+  <a href="$ctx.about.link()" :text="$ctx.about.title"></a>
+</ctx>
+
+---
+
+(document
+  (element
+    (start_tag
+      (tag_name)
+      (attribute
+        (attribute_name)
+        (quoted_attribute_value
+          (attribute_value))))
+    (element
+      (start_tag
+        (tag_name)
+        (attribute
+          (attribute_name)
+          (quoted_attribute_value
+            (attribute_value)))
+        (attribute
+          (attribute_name)
+          (quoted_attribute_value
+            (attribute_value))))
+      (end_tag
+        (tag_name)))
+    (end_tag
+      (tag_name))))
+
+==================================
+Super Tag
+==================================
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title id="title"><super></title>
+  </head>
+  <body id="main">
+    <super>
+  </body>
+</html>
+
+---
+
+(document
+  (doctype)
+  (element
+    (start_tag
+      (tag_name))
+    (element
+      (start_tag
+        (tag_name))
+      (element
+        (start_tag
+          (tag_name)
+          (attribute
+            (attribute_name)
+            (quoted_attribute_value
+              (attribute_value)))))
+      (element
+        (start_tag
+          (tag_name)
+          (attribute
+            (attribute_name)
+            (quoted_attribute_value
+              (attribute_value))))
+        (element
+          (start_tag
+            (tag_name)))
+        (end_tag
+          (tag_name)))
+      (end_tag
+        (tag_name)))
+    (element
+      (start_tag
+        (tag_name)
+        (attribute
+          (attribute_name)
+          (quoted_attribute_value
+            (attribute_value))))
+      (element
+        (start_tag
+          (tag_name)))
+      (end_tag
+        (tag_name)))
+    (end_tag
+      (tag_name))))
+
+==================================
+Extend Tag
+==================================
+
+<extend template="base.shtml">
+
+<title id="title" :text="$site.title"></title>
+
+<body id="main">
+  <h1 :text="$page.title"></h1>
+  <div :html="$page.content()"></div>
+</body>
+
+---
+
+(document
+  (element
+    (start_tag
+      (tag_name)
+      (attribute
+        (attribute_name)
+        (quoted_attribute_value
+          (attribute_value)))))
+  (element
+    (start_tag
+      (tag_name)
+      (attribute
+        (attribute_name)
+        (quoted_attribute_value
+          (attribute_value)))
+      (attribute
+        (attribute_name)
+        (quoted_attribute_value
+          (attribute_value))))
+    (end_tag
+      (tag_name)))
+  (element
+    (start_tag
+      (tag_name)
+      (attribute
+        (attribute_name)
+        (quoted_attribute_value
+          (attribute_value))))
+    (element
+      (start_tag
+        (tag_name)
+        (attribute
+          (attribute_name)
+          (quoted_attribute_value
+            (attribute_value))))
+      (end_tag
+        (tag_name)))
+    (element
+      (start_tag
+        (tag_name)
+        (attribute
+          (attribute_name)
+          (quoted_attribute_value
+            (attribute_value))))
+      (end_tag
+        (tag_name)))
+    (end_tag
+      (tag_name))))
