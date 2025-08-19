@@ -49,9 +49,47 @@ pub fn loadFile(
             d.* = .{
                 .range = range,
                 .severity = .Error,
-                .message = switch (err.tag) {
-                    .token => |t| @tagName(t),
-                    .ast => |t| @tagName(t),
+                .message = try std.fmt.allocPrint(arena, "{f}", .{err.tag.fmt(doc.src)}),
+                .code = .{ .string = @tagName(err.tag) },
+                .source = if (err.tag == .token) "html tokenizer" else "html parser",
+                .relatedInformation = switch (err.tag) {
+                    else => null,
+                    .duplicate_attribute_name => |span| try arena.dupe(
+                        lsp.types.DiagnosticRelatedInformation,
+                        &.{
+                            .{
+                                .location = .{ .uri = uri, .range = getRange(
+                                    span,
+                                    doc.src,
+                                ) },
+                                .message = "original",
+                            },
+                        },
+                    ),
+                    .duplicate_child => |dc| try arena.dupe(
+                        lsp.types.DiagnosticRelatedInformation,
+                        &.{
+                            .{
+                                .location = .{ .uri = uri, .range = getRange(
+                                    dc.span,
+                                    doc.src,
+                                ) },
+                                .message = "original",
+                            },
+                        },
+                    ),
+                    .invalid_nesting => |in| try arena.dupe(
+                        lsp.types.DiagnosticRelatedInformation,
+                        &.{
+                            .{
+                                .location = .{ .uri = uri, .range = getRange(
+                                    in.span,
+                                    doc.src,
+                                ) },
+                                .message = in.reason,
+                            },
+                        },
+                    ),
                 },
             };
         }

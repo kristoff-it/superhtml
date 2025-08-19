@@ -1,6 +1,7 @@
 const Ast = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Writer = std.Io.Writer;
 const tracy = @import("tracy");
@@ -8,20 +9,85 @@ const root = @import("../root.zig");
 const Language = root.Language;
 const Span = root.Span;
 const Tokenizer = @import("Tokenizer.zig");
+const Element = @import("Element.zig");
+const elements = Element.all;
+const kinds = Element.kinds;
+const Attribute = @import("Attribute.zig");
 
 const log = std.log.scoped(.@"html/ast");
 
-const TagNameMap = std.StaticStringMapWithEql(
+language: Language,
+nodes: []const Node,
+errors: []const Error,
+
+pub const Kind = enum {
+    // zig fmt: off
+    // Basic nodes
+    root, doctype, comment, text,
+
+    // Begin of all element tags, including superhtml
+    extend, super, ctx,
+
+    // Begin of html tags
+    ___, // invalid or web component (or superhtml if not in shtml mode)
+    a, abbr, address, area, article, aside, audio, b, base, bdi, bdo,
+    blockquote, body, br, button, canvas, caption, cite, code, col, colgroup,
+    data, datalist, dd, del, details, dfn, dialog, div, dl, dt, em, embed,
+    fencedframe, fieldset, figcaption, figure, footer, form, h1, h2, h3, h4, h5,
+    h6, head, header, hgroup, hr, html, i, iframe, img, input, ins, kbd, label,
+    legend, li, link, main, map, math, mark, menu, meta, meter, nav, noscript,
+    object, ol, optgroup, option, output, p, picture, pre, progress, q, rp,
+    rt, ruby, s, samp, script, search, section, select, selectedcontent, slot,
+    small, source, span, strong, style, sub, summary, sup, svg,  table, tbody,
+    td, template, textarea, tfoot, th, thead, time, title, tr, track, u, ul,
+    @"var", video, wbr,
+    // zig fmt: on
+
+    pub fn isElement(k: Kind) bool {
+        return @intFromEnum(k) > @intFromEnum(Kind.text);
+    }
+
+    pub fn isVoid(k: Kind) bool {
+        return switch (k) {
+            .root,
+            .doctype,
+            .comment,
+            .text,
+            => unreachable,
+            // shtml
+            .extend,
+            .super,
+            // html
+            .area,
+            .base,
+            .br,
+            .col,
+            .embed,
+            .hr,
+            .img,
+            .input,
+            .link,
+            .meta,
+            .source,
+            .track,
+            .wbr,
+            => true,
+            else => false,
+        };
+    }
+};
+
+pub const Set = std.StaticStringMapWithEql(
     void,
     std.static_string_map.eqlAsciiIgnoreCase,
 );
 
-const rcdata_names = TagNameMap.initComptime(.{
+pub const rcdata_names = Set.initComptime(.{
     .{ "title", {} },
     .{ "textarea", {} },
 });
 
-const rawtext_names = TagNameMap.initComptime(.{
+pub const rawtext_names = Set.initComptime(.{
     .{ "style", {} },
     .{ "xmp", {} },
     .{ "iframe", {} },
@@ -30,7 +96,7 @@ const rawtext_names = TagNameMap.initComptime(.{
     .{ "noscript", {} },
 });
 
-const unsupported_names = TagNameMap.initComptime(.{
+pub const unsupported_names = Set.initComptime(.{
     .{ "applet", {} },
     .{ "acronym", {} },
     .{ "bgsound", {} },
@@ -62,142 +128,11 @@ const unsupported_names = TagNameMap.initComptime(.{
     .{ "tt", {} },
 });
 
-const valid_html_tags: TagNameMap = blk: {
-    const Item = struct { []const u8 };
-    var list: []const Item = &.{};
-    for (std.meta.fields(ValidHtmlTags)) |f| list = list ++ &[_]Item{.{f.name}};
-    break :blk .initComptime(list);
-};
-
-const valid_shtml_tags = TagNameMap.initComptime(.{
-    .{ "extend", {} },
-    .{ "super", {} },
-    .{ "ctx", {} },
-});
-
-const ValidShtmlTags = enum {
-    extend,
-    super,
-    ctx,
-};
-const ValidHtmlTags = enum {
-    a,
-    abbr,
-    address,
-    area,
-    article,
-    aside,
-    audio,
-    b,
-    base,
-    bdi,
-    bdo,
-    blockquote,
-    body,
-    br,
-    button,
-    canvas,
-    caption,
-    cite,
-    code,
-    col,
-    colgroup,
-    data,
-    datalist,
-    dd,
-    del,
-    details,
-    dfn,
-    dialog,
-    div,
-    dl,
-    dt,
-    em,
-    embed,
-    fencedframe,
-    fieldset,
-    figcaption,
-    figure,
-    footer,
-    form,
-    h1,
-    head,
-    header,
-    hgroup,
-    hr,
-    html,
-    i,
-    iframe,
-    img,
-    input,
-    ins,
-    kbd,
-    label,
-    legend,
-    li,
-    link,
-    main,
-    map,
-    mark,
-    menu,
-    meta,
-    meter,
-    nav,
-    noscript,
-    object,
-    ol,
-    optgroup,
-    option,
-    output,
-    p,
-    picture,
-    pre,
-    progress,
-    q,
-    rp,
-    rt,
-    ruby,
-    s,
-    samp,
-    script,
-    search,
-    section,
-    select,
-    selectedcontent,
-    slot,
-    small,
-    source,
-    span,
-    strong,
-    style,
-    sub,
-    summary,
-    sup,
-    table,
-    tbody,
-    td,
-    template,
-    textarea,
-    tfoot,
-    th,
-    thead,
-    time,
-    title,
-    tr,
-    track,
-    u,
-    ul,
-    @"var",
-    video,
-    wbr,
-};
-
 pub const Node = struct {
-    kind: Kind,
     /// Span covering start_tag, diamond brackets included
     open: Span,
     /// Span covering end_tag, diamond brackets included
-    /// Unset status is represented by .start = 0 and .end = 0
+    /// Unset status is represented by .start = 0
     /// not set for doctype, element_void and element_self_closing
     close: Span = .{ .start = 0, .end = 0 },
 
@@ -205,21 +140,15 @@ pub const Node = struct {
     first_child_idx: u32 = 0,
     next_idx: u32 = 0,
 
-    pub const Kind = enum {
-        root,
-        doctype,
-        element,
-        element_void,
-        element_self_closing,
-        comment,
-        text,
-    };
+    kind: Kind,
+    self_closing: bool = false, // TODO fold into element tags
+    model: Element.Model,
 
     pub fn isClosed(n: Node) bool {
         return switch (n.kind) {
             .root => unreachable,
-            .element => n.close.start != 0,
-            .doctype, .element_void, .element_self_closing, .text, .comment => true,
+            .doctype, .text, .comment => true,
+            else => if (n.kind.isVoid() or n.self_closing) true else n.close.start > 0,
         };
     }
 
@@ -230,13 +159,14 @@ pub const Node = struct {
                 std.debug.assert(n.first_child_idx == 0);
                 return .in;
             },
-            .element => {
+            .doctype, .text, .comment => return .after,
+            else => {
+                if (n.kind.isVoid() or n.self_closing) return .after;
                 if (n.close.start == 0) {
                     return .in;
                 }
                 return .after;
             },
-            .doctype, .element_void, .element_self_closing, .text, .comment => return .after,
         }
     }
 
@@ -273,6 +203,28 @@ pub const Node = struct {
         };
     }
 
+    pub fn span(n: Node, src: []const u8) Span {
+        if (n.kind.isElement()) {
+            return n.startTagIterator(src, .html).name_span;
+        }
+
+        return n.open;
+    }
+
+    /// Calulates the stop index when iterating all descendants of a node
+    /// it either equals the index of the next node after this one, or
+    /// nodes.len in case there are no other nodes.
+    pub fn stop(n: Node, nodes: []const Node) u32 {
+        var cur = n;
+        const result = while (true) {
+            if (cur.next_idx != 0) break cur.next_idx;
+            if (cur.parent_idx == 0) break nodes.len;
+            cur = nodes[cur.parent_idx];
+        };
+        assert(result > n.first_child_idx);
+        return @intCast(result);
+    }
+
     pub fn debug(n: Node, src: []const u8) void {
         std.debug.print("{s}", .{n.open.slice(src)});
     }
@@ -281,22 +233,116 @@ pub const Node = struct {
 pub const Error = struct {
     tag: union(enum) {
         token: Tokenizer.TokenError,
-        ast: enum {
-            invalid_html_tag_name,
-            html_elements_cant_self_close,
-            missing_end_tag,
-            erroneous_end_tag,
-            duplicate_attribute_name,
-            deprecated_and_unsupported,
+        invalid_attr,
+        invalid_attr_nesting: Kind,
+        invalid_attr_value: struct {
+            reason: []const u8 = "",
         },
+        invalid_attr_combination: []const u8, // reason
+        missing_required_attr: []const u8,
+        missing_attr_value,
+        boolean_attr,
+        wrong_position: enum { first, second },
+        missing_child: Kind,
+        duplicate_child: struct {
+            span: Span, // original child
+            reason: []const u8 = "",
+        },
+        // Contains a span to the tag name of the ancestor that forbids this
+        // nesting. Usually the parent, but not always. In the case of
+        // elements with a transparent content model, the non-transparent
+        // ancestor that forbits the node will be used.
+        invalid_nesting: struct {
+            span: Span, // parent node that caused this error
+            reason: []const u8 = "",
+        },
+        invalid_html_tag_name,
+        html_elements_cant_self_close,
+        missing_end_tag,
+        erroneous_end_tag,
+        void_end_tag,
+        duplicate_attribute_name: Span, // original attribute
+        deprecated_and_unsupported,
+
+        const Tag = @This();
+        pub fn fmt(tag: Tag, src: []const u8) Tag.Formatter {
+            return .{ .tag = tag, .src = src };
+        }
+        const Formatter = struct {
+            tag: Tag,
+            src: []const u8,
+            pub fn format(tf: Tag.Formatter, w: *std.Io.Writer) !void {
+                return switch (tf.tag) {
+                    .token => w.print("syntax error", .{}),
+                    .invalid_attr => w.print(
+                        "invalid attribute for this element",
+                        .{},
+                    ),
+                    .invalid_attr_nesting => |kind| w.print(
+                        "invalid attribute for this element when nested under '{t}'",
+                        .{kind},
+                    ),
+                    .invalid_attr_value => |iav| {
+                        try w.print("invalid value for this attribute", .{});
+                        if (iav.reason.len > 0) {
+                            try w.print(": {s}", .{iav.reason});
+                        }
+                    },
+                    .invalid_attr_combination => |iac| w.print(
+                        "invalid attribute combination: {s}",
+                        .{iac},
+                    ),
+                    .missing_required_attr => |attr| w.print(
+                        "missing required attribute: {s}",
+                        .{attr},
+                    ),
+                    .missing_attr_value => w.print(
+                        "missing attribute value",
+                        .{},
+                    ),
+                    .boolean_attr => w.print(
+                        "this attribute cannot have a value",
+                        .{},
+                    ),
+                    .wrong_position => |p| w.print(
+                        "element in wrong position, should be {t}",
+                        .{p},
+                    ),
+                    .missing_child => |e| w.print("missing child: {t}", .{e}),
+                    .duplicate_child => |dc| {
+                        try w.print("duplicate child", .{});
+                        if (dc.reason.len > 0) {
+                            try w.print(": {s}", .{dc.reason});
+                        }
+                    },
+                    .invalid_nesting => |in| {
+                        try w.print("invalid nesting under {s}", .{
+                            in.span.slice(tf.src),
+                        });
+                        if (in.reason.len > 0) {
+                            try w.print(": {s}", .{in.reason});
+                        }
+                    },
+                    .invalid_html_tag_name => w.print(
+                        "not a valid html element",
+                        .{},
+                    ),
+                    .html_elements_cant_self_close => w.print(
+                        "html elements can't self-close",
+                        .{},
+                    ),
+                    .missing_end_tag => w.print("missing end tag", .{}),
+                    .erroneous_end_tag => w.print("erroneous end tag", .{}),
+                    .void_end_tag => w.print("void elements have no end tag", .{}),
+                    .duplicate_attribute_name => w.print("duplicate attribute name", .{}),
+                    .deprecated_and_unsupported => w.print("deprecated and unsupported", .{}),
+                };
+            }
+        };
     },
     main_location: Span,
     node_idx: u32, // 0 = missing node
 };
-
-language: Language,
-nodes: []const Node,
-errors: []const Error,
 
 pub fn cursor(ast: Ast, idx: u32) Cursor {
     return .{ .ast = ast, .idx = idx, .dir = .in };
@@ -315,7 +361,7 @@ pub fn printErrors(
             range.start.row,
             range.start.col,
             switch (err.tag) {
-                inline else => |t| @tagName(t),
+                inline else => |_, t| @tagName(t),
             },
         });
     }
@@ -332,21 +378,20 @@ pub fn init(
     language: Language,
     /// When true only official HTML tag names will be allowed.
     /// Strict mode currently only supports HTML and SuperHTML.
-    strict_tag_names: bool,
+    strict: bool,
 ) error{OutOfMemory}!Ast {
     if (src.len > std.math.maxInt(u32)) @panic("too long");
 
     var nodes = std.array_list.Managed(Node).init(gpa);
     errdefer nodes.deinit();
 
-    var errors = std.array_list.Managed(Error).init(gpa);
-    errdefer errors.deinit();
+    var errors: std.ArrayListUnmanaged(Error) = .empty;
+    errdefer errors.deinit(gpa);
 
-    var seen_attrs = std.StringHashMap(void).init(gpa);
-    defer seen_attrs.deinit();
+    var seen_attrs: std.StringHashMapUnmanaged(Span) = .empty;
+    defer seen_attrs.deinit(gpa);
 
     try nodes.append(.{
-        .kind = .root,
         .open = .{
             .start = 0,
             .end = 0,
@@ -358,6 +403,12 @@ pub fn init(
         .parent_idx = 0,
         .first_child_idx = 0,
         .next_idx = 0,
+
+        .kind = .root,
+        .model = .{
+            .categories = .none,
+            .content = .all,
+        },
     });
 
     var tokenizer: Tokenizer = .{ .language = language };
@@ -378,7 +429,12 @@ pub fn init(
                 var new: Node = .{
                     .kind = .doctype,
                     .open = dt.span,
+                    .model = .{
+                        .categories = .none,
+                        .content = .none,
+                    },
                 };
+
                 switch (current.direction()) {
                     .in => {
                         new.parent_idx = current_idx;
@@ -400,53 +456,100 @@ pub fn init(
                 .start,
                 .start_self,
                 => {
-                    const node_kind: Node.Kind = switch (tag.kind) {
+                    const name = tag.name.slice(src);
+                    var new: Node = node: switch (tag.kind) {
                         else => unreachable,
-                        .start_self => blk: {
-                            if (svg_lvl == 0 and language != .xml) {
-                                try errors.append(.{
-                                    .tag = .{
-                                        .ast = .html_elements_cant_self_close,
+                        .start_self => {
+                            if (svg_lvl != 0 or math_lvl != 0 or language == .xml) {
+                                break :node .{
+                                    .kind = .___,
+                                    .open = tag.span,
+                                    .model = .{
+                                        .categories = .all,
+                                        .content = .all,
                                     },
-                                    .main_location = tag.name,
-                                    .node_idx = current_idx + 1,
-                                });
+                                };
                             }
-                            break :blk .element_self_closing;
+                            try errors.append(gpa, .{
+                                .tag = .html_elements_cant_self_close,
+                                .main_location = tag.name,
+                                .node_idx = current_idx + 1,
+                            });
+                            continue :node .start;
                         },
-                        .start => if (tag.isVoid(src, language))
-                            .element_void
-                        else
-                            .element,
+                        .start => switch (language) {
+                            .superhtml => {
+                                // if (elements.get(name)) |element| {
+                                //     break :node .{
+                                //         .kind = element.tag,
+                                //         .content = .all,
+                                //         .open = tag.span,
+                                //     };
+                                // } else continue :lang .html;
+                                @panic("TODO");
+                            },
+                            .html => {
+                                if (kinds.get(name)) |kind| {
+                                    const parent_node = switch (current.direction()) {
+                                        .in => nodes.items[current_idx],
+                                        .after => nodes.items[nodes.items[current_idx].parent_idx],
+                                    };
+                                    const e = elements.get(kind);
+                                    const model = try e.validateAttrs(
+                                        gpa,
+                                        language,
+                                        &errors,
+                                        &seen_attrs,
+                                        src,
+                                        parent_node.kind,
+                                        parent_node.model.content,
+                                        tag.span,
+                                        current_idx,
+                                    );
+
+                                    break :node .{
+                                        .open = tag.span,
+                                        .kind = kind,
+                                        .model = model,
+                                    };
+                                } else if (std.mem.indexOfScalar(u8, name, '-') == null) {
+                                    try errors.append(gpa, .{
+                                        .tag = .invalid_html_tag_name,
+                                        .main_location = tag.name,
+                                        .node_idx = current_idx + 1,
+                                    });
+                                }
+
+                                break :node .{
+                                    .kind = .___,
+                                    .open = tag.span,
+                                    .model = .{
+                                        .categories = .all,
+                                        .content = .all,
+                                    },
+                                };
+                            },
+                            .xml => break :node .{
+                                .kind = .___,
+                                .open = tag.span,
+                                .model = .{
+                                    .categories = .all,
+                                    .content = .all,
+                                },
+                            },
+                        },
                     };
 
-                    const name = tag.name.slice(src);
-                    if (std.ascii.eqlIgnoreCase(tag.name.slice(src), "svg")) {
+                    // This comparison is done via strings instead of kinds
+                    // because we will not attempt to match the kind of an
+                    // svg nested inside another svg, and same for math.
+                    if (std.ascii.eqlIgnoreCase("svg", name)) {
                         svg_lvl += 1;
                     }
-                    if (std.ascii.eqlIgnoreCase(tag.name.slice(src), "math")) {
+                    if (std.ascii.eqlIgnoreCase("math", name)) {
                         math_lvl += 1;
                     }
 
-                    if (language != .xml and
-                        strict_tag_names and
-                        svg_lvl == 0 and
-                        math_lvl == 0 and
-                        std.mem.indexOfScalar(u8, name, '-') == null)
-                    blk: {
-                        const valid_html = valid_html_tags.has(name);
-                        const valid_shtml = valid_shtml_tags.has(name);
-                        if (valid_html or (language == .superhtml and valid_shtml)) break :blk;
-                        try errors.append(.{
-                            .tag = .{
-                                .ast = .invalid_html_tag_name,
-                            },
-                            .main_location = tag.name,
-                            .node_idx = current_idx + 1,
-                        });
-                    }
-
-                    var new: Node = .{ .kind = node_kind, .open = tag.span };
                     switch (current.direction()) {
                         .in => {
                             new.parent_idx = current_idx;
@@ -464,70 +567,53 @@ pub fn init(
                     try nodes.append(new);
                     current = &nodes.items[current_idx];
 
-                    if (std.ascii.eqlIgnoreCase("script", name)) {
-                        tokenizer.gotoScriptData();
-                        // } else if (rcdata_names.has(name)) {
-                        //     tokenizer.gotoRcData(name);
-                    } else if (rawtext_names.has(name)) {
-                        tokenizer.gotoRawText(name);
-                    } else if (unsupported_names.has(name)) {
-                        try errors.append(.{
-                            .tag = .{
-                                .ast = .deprecated_and_unsupported,
-                            },
-                            .main_location = tag.name,
-                            .node_idx = current_idx,
-                        });
-                    }
+                    if (strict and current.kind == .main) {
+                        var ancestor_idx = current.parent_idx;
+                        while (ancestor_idx != 0) {
+                            const ancestor = nodes.items[ancestor_idx];
+                            defer ancestor_idx = ancestor.parent_idx;
 
-                    // check for duplicated attrs
-                    {
-                        seen_attrs.clearRetainingCapacity();
-                        var tt: Tokenizer = .{
-                            .language = language,
-                            .idx = tag.span.start,
-                            .return_attrs = true,
-                        };
-
-                        while (tt.next(src[0..tag.span.end])) |maybe_attr| {
-                            switch (maybe_attr) {
-                                else => {
-                                    log.debug("found unexpected: '{s}' {any}", .{
-                                        @tagName(maybe_attr),
-                                        maybe_attr,
-                                    });
-                                    unreachable;
+                            switch (ancestor.kind) {
+                                .html,
+                                .body,
+                                .div,
+                                .___,
+                                => {},
+                                .form => {
+                                    // TODO: check accessible name
                                 },
-                                .tag_name => {},
-                                .tag => break,
-                                .parse_error => {},
-                                .attr => |attr| {
-                                    const attr_name = attr.name.slice(src);
-                                    log.debug("attr_name = '{s}'", .{attr_name});
-                                    const gop = try seen_attrs.getOrPut(attr_name);
-                                    if (gop.found_existing) {
-                                        try errors.append(.{
-                                            .tag = .{
-                                                .ast = .duplicate_attribute_name,
+                                else => {
+                                    try errors.append(gpa, .{
+                                        .tag = .{
+                                            .invalid_nesting = .{
+                                                .span = ancestor.span(src),
+                                                .reason = "main can only nest under html, body, div and form",
                                             },
-                                            .main_location = .{
-                                                .start = attr.name.start,
-                                                .end = attr.name.end,
-                                            },
-                                            .node_idx = current_idx,
-                                        });
-                                    }
+                                        },
+                                        .main_location = tag.name,
+                                        .node_idx = current_idx,
+                                    });
                                 },
                             }
                         }
                     }
+
+                    if (std.ascii.eqlIgnoreCase("script", name)) {
+                        tokenizer.gotoScriptData();
+                    } else if (rawtext_names.has(name)) {
+                        tokenizer.gotoRawText(name);
+                    } else if (unsupported_names.has(name)) {
+                        try errors.append(gpa, .{
+                            .tag = .deprecated_and_unsupported,
+                            .main_location = tag.name,
+                            .node_idx = current_idx,
+                        });
+                    }
                 },
                 .end, .end_self => {
                     if (current.kind == .root) {
-                        try errors.append(.{
-                            .tag = .{
-                                .ast = .erroneous_end_tag,
-                            },
+                        try errors.append(gpa, .{
+                            .tag = .erroneous_end_tag,
                             .main_location = tag.name,
                             .node_idx = 0,
                         });
@@ -546,18 +632,45 @@ pub fn init(
                         current = &nodes.items[current.parent_idx];
                     }
 
+                    const end_kind = switch (language) {
+                        .superhtml => {
+                            // if (elements.get(name)) |element| {
+                            //     break :node .{
+                            //         .kind = element.tag,
+                            //         .content = .all,
+                            //         .open = tag.span,
+                            //     };
+                            // } else continue :lang .html;
+                            @panic("TODO");
+                        },
+                        .html => kinds.get(tag.name.slice(src)) orelse .___,
+                        .xml => .___,
+                    };
+
                     while (true) {
                         if (current.kind == .root) {
                             current = original_current;
                             current_idx = original_current_idx;
-                            try errors.append(.{
-                                .tag = .{ .ast = .erroneous_end_tag },
+
+                            const is_void = blk: {
+                                const k = Element.kinds.get(
+                                    tag.name.slice(src),
+                                ) orelse break :blk false;
+                                assert(k.isElement());
+                                break :blk k.isVoid() and
+                                    original_current.kind.isElement() and
+                                    original_current.kind.isVoid();
+                            };
+
+                            try errors.append(gpa, .{
+                                .tag = if (is_void) .void_end_tag else .erroneous_end_tag,
                                 .main_location = tag.name,
                                 .node_idx = 0,
                             });
                             break;
                         }
 
+                        assert(!current.isClosed());
                         const current_name = blk: {
                             var temp_tok: Tokenizer = .{
                                 .language = language,
@@ -576,11 +689,13 @@ pub fn init(
                             break :blk name_span.slice(tag_src);
                         };
 
-                        std.debug.assert(!current.isClosed());
-                        if (std.ascii.eqlIgnoreCase(
-                            current_name,
-                            tag.name.slice(src),
-                        )) {
+                        const same_name = end_kind == current.kind and
+                            (end_kind != .___ or std.ascii.eqlIgnoreCase(
+                                current_name,
+                                tag.name.slice(src),
+                            ));
+
+                        if (same_name) {
                             if (std.ascii.eqlIgnoreCase(current_name, "svg")) {
                                 svg_lvl -= 1;
                             }
@@ -603,8 +718,8 @@ pub fn init(
                                             .end = rel_name.end + cur.open.start,
                                         };
                                     };
-                                    try errors.append(.{
-                                        .tag = .{ .ast = .missing_end_tag },
+                                    try errors.append(gpa, .{
+                                        .tag = .missing_end_tag,
                                         .main_location = cur_name,
                                         .node_idx = current_idx,
                                     });
@@ -612,6 +727,12 @@ pub fn init(
 
                                 cur = &nodes.items[cur.parent_idx];
                             }
+
+                            log.debug("----- closing '{s}' cur: {} par: {}", .{
+                                tag.name.slice(src),
+                                current_idx,
+                                current.parent_idx,
+                            });
 
                             break;
                         }
@@ -625,6 +746,13 @@ pub fn init(
                 var new: Node = .{
                     .kind = .text,
                     .open = txt,
+                    .model = .{
+                        .categories = .{
+                            .flow = true,
+                            .phrasing = true,
+                        },
+                        .content = .none,
+                    },
                 };
 
                 switch (current.direction()) {
@@ -651,6 +779,10 @@ pub fn init(
                 var new: Node = .{
                     .kind = .comment,
                     .open = c,
+                    .model = .{
+                        .categories = .all,
+                        .content = .none,
+                    },
                 };
 
                 log.debug("comment => current ({any})", .{current.*});
@@ -673,15 +805,18 @@ pub fn init(
                 current = &nodes.items[current_idx];
             },
             .parse_error => |pe| {
-                log.debug("parse error: {any}", .{pe});
+                log.debug("================= parse error: {any} {}", .{ pe, current_idx });
 
                 // TODO: finalize ast when EOF?
-                try errors.append(.{
+                try errors.append(gpa, .{
                     .tag = .{
                         .token = pe.tag,
                     },
                     .main_location = pe.span,
-                    .node_idx = current_idx,
+                    .node_idx = switch (current.direction()) {
+                        .in => current_idx,
+                        .after => current.parent_idx,
+                    },
                 });
             },
         }
@@ -690,8 +825,8 @@ pub fn init(
     // finalize tree
     while (current.kind != .root) {
         if (!current.isClosed()) {
-            try errors.append(.{
-                .tag = .{ .ast = .missing_end_tag },
+            try errors.append(gpa, .{
+                .tag = .missing_end_tag,
                 .main_location = current.open,
                 .node_idx = current_idx,
             });
@@ -701,10 +836,18 @@ pub fn init(
         current = &nodes.items[current.parent_idx];
     }
 
+    if (strict and errors.items.len == 0) try validateNesting(
+        gpa,
+        nodes.items,
+        &errors,
+        src,
+        language,
+    );
+
     return .{
         .language = language,
         .nodes = try nodes.toOwnedSlice(),
-        .errors = try errors.toOwnedSlice(),
+        .errors = try errors.toOwnedSlice(gpa),
     };
 }
 
@@ -760,17 +903,20 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     }
                 }
 
-                switch (current.kind) {
-                    else => {},
-                    .element => indentation += 1,
+                if (!current.self_closing and
+                    current.kind.isElement() and
+                    !current.kind.isVoid())
+                {
+                    indentation += 1;
                 }
             },
             .exit => {
                 const zone = tracy.trace(@src());
                 defer zone.end();
                 std.debug.assert(current.kind != .text);
-                std.debug.assert(current.kind != .element_void);
-                std.debug.assert(current.kind != .element_self_closing);
+                std.debug.assert(!current.kind.isElement() or !current.kind.isVoid());
+                std.debug.assert(!current.self_closing);
+
                 if (current.kind == .root) {
                     try w.writeAll("\n");
                     return;
@@ -782,9 +928,11 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     current,
                 });
 
-                switch (current.kind) {
-                    else => {},
-                    .element => indentation -= 1,
+                if (!current.self_closing and
+                    current.kind.isElement() and
+                    !current.kind.isVoid())
+                {
+                    indentation -= 1;
                 }
 
                 const open_was_vertical = std.ascii.isWhitespace(src[current.open.end]);
@@ -894,7 +1042,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                 }
             },
 
-            .element, .element_void, .element_self_closing => switch (direction) {
+            else => switch (direction) {
                 .enter => {
                     const zone = tracy.trace(@src());
                     defer zone.end();
@@ -922,12 +1070,11 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
 
                     // if (std.mem.eql(u8, name, "path")) @breakpoint();
 
-                    const extra: u32 = switch (current.kind) {
-                        .doctype,
-                        .element_void,
-                        .element_self_closing,
-                        => 1,
-                        else => @intCast(name.len),
+                    const extra: u32 = blk: {
+                        if (current.kind == .doctype) break :blk 1;
+                        assert(current.kind.isElement());
+                        if (current.kind.isVoid() or current.self_closing) break :blk 1;
+                        break :blk @intCast(name.len);
                     };
 
                     var first = true;
@@ -989,37 +1136,33 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                         }
                     }
 
-                    if (current.kind == .element_self_closing) {
+                    if (current.self_closing) {
                         try w.print("/", .{});
                     }
                     try w.print(">", .{});
 
-                    switch (current.kind) {
-                        else => unreachable,
-                        .element => {
-                            if (current.first_child_idx == 0) {
-                                direction = .exit;
-                            } else {
-                                current = ast.nodes[current.first_child_idx];
-                            }
-                        },
-                        .element_void,
-                        .element_self_closing,
-                        => {
-                            if (current.next_idx != 0) {
-                                current = ast.nodes[current.next_idx];
-                            } else {
-                                direction = .exit;
-                                current = ast.nodes[current.parent_idx];
-                            }
-                        },
+                    assert(current.kind.isElement());
+
+                    if (current.self_closing or current.kind.isVoid()) {
+                        if (current.next_idx != 0) {
+                            current = ast.nodes[current.next_idx];
+                        } else {
+                            direction = .exit;
+                            current = ast.nodes[current.parent_idx];
+                        }
+                    } else {
+                        if (current.first_child_idx == 0) {
+                            direction = .exit;
+                        } else {
+                            current = ast.nodes[current.first_child_idx];
+                        }
                     }
                 },
                 .exit => {
                     const zone = tracy.trace(@src());
                     defer zone.end();
-                    std.debug.assert(current.kind != .element_void);
-                    std.debug.assert(current.kind != .element_self_closing);
+                    std.debug.assert(!current.kind.isVoid());
+                    std.debug.assert(!current.self_closing);
                     last_rbracket = current.close.end;
                     if (current.close.start != 0) {
                         const name = blk: {
@@ -1049,12 +1192,185 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
     }
 }
 
-pub fn completions(ast: Ast, gpa: Allocator, offset: u32) []const []const u8 {
-    _ = ast;
-    _ = gpa;
-    _ = offset;
-    return &.{};
+// Only executed if strict is enabled
+pub fn validateNesting(
+    gpa: Allocator,
+    nodes: []const Node,
+    errors: *std.ArrayListUnmanaged(Error),
+    src: []const u8,
+    language: Language,
+) !void {
+    if (nodes.len < 2 or language == .xml) return;
+
+    var node_idx: u32 = 1;
+    while (node_idx != 0 and node_idx < nodes.len - 1) {
+        const n = nodes[node_idx];
+        if (n.kind == .svg or n.kind == .math or n.kind == .___) {
+            node_idx = n.next_idx;
+            continue;
+        }
+        defer node_idx += 1;
+
+        if (!n.kind.isElement() or n.kind.isVoid()) continue;
+
+        const element: Element = elements.get(n.kind);
+        try element.validateContent(
+            gpa,
+            nodes,
+            errors,
+            src,
+            node_idx,
+        );
+    }
 }
+
+pub const Completion = struct {
+    label: []const u8,
+    desc: []const u8,
+};
+
+pub fn completions(
+    ast: Ast,
+    arena: Allocator,
+    src: []const u8,
+    offset: u32,
+) ![]const Completion {
+    for (ast.errors) |err| {
+        if (err.tag != .token or offset != err.main_location.start) continue;
+
+        var idx = offset;
+        while (idx > 0) : (idx -= 1) {
+            switch (src[idx]) {
+                '<', '/' => break,
+                ' ', '\n', '\t', '\r' => continue,
+                else => return &.{},
+            }
+        } else return &.{};
+
+        const parent_idx = err.node_idx;
+        const parent_node = ast.nodes[parent_idx];
+        if ((!parent_node.kind.isElement() and
+            parent_node.kind != .root) or
+            parent_node.kind == .svg or
+            parent_node.kind == .math) return &.{};
+
+        const e = Element.all.get(parent_node.kind);
+        log.debug("===== completions: content!", .{});
+        return e.completions(arena, ast, src, parent_idx, offset, .content);
+    }
+
+    const node_idx = ast.findNodeTagsIdx(offset);
+    log.debug("===== completions: attrs node: {}", .{node_idx});
+    if (node_idx == 0) return &.{};
+
+    const n = ast.nodes[node_idx];
+    log.debug("===== node: {any}", .{n});
+    if (!n.kind.isElement()) return &.{};
+    if (offset >= n.open.end) return &.{};
+
+    const e = Element.all.get(n.kind);
+    return e.completions(arena, ast, src, node_idx, offset, .attrs);
+}
+
+pub fn description(ast: *const Ast, src: []const u8, offset: u32) ?[]const u8 {
+    const node_idx = ast.findNodeTagsIdx(offset);
+    if (node_idx == 0) return null;
+    const n = ast.nodes[node_idx];
+
+    if (!n.kind.isElement() or n.kind == .___) return null;
+
+    if (n.open.end > offset) {
+        var it = n.startTagIterator(src, ast.language);
+        if (offset < it.name_span.end and offset >= it.name_span.start) {
+            // element name
+            const e = Element.all.get(n.kind);
+            return e.desc;
+        }
+
+        while (it.next(src)) |attr| {
+            const end = if (attr.value) |v| v.span.end else attr.name.end;
+            if (offset < end and offset >= attr.name.start) {
+                const name = attr.name.slice(src);
+                const attr_model = Attribute.element_attrs.get(n.kind).get(name) orelse
+                    Attribute.global.get(name) orelse return null;
+
+                return attr_model.desc;
+            }
+        }
+
+        return null;
+    }
+
+    // end tag
+    const e = Element.all.get(n.kind);
+    return e.desc;
+}
+
+/// Returns the node index whose start or end tag overlaps the provided offset.
+/// Returns zero if the offset is outside of a start/end tag.
+pub fn findNodeTagsIdx(ast: *const Ast, offset: u32) u32 {
+    if (ast.nodes.len < 2) return 0;
+    var cur_idx: u32 = 1;
+    while (cur_idx != 0) {
+        const n = ast.nodes[cur_idx];
+        if (n.open.start <= offset and n.open.end > offset) {
+            break;
+        }
+        if (n.close.end != 0 and n.close.start <= offset and n.close.end > offset) {
+            break;
+        }
+
+        if (n.open.end <= offset and n.close.start > offset) {
+            cur_idx = n.first_child_idx;
+        } else {
+            cur_idx = n.next_idx;
+        }
+    }
+
+    return cur_idx;
+}
+
+// pub fn transparentAncestorRule(
+//     nodes: []const Node,
+//     src: []const u8,
+//     language: Language,
+//     parent_idx: u32,
+// ) ?struct {
+//     tag: tags.RuleEnum,
+//     span: Span,
+//     idx: u32,
+// } {
+//     var ancestor_idx = parent_idx;
+//     while (ancestor_idx != 0) {
+//         const ancestor = nodes[ancestor_idx];
+//         var ptt: Tokenizer = .{
+//             .idx = ancestor.open.start,
+//             .return_attrs = true,
+//             .language = language,
+//         };
+
+//         const ancestor_span = ptt.next(
+//             src[0..ancestor.open.end],
+//         ).?.tag_name;
+//         const ancestor_name = ancestor_span.slice(src);
+
+//         const ancestor_rule = tags.all.get(
+//             ancestor_name,
+//         ) orelse return null;
+
+//         if (ancestor_rule == .transparent) {
+//             ancestor_idx = ancestor.parent_idx;
+//             continue;
+//         }
+
+//         return .{
+//             .tag = ancestor_rule,
+//             .span = ancestor_span,
+//             .idx = ancestor_idx,
+//         };
+//     }
+//     return null;
+// }
 
 fn at(ast: Ast, idx: u32) ?Node {
     if (idx == 0) return null;
@@ -1138,8 +1454,152 @@ fn debugNodes(nodes: []const Node, src: []const u8) void {
     ast.debug(src);
 }
 
+// pub const Rule = union(enum) {
+//     simple: Simple,
+//     custom: Custom,
+
+//     const Simple = struct {
+//         // Allows text node children.
+//         text: bool,
+//         // Allowed element tag names.
+//         tags: *const tags.Set,
+
+//         pub inline fn completions(simple: Simple, arena: Allocator) ![]const []const u8 {
+//             const cpy = try arena.dupe([]const u8, simple.tags.keys());
+//             std.mem.sort([]const u8, cpy, {}, struct {
+//                 fn lt(_: void, lhs: []const u8, rhs: []const u8) bool {
+//                     return std.mem.lessThan(u8, lhs, rhs);
+//                 }
+//             }.lt);
+
+//             return cpy;
+//         }
+
+//         pub inline fn validate(
+//             rule: Simple,
+//             nodes: []const Node,
+//             errors: *std.ArrayList(Error),
+//             src: []const u8,
+//             language: Language,
+//             parent_span: Span,
+//             parent_idx: u32,
+//             first_child_idx: u32,
+//         ) !void {
+//             assert(parent_idx != 0);
+//             if (true) @panic("TODO");
+
+//             var child_idx: u32 = first_child_idx;
+//             while (child_idx != 0) {
+//                 const ch = nodes[child_idx];
+//                 defer child_idx = ch.next_idx;
+
+//                 switch (ch.kind) {
+//                     .root, .element_self_closing => unreachable,
+//                     .doctype => {
+//                         try errors.append(.{
+//                             .tag = .{
+//                                 .invalid_nesting = .{
+//                                     .span = parent_span,
+//                                 },
+//                             },
+//                             .main_location = ch.open,
+//                             .node_idx = child_idx,
+//                         });
+//                         continue;
+//                     },
+//                     .comment => continue,
+//                     .text => {
+//                         if (!rule.text) try errors.append(.{
+//                             .tag = .{
+//                                 .invalid_nesting = .{ .span = parent_span },
+//                             },
+//                             .main_location = ch.open,
+//                             .node_idx = child_idx,
+//                         });
+
+//                         continue;
+//                     },
+//                     .element, .element_void => {},
+//                 }
+
+//                 const child_span = blk: {
+//                     var ch_tt: Tokenizer = .{
+//                         .idx = ch.open.start,
+//                         .return_attrs = true,
+//                         .language = language,
+//                     };
+
+//                     break :blk ch_tt.next(src[0..ch.open.end]).?.tag_name;
+//                 };
+//                 const child_name = child_span.slice(src);
+
+//                 // No validation for web components
+//                 if (std.mem.indexOfScalar(u8, child_name, '-') != null) {
+//                     continue;
+//                 }
+
+//                 log.debug("-------------- child name: '{s}'", .{child_name});
+
+//                 if (rule.tags.has(child_name)) continue;
+//                 if (tags.all.has(child_name)) try errors.append(.{
+//                     .tag = .{
+//                         .invalid_nesting = .{
+//                             .span = parent_span,
+//                         },
+//                     },
+//                     .main_location = child_span,
+//                     .node_idx = child_idx,
+//                 });
+
+//                 // we don't emit an invalid nesting error if the tag name
+//                 // is invalid. further validation will add the invalid name
+//                 // once this child becomes the parent element.
+//             }
+//         }
+//     };
+
+//     const Custom = struct {
+//         completions: *const CompletionsFn,
+//         validate: *const ValidateFn,
+//     };
+
+//     const ValidateFn = fn (
+//         nodes: []const Node,
+//         errors: *std.ArrayList(Error),
+//         src: []const u8,
+//         language: Language,
+//         // Fields that have transparent content models will reference
+//         // rules from their ancestors instead of the rule "native" to them.
+//         // This parameter ensures that when multiple transparent tags are
+//         // nested, we keep searching upwards correctly.
+//         rule_idx: u32,
+//         // When rule_idx != parent_idx this span represents the ancestor and
+//         // not the direct parent because it's the ancestor's rules that will
+//         // cause any invalid nesting error.
+//         parent_span: Span,
+//         // The node whose content model is being checked against all its
+//         // children.
+//         parent_idx: u32,
+//         // Normally, the first child of parent_idx. Sometimes tags will have
+//         // a required "prefix" of children and then they will have a
+//         // transparent content model for the rest of the children (e.g. audio).
+//         // In this latter case first_child_idx is the first child after the
+//         // required prefix.
+//         first_child_idx: u32,
+//     ) error{OutOfMemory}!void;
+
+//     const CompletionsFn = fn (
+//         arena: Allocator,
+//         nodes: []const Node,
+//         src: []const u8,
+//         language: Language,
+//         rule_idx: u32,
+//         parent_idx: u32,
+//     ) error{OutOfMemory}![]const []const u8;
+// };
+
 test "basics" {
-    const case = "<html><head></head><body><div><link></div></body></html>\n";
+    const case = "<html><head></head><body><div><br></div></body></html>\n";
 
     const ast = try Ast.init(std.testing.allocator, case, .html, true);
     defer ast.deinit(std.testing.allocator);

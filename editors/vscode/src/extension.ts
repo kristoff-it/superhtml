@@ -3,7 +3,7 @@ import {
     startServer
 } from '@vscode/wasm-wasi-lsp';
 import { ProcessOptions, Stdio, Wasm } from '@vscode/wasm-wasi/v1';
-import { ExtensionContext, Uri, window, workspace } from 'vscode';
+import { ConfigurationTarget, ExtensionContext, Uri, window, workspace } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
@@ -12,6 +12,9 @@ import {
 
 let client: LanguageClient;
 export async function activate(context: ExtensionContext) {
+    await workspace.getConfiguration()
+        .update('html.suggest.html5', false, ConfigurationTarget.Global);
+
     const wasm: Wasm = await Wasm.load();
 
     const channel = window.createOutputChannel('SuperHTML Language Server');

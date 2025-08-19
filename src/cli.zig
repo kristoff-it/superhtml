@@ -36,7 +36,7 @@ pub fn panic(
     }
     blk: {
         const out: std.fs.File = if (!lsp_mode) std.fs.File.stderr() else logging.log_file orelse break :blk;
-        var writer = out.writer(&.{});
+        var writer = out.writerStreaming(&.{});
         const w = &writer.interface;
         if (builtin.strip_debug_info) {
             w.print("Unable to dump stack trace: debug info stripped\n", .{}) catch return;
@@ -51,6 +51,7 @@ pub fn panic(
             break :blk;
         };
     }
+
     if (builtin.mode == .Debug) @breakpoint();
     std.process.exit(1);
 }

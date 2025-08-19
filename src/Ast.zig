@@ -281,13 +281,7 @@ pub fn init(
         const html_node_idx = cur.idx;
         const depth = cur.depth;
 
-        switch (html_node.kind) {
-            .element,
-            .element_void,
-            .element_self_closing,
-            => {},
-            else => continue,
-        }
+        if (!html_node.kind.isElement()) continue;
 
         defer seen_non_comment_elems = true;
 

@@ -140,7 +140,7 @@ pub const Attr = struct {
             src: []const u8,
         ) !UnescapedSlice {
             _ = gpa;
-            // TODO: sqeek-senpai please implement this for real
+            // TODO: ask squeek to please implement this for real
             return .{ .slice = value.span.slice(src) };
         }
     };
@@ -2504,17 +2504,34 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         var tag = state.tag;
                         tag.span.end = self.idx;
 
-                        self.state = .data;
-                        return .{
-                            .token = .{
-                                .parse_error = .{
-                                    .tag = .missing_attribute_value,
-                                    .span = .{
-                                        .start = state.equal_sign,
-                                        .end = state.equal_sign + 1,
-                                    },
+                        const t: Token = .{
+                            .parse_error = .{
+                                .tag = .missing_attribute_value,
+                                .span = .{
+                                    .start = state.equal_sign,
+                                    .end = state.equal_sign + 1,
                                 },
                             },
+                        };
+
+                        if (self.return_attrs) {
+                            const attr: Token = .{
+                                .attr = .{
+                                    .name = state.attribute_name,
+                                    .value = null,
+                                },
+                            };
+
+                            self.state = .data;
+                            return .{
+                                .token = t,
+                                .deferred = attr,
+                            };
+                        }
+
+                        self.state = .data;
+                        return .{
+                            .token = t,
                             .deferred = .{ .tag = tag },
                         };
                     },
@@ -2688,7 +2705,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                             .quote = .none,
                                             .span = .{
                                                 .start = state.value_start,
-                                                .end = self.idx,
+                                                .end = self.idx - 1,
                                             },
                                         },
                                     },
