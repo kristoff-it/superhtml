@@ -336,10 +336,10 @@ pub fn init(
 ) error{OutOfMemory}!Ast {
     if (src.len > std.math.maxInt(u32)) @panic("too long");
 
-    var nodes = std.ArrayList(Node).init(gpa);
+    var nodes = std.array_list.Managed(Node).init(gpa);
     errdefer nodes.deinit();
 
-    var errors = std.ArrayList(Error).init(gpa);
+    var errors = std.array_list.Managed(Error).init(gpa);
     errdefer errors.deinit();
 
     var seen_attrs = std.StringHashMap(void).init(gpa);

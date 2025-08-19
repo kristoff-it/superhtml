@@ -252,7 +252,7 @@ pub fn @"textDocument/formatting"(
 
     return try arena.dupe(types.TextEdit, &.{.{
         .range = range,
-        .newText = aw.getWritten(),
+        .newText = aw.written(),
     }});
 }
 
