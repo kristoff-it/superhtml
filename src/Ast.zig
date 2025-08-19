@@ -1195,7 +1195,7 @@ test "siblings" {
         \\)
         \\
     ;
-    try std.testing.expectEqualStrings(ex, out.getWritten());
+    try std.testing.expectEqualStrings(ex, out.written());
 }
 
 test "nesting" {
@@ -1232,7 +1232,7 @@ test "nesting" {
         \\)
         \\
     ;
-    try std.testing.expectEqualStrings(ex, out.getWritten());
+    try std.testing.expectEqualStrings(ex, out.written());
 }
 
 test "deeper nesting" {
@@ -1269,7 +1269,7 @@ test "deeper nesting" {
         \\)
         \\
     ;
-    try std.testing.expectEqualStrings(ex, out.getWritten());
+    try std.testing.expectEqualStrings(ex, out.written());
 }
 
 test "complex example" {
@@ -1320,7 +1320,7 @@ test "complex example" {
         \\)
         \\
     ;
-    try std.testing.expectEqualStrings(ex, out.getWritten());
+    try std.testing.expectEqualStrings(ex, out.written());
 }
 
 test "if-else-loop errors" {
@@ -1392,7 +1392,7 @@ test "super" {
         \\)
         \\
     ;
-    try std.testing.expectEqualStrings(ex, out.getWritten());
+    try std.testing.expectEqualStrings(ex, out.written());
 
     const cex: usize = 2;
     try std.testing.expectEqual(cex, tree.childrenCount(tree.child(r).?));
