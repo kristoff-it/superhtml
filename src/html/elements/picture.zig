@@ -265,7 +265,7 @@ fn validateSrcset(
     // var future_h = false;
     _ = width_desc;
 
-    outer: while (position < input.len) {
+    while (position < input.len) {
         // 4. Splitting loop: Collect a sequence of code points that are ASCII whitespace or U+002C COMMA characters from input given position. If any U+002C COMMA characters were collected, that is a parse error.
         const start = position;
         while (position < input.len) : (position += 1) {
@@ -312,7 +312,7 @@ fn validateSrcset(
             var state: enum { descriptor, parens, after } = .descriptor;
 
             // 4. Let c be the character at position. Do the following depending on the value of state. For the purpose of this step, "EOF" is a special character representing that position is past the end of input.
-            const descriptor_start: u32 = position;
+            var descriptor_start: u32 = position;
             while (true) : (position += 1) {
                 const c = if (position == input.len) 0 else input[position];
                 state: switch (state) {
@@ -320,14 +320,33 @@ fn validateSrcset(
                         ' ', '\t'...'\r' => {
                             // ASCII whitespace
                             // If current descriptor is not empty, append current descriptor to descriptors and let current descriptor be the empty string. Set state to after descriptor.
-                            if (position - descriptor_start != 0) {
+                            const descriptor = input[descriptor_start..position];
+                            if (descriptor.len != 0) {
+                                if (validateDescriptor(
+                                    node_idx,
+                                    descriptor_start,
+                                    descriptor,
+                                )) |err| {
+                                    return errors.append(gpa, err);
+                                }
+                                descriptor_start = position;
                                 state = .after;
                             }
                         },
                         ',' => {
                             // U+002C COMMA (,)
                             // Advance position to the next character in input. If current descriptor is not empty, append current descriptor to descriptors. Jump to the step labeled descriptor parser.
-                            if (position - descriptor_start == 0) continue :outer;
+                            const descriptor = input[descriptor_start..position];
+                            if (descriptor.len != 0) {
+                                if (validateDescriptor(
+                                    node_idx,
+                                    descriptor_start,
+                                    descriptor,
+                                )) |err| {
+                                    return errors.append(gpa, err);
+                                }
+                            }
+                            position += 1;
                             break;
                         },
                         '(' => {
@@ -339,7 +358,16 @@ fn validateSrcset(
                         0 => {
                             // EOF
                             // If current descriptor is not empty, append current descriptor to descriptors. Jump to the step labeled descriptor parser.
-                            if (position - descriptor_start == 0) continue :outer;
+                            const descriptor = input[descriptor_start..position];
+                            if (descriptor.len != 0) {
+                                if (validateDescriptor(
+                                    node_idx,
+                                    descriptor_start,
+                                    descriptor,
+                                )) |err| {
+                                    return errors.append(gpa, err);
+                                }
+                            }
                             break;
                         },
 
@@ -387,31 +415,34 @@ fn validateSrcset(
                 }
                 // Advance position to the next character in input. Repeat this step.
             }
-
-            const descriptor = input[descriptor_start..position];
-            assert(descriptor.len > 0);
-
-            switch (descriptor[descriptor.len - 1]) {
-                'w' => {},
-                'x' => {},
-                'h' => {},
-                else => return errors.append(gpa, .{
-                    .tag = .{
-                        .invalid_attr_value = .{ .reason = "invalid descriptor" },
-                    },
-                    .main_location = .{
-                        .start = value.span.start + descriptor_start,
-                        .end = value.span.start + position,
-                    },
-                    .node_idx = node_idx,
-                }),
-            }
-
-            if (position < input.len - 1 and input[position] == ',') {
-                position += 1;
-            }
         }
     }
+}
+
+fn validateDescriptor(
+    node_idx: u32,
+    descriptor_start: u32,
+    descriptor: []const u8,
+) ?Ast.Error {
+    assert(descriptor.len > 0);
+
+    switch (descriptor[descriptor.len - 1]) {
+        'w' => {},
+        'x' => {},
+        'h' => {},
+        else => return .{
+            .tag = .{
+                .invalid_attr_value = .{ .reason = "invalid descriptor" },
+            },
+            .main_location = .{
+                .start = descriptor_start,
+                .end = @intCast(descriptor_start + descriptor.len),
+            },
+            .node_idx = node_idx,
+        },
+    }
+
+    return null;
 }
 
 fn completions(
