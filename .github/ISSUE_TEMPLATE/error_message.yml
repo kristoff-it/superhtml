@@ -1,0 +1,26 @@
+name: Missing or Wrong HTML diagnostic
+description: Report an error with how SuperHTML validates HTML.
+labels: ["diagnostic"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: SuperHTML Version
+      description: "The output of `superhtml version` (or the VSCode extension version)"
+      placeholder: "v0.5.3-dev.59+0336596"
+    validations:
+      required: true
+  - type: markdown
+    id: repro
+    attributes:
+      label: Steps to Reproduce and Observed Behavior
+      description: What exactly can someone else do, in order to observe the problem that you observed? Include error messages, if any.
+    validations:
+      required: true
+  - type: markdown
+    id: expected
+    attributes:
+      label: Expected Output according to the HTML spec
+      description: "NOTE: failing to provide a quote from the WHATWG HTML living specification that shows the discrepancy might cause your issue to be closed without any explanation."
+    validations:
+      required: true

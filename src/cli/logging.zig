@@ -22,13 +22,15 @@ pub fn logFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (build_options.enabled_scopes.len > 0) {
-        inline for (build_options.enabled_scopes) |es| {
-            if (comptime std.mem.eql(u8, es, @tagName(scope))) {
-                break;
-            }
-        } else return;
-    }
+    // switch (scope) {
+    //     .root, .super_lsp, .@"html/ast" => {},
+    //     else => return,
+    // }
+    inline for (build_options.enabled_scopes) |es| {
+        if (comptime std.mem.eql(u8, es, @tagName(scope))) {
+            break;
+        }
+    } else return;
 
     const l = log_file orelse return;
     const scope_prefix = "(" ++ @tagName(scope) ++ "): ";

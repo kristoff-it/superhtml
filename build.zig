@@ -64,14 +64,6 @@ pub fn build(b: *std.Build) !void {
     if (version == .tag) {
         setupReleaseStep(b, options, superhtml, folders, lsp);
     }
-
-    if (b.option(
-        bool,
-        "fuzz",
-        "Generate an executable for AFL++ (persistent mode) plus extra tooling",
-    ) orelse false) {
-        setupFuzzStep(b, target, superhtml);
-    }
 }
 
 fn setupCheckStep(
@@ -135,61 +127,6 @@ fn setupTestStep(
     fuzz_tests.root_module.addImport("superhtml", superhtml);
     const run_fuzz_tests = b.addRunArtifact(fuzz_tests);
     test_step.dependOn(&run_fuzz_tests.step);
-}
-
-fn setupFuzzStep(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    superhtml: *std.Build.Module,
-) void {
-    const afl = b.lazyImport(@This(), "afl_kit") orelse return;
-    const afl_obj = b.addObject(.{
-        .name = "superfuzz-afl",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz/afl.zig"),
-            .target = target,
-            .optimize = .ReleaseSafe,
-        }),
-    });
-
-    afl_obj.root_module.addImport("superhtml", superhtml);
-    afl_obj.root_module.stack_check = false; // not linking with compiler-rt
-    afl_obj.root_module.link_libc = true; // afl runtime depends on libc
-
-    const afl_fuzz = afl.addInstrumentedExe(
-        b,
-        target,
-        .ReleaseSafe,
-        null,
-        false,
-        afl_obj,
-    ) orelse return;
-    b.getInstallStep().dependOn(&b.addInstallFile(afl_fuzz, "superfuzz-afl").step);
-    // b.installArtifact(afl_fuzz);
-
-    const super_fuzz = b.addExecutable(.{
-        .name = "superfuzz",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz.zig"),
-            .target = target,
-            .optimize = .ReleaseSafe,
-        }),
-    });
-
-    super_fuzz.root_module.addImport("superhtml", superhtml);
-    b.installArtifact(super_fuzz);
-
-    const supergen = b.addExecutable(.{
-        .name = "supergen",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz/astgen.zig"),
-            .target = target,
-            .optimize = .Debug,
-        }),
-    });
-
-    supergen.root_module.addImport("superhtml", superhtml);
-    b.installArtifact(supergen);
 }
 
 fn setupCliTool(

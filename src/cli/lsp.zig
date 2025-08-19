@@ -122,8 +122,14 @@ pub fn initialize(
         .referencesProvider = .{ .bool = true },
 
         .completionProvider = .{
-            .triggerCharacters = &.{ "<", "/" },
+            .triggerCharacters = &.{
+                "<",  "/", " ",
+                "\n", "'", "\"",
+                "=",  ",",
+            },
         },
+
+        .hoverProvider = .{ .bool = true },
 
         .documentFormattingProvider = .{ .bool = true },
     };
@@ -236,7 +242,7 @@ pub fn @"textDocument/formatting"(
     log.debug("format request!!", .{});
 
     const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
-    if (doc.html.errors.len != 0) {
+    if (doc.html.has_syntax_errors) {
         return null;
     }
 
@@ -271,7 +277,7 @@ pub fn @"textDocument/codeAction"(
     if (!self.strict) return null;
 
     for (doc.html.errors) |err| {
-        if (err.tag != .ast or err.tag.ast != .invalid_html_tag_name) continue;
+        if (err.tag != .invalid_html_tag_name) continue;
 
         const span = err.main_location;
         if (span.start <= offset and span.end > offset) {
@@ -283,7 +289,7 @@ pub fn @"textDocument/codeAction"(
 
             const edits_len: usize = if (err.node_idx != 0) blk: {
                 const node = doc.html.nodes[err.node_idx];
-                if (node.kind != .element) break :blk 1;
+                if (node.kind.isVoid() or node.self_closing) break :blk 1;
 
                 const close = node.close;
                 if (close.end < 2 or close.start > close.end - 2) break :blk 1;
@@ -339,7 +345,7 @@ pub fn @"textDocument/prepareRename"(
         self.offset_encoding,
     );
 
-    const node_idx = findNode(doc, @intCast(offset));
+    const node_idx = doc.html.findNodeTagsIdx(@intCast(offset));
     if (node_idx == 0) return null;
 
     const node = doc.html.nodes[node_idx];
@@ -434,7 +440,7 @@ pub fn @"textDocument/references"(
         self.offset_encoding,
     );
 
-    const node_idx = findNode(doc, @intCast(offset));
+    const node_idx = doc.html.findNodeTagsIdx(@intCast(offset));
     log.debug("------ References request! (node: {}) ------", .{node_idx});
     if (node_idx == 0) return null;
 
@@ -466,10 +472,7 @@ pub fn @"textDocument/references"(
 
     var locations: std.ArrayListUnmanaged(lsp.types.Location) = .empty;
     for (doc.html.nodes) |n| {
-        switch (n.kind) {
-            .element, .element_void, .element_self_closing => {},
-            else => continue,
-        }
+        if (!n.kind.isElement()) continue;
 
         var it = n.startTagIterator(doc.src, doc.language);
         outer: while (it.next(doc.src)) |attr| {
@@ -511,12 +514,50 @@ pub fn @"textDocument/completion"(
         self.offset_encoding,
     );
 
-    _ = offset;
-    _ = arena;
-    return null;
-    // const completions = doc.html.completions(arena, @intCast(offset));
+    log.debug("===== lsp autocomplete! offset={}", .{offset});
 
-    // _ = completions;
+    const completions = try doc.html.completions(arena, doc.src, @intCast(offset));
+    const items = try arena.alloc(lsp.types.CompletionItem, completions.len);
+    for (items, completions) |*it, cpl| {
+        it.* = .{
+            .label = cpl.label,
+            .insertText = cpl.value,
+            .documentation = if (cpl.desc.len == 0) null else .{
+                .MarkupContent = .{
+                    .kind = .markdown,
+                    .value = cpl.desc,
+                },
+            },
+            .commitCharacters = &.{" >"},
+        };
+    }
+
+    return .{ .array_of_CompletionItem = items };
+}
+
+pub fn @"textDocument/hover"(
+    self: *Handler,
+    arena: std.mem.Allocator,
+    request: types.HoverParams,
+) error{OutOfMemory}!lsp.ResultType("textDocument/hover") {
+    _ = arena;
+
+    const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
+    const offset = lsp.offsets.positionToIndex(
+        doc.src,
+        request.position,
+        self.offset_encoding,
+    );
+
+    const desc = doc.html.description(doc.src, @intCast(offset)) orelse return null;
+    return .{
+        .contents = .{
+            .MarkupContent = .{
+                .kind = .markdown,
+                .value = desc,
+            },
+        },
+    };
 }
 
 pub fn onResponse(
@@ -558,6 +599,7 @@ pub fn findNode(doc: *const Document, offset: u32) u32 {
     return cur_idx;
 }
 
+// TODO this should not allocate
 pub fn tagRanges(
     self: *Handler,
     arena: std.mem.Allocator,
@@ -575,7 +617,7 @@ pub fn tagRanges(
         // has a node associated that happens to match our offset.
         const span = err.main_location;
         if (span.start <= offset and span.end > offset) {
-            if (err.tag == .ast and err.tag.ast == .erroneous_end_tag) {
+            if (err.tag == .erroneous_end_tag) {
                 const ranges = try arena.alloc(types.Range, 1);
                 ranges[0] = getRange(span, doc.src);
                 return ranges;
@@ -585,31 +627,29 @@ pub fn tagRanges(
     } else findNode(doc, @intCast(offset));
 
     const node = doc.html.nodes[node_idx];
-    return blk: switch (node.kind) {
-        else => return null,
-        .element => {
-            const ranges = try arena.alloc(types.Range, 2);
 
-            const it = node.startTagIterator(doc.src, doc.language);
-            ranges[0] = getRange(it.name_span, doc.src);
+    assert(node.kind.isElement());
+    if (node.kind.isVoid() or node.self_closing) {
+        const ranges = try arena.alloc(lsp.types.Range, 1);
 
-            const close = node.close;
-            if (close.end < 2 or close.start > close.end - 2) {
-                break :blk ranges[0..1];
-            }
+        const it = node.startTagIterator(doc.src, doc.language);
+        ranges[0] = getRange(it.name_span, doc.src);
+        return ranges;
+    }
 
-            ranges[1] = getRange(.{
-                .start = @intCast(close.start + "</".len),
-                .end = close.end - 1,
-            }, doc.src);
-            break :blk ranges;
-        },
-        .element_void, .element_self_closing => {
-            const ranges = try arena.alloc(lsp.types.Range, 1);
+    const ranges = try arena.alloc(types.Range, 2);
 
-            const it = node.startTagIterator(doc.src, doc.language);
-            ranges[0] = getRange(it.name_span, doc.src);
-            break :blk ranges;
-        },
-    };
+    const it = node.startTagIterator(doc.src, doc.language);
+    ranges[0] = getRange(it.name_span, doc.src);
+
+    const close = node.close;
+    if (close.end < 2 or close.start > close.end - 2) {
+        return ranges[0..1];
+    }
+
+    ranges[1] = getRange(.{
+        .start = @intCast(close.start + "</".len),
+        .end = close.end - 1,
+    }, doc.src);
+    return ranges;
 }

@@ -11,6 +11,7 @@ const Tokenizer = @This();
 const named_character_references = @import("named_character_references.zig");
 
 const std = @import("std");
+const assert = std.debug.assert;
 const root = @import("../root.zig");
 const Language = root.Language;
 const Span = root.Span;
@@ -140,7 +141,7 @@ pub const Attr = struct {
             src: []const u8,
         ) !UnescapedSlice {
             _ = gpa;
-            // TODO: sqeek-senpai please implement this for real
+            // TODO: ask squeek to please implement this for real
             return .{ .slice = value.span.slice(src) };
         }
     };
@@ -923,7 +924,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         tag.name.end = self.idx - 1;
                         tag.span.end = self.idx;
 
-                        std.debug.assert(tag.name.len() > 0);
+                        assert(tag.name.len() > 0);
                         self.state = .data;
                         if (self.return_attrs) {
                             return .{ .token = .{ .tag_name = tag.name } };
@@ -2504,17 +2505,34 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         var tag = state.tag;
                         tag.span.end = self.idx;
 
-                        self.state = .data;
-                        return .{
-                            .token = .{
-                                .parse_error = .{
-                                    .tag = .missing_attribute_value,
-                                    .span = .{
-                                        .start = state.equal_sign,
-                                        .end = state.equal_sign + 1,
-                                    },
+                        const t: Token = .{
+                            .parse_error = .{
+                                .tag = .missing_attribute_value,
+                                .span = .{
+                                    .start = state.equal_sign,
+                                    .end = state.equal_sign + 1,
                                 },
                             },
+                        };
+
+                        if (self.return_attrs) {
+                            const attr: Token = .{
+                                .attr = .{
+                                    .name = state.attribute_name,
+                                    .value = null,
+                                },
+                            };
+
+                            self.state = .data;
+                            return .{
+                                .token = t,
+                                .deferred = attr,
+                            };
+                        }
+
+                        self.state = .data;
+                        return .{
+                            .token = t,
                             .deferred = .{ .tag = tag },
                         };
                     },
@@ -2688,7 +2706,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                             .quote = .none,
                                             .span = .{
                                                 .start = state.value_start,
-                                                .end = self.idx,
+                                                .end = self.idx - 1,
                                             },
                                         },
                                     },
@@ -4121,13 +4139,22 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .force_quirks = true,
                                 },
                             };
+
+                            var end = self.idx + 1;
+                            while (end < src.len) : (end += 1) {
+                                switch (src[end]) {
+                                    ' ', '\t'...'\r', '>', 0 => break,
+                                    else => {},
+                                }
+                            }
+
                             return .{
                                 .token = .{
                                     .parse_error = .{
                                         .tag = .invalid_character_sequence_after_doctype_name,
                                         .span = .{
-                                            .start = self.idx,
-                                            .end = self.idx + 1,
+                                            .start = self.idx + 1,
+                                            .end = end,
                                         },
                                     },
                                 },

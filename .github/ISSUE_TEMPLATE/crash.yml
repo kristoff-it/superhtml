@@ -1,0 +1,28 @@
+name: Crash / Hang Report
+description: Report SuperHTML crashing or hanging. 
+labels: ["crash/hang"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: SuperHTML Version
+      description: "The output of `superhtml version` (or the VSCode extension version)"
+      placeholder: "v0.5.3-dev.59+0336596"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and Editor (if any)
+      description: "Which OS and which editor (if reporting a LSP crash/hang) are you using?"
+      placeholder: "Linux, helix"
+    validations:
+      required: true
+  - type: markdown
+    id: repro
+    attributes:
+      label: Steps to Reproduce and Observed Behavior
+      description: What exactly can someone else do, in order to observe the problem that you observed? Include error messages, if any.
+    validations:
+      required: true
+
