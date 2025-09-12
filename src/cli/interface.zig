@@ -175,6 +175,7 @@ const Command = struct {
             \\                    and SuperHTML files. 
             \\
             \\   --help, -h       Prints this help and exits.
+            \\
         , .{});
 
         std.process.exit(1);
