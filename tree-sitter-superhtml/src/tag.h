@@ -132,6 +132,7 @@ typedef enum {
     UL,
     VAR,
     VIDEO,
+    CTX,
 
     CUSTOM,
 
@@ -150,7 +151,7 @@ typedef struct {
     String custom_tag_name;
 } Tag;
 
-static const TagMapEntry TAG_TYPES_BY_TAG_NAME[128] = {
+static const TagMapEntry TAG_TYPES_BY_TAG_NAME[129] = {
     {"AREA",       AREA      },
     {"BASE",       BASE      },
     {"BASEFONT",   BASEFONT  },
@@ -278,6 +279,7 @@ static const TagMapEntry TAG_TYPES_BY_TAG_NAME[128] = {
     {"UL",         UL        },
     {"VAR",        VAR       },
     {"VIDEO",      VIDEO     },
+    {"CTX",        CTX       },
     {"CUSTOM",     CUSTOM    },
 };
 
@@ -289,7 +291,8 @@ static const TagType TAG_TYPES_NOT_ALLOWED_IN_PARAGRAPHS[] = {
 };
 
 static TagType tag_type_for_name(const String *tag_name) {
-    for (int i = 0; i < 126; i++) {
+    int tag_names_size = sizeof TAG_TYPES_BY_TAG_NAME / sizeof TAG_TYPES_BY_TAG_NAME[0];
+    for (int i = 0; i < tag_names_size; i++) {
         const TagMapEntry *entry = &TAG_TYPES_BY_TAG_NAME[i];
         if (
             strlen(entry->tag_name) == tag_name->size &&
