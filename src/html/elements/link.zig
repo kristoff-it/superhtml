@@ -187,7 +187,7 @@ pub const attributes: AttributeSet = .init(&.{
     .{
         .name = "hreflang",
         .model = .{
-            .rule = .not_empty, // TODO validate
+            .rule = .lang,
             .desc = "This attribute indicates the language of the linked resource. It is purely advisory.",
         },
     },

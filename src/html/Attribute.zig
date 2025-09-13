@@ -74,6 +74,9 @@ pub const Rule = union(enum) {
     /// MIME
     mime,
 
+    /// BCP 47 language tag
+    lang,
+
     /// Not negative integer
     non_neg_int: struct {
         min: usize = 0,
@@ -257,6 +260,20 @@ pub const Rule = union(enum) {
             },
             .mime => return validateMime(gpa, errors, src, node_idx, attr),
             .cors => continue :rule .{ .list = cors_list },
+            .lang => {
+                const value = attr.value orelse return;
+                const value_slice = value.span.slice(src);
+                if (validateLanguageTag(value_slice)) |rejection| return errors.append(gpa, .{
+                    .tag = .{
+                        .invalid_attr_value = .{ .reason = rejection.reason },
+                    },
+                    .main_location = .{
+                        .start = value.span.start + rejection.offset,
+                        .end = value.span.start + rejection.offset + rejection.length,
+                    },
+                    .node_idx = node_idx,
+                });
+            },
             .not_empty => {
                 const value = attr.value orelse return errors.append(gpa, .{
                     .tag = .missing_attr_value,
@@ -818,6 +835,124 @@ pub fn validateMimeChars(bytes: []const u8) ?Rule.ValueRejection {
         },
     };
 
+    return null;
+}
+
+const LanguageTagRejection = struct {
+    reason: []const u8,
+    offset: u32,
+    length: u32,
+
+    pub fn init(bytes: []const u8, subtag: []const u8, reason: []const u8) LanguageTagRejection {
+        return .{
+            .reason = reason,
+            .offset = @intCast(@intFromPtr(subtag.ptr) - @intFromPtr(bytes.ptr)),
+            .length = @intCast(subtag.len),
+        };
+    }
+};
+
+fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
+    const ParseState = enum {
+        language,
+        extlang,
+        script,
+        region,
+        variant,
+        singleton,
+        extension,
+        privateuse,
+        end,
+    };
+    var parse_state: ParseState = .language;
+    var extlang_count: u8 = 0;
+
+    var subtags = std.mem.splitScalar(u8, bytes, '-');
+    while (subtags.next()) |subtag| state: switch (parse_state) {
+        .language => switch (subtag.len) {
+            0 => return .init(bytes, subtag, "the language code cannot be empty"),
+            // ISO 639 code
+            2...3 => {
+                // TODO
+                parse_state = .extlang;
+            },
+            // reserved for future use
+            4 => {
+                // TODO
+                parse_state = .script;
+            },
+            // registered language subtag
+            5...8 => {
+                // TODO
+                parse_state = .script;
+            },
+            else => return .init(bytes, subtag, "the language code must be 2 to 8 characters long"),
+        },
+        .extlang => if (subtag.len == 3) {
+            if (std.ascii.isDigit(subtag[0])) continue :state .region;
+            for (subtag) |char| if (!std.ascii.isAlphabetic(char)) {
+                return .init(bytes, subtag, "the language extension code must be alphabetic");
+            };
+            extlang_count += 1;
+            if (extlang_count > 3) {
+                return .init(bytes, subtag, "there cannot be more than 3 language extension codes");
+            }
+        } else continue :state .script,
+        .script => if (subtag.len == 4) {
+            if (std.ascii.isDigit(subtag[0])) continue :state .variant;
+            // TODO
+            parse_state = .region;
+        } else continue :state .region,
+        .region => switch (subtag.len) {
+            // ISO 3166 code
+            2 => {
+                // TODO
+                parse_state = .variant;
+            },
+            // UN M.49 code
+            3 => {
+                // TODO
+                parse_state = .variant;
+            },
+            else => continue :state .variant,
+        },
+        .variant => switch (subtag.len) {
+            4, 5...8 => {
+                // TODO
+                parse_state = .variant;
+            },
+            else => continue :state .singleton,
+        },
+        .singleton => {
+            if (subtag.len != 1) {
+                return .init(bytes, subtag, "the extension prefix must be a single character");
+            }
+            parse_state = switch (std.ascii.toLower(subtag[0])) {
+                'x' => .privateuse,
+                'a'...'w', 'y'...'z', '0'...'9' => .extension,
+                else => return .init(bytes, subtag, "the extension prefix must be alphanumeric"),
+            };
+        },
+        .extension => switch (subtag.len) {
+            2...8 => {
+                for (subtag) |char| if (!std.ascii.isAlphanumeric(char)) {
+                    return .init(bytes, subtag, "the extension must be alphanumeric");
+                };
+                parse_state = .singleton;
+            },
+            else => return .init(bytes, subtag, "each extension subtag must be 2 to 8 characters long"),
+        },
+        .privateuse => switch (subtag.len) {
+            1...8 => {
+                for (subtag) |char| if (!std.ascii.isAlphanumeric(char)) {
+                    return .init(bytes, subtag, "the private use extension must be alphanumeric");
+                };
+                parse_state = .end;
+            },
+            else => return .init(bytes, subtag, "each private use extension subtag must be 1 to 8 characters long"),
+        },
+        .end => return .init(bytes, subtag, "there cannot be language subtags after the private use extension"),
+    };
     return null;
 }
 

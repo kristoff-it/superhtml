@@ -98,7 +98,7 @@ pub const attributes: AttributeSet = .init(&.{
     .{
         .name = "hreflang",
         .model = .{
-            .rule = .any,
+            .rule = .lang,
             .desc =
             \\Hints at the human language of the linked URL. No built-in
             \\functionality. Allowed values are the same as the global lang
