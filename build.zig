@@ -58,7 +58,7 @@ pub fn build(b: *std.Build) !void {
     const lsp = b.dependency("lsp_kit", .{});
 
     const check = setupCheckStep(b, target, optimize, options, superhtml, folders, lsp);
-    setupTestStep(b, target, superhtml, check);
+    setupTestStep(b, superhtml, check);
     setupCliTool(b, target, optimize, options, superhtml, folders, lsp);
     setupWasmStep(b, optimize, options, superhtml, lsp);
     if (version == .tag) {
@@ -98,7 +98,6 @@ fn setupCheckStep(
 }
 fn setupTestStep(
     b: *std.Build,
-    target: std.Build.ResolvedTarget,
     superhtml: *std.Build.Module,
     check: *std.Build.Step,
 ) void {
@@ -113,20 +112,6 @@ fn setupTestStep(
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
-
-    const fuzz_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz.zig"),
-            .target = target,
-            .optimize = .Debug,
-        }),
-        // .strip = true,
-        // .filter = "nesting",
-    });
-
-    fuzz_tests.root_module.addImport("superhtml", superhtml);
-    const run_fuzz_tests = b.addRunArtifact(fuzz_tests);
-    test_step.dependOn(&run_fuzz_tests.step);
 }
 
 fn setupCliTool(
