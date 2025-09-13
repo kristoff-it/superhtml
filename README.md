@@ -208,7 +208,7 @@ Follow your editor specific instructions on how to define a new Language Server 
 SuperHTML is also a HTML templating language. More on that soon.
 
 ## Contributing
-SuperHTML tracks the latest Zig release (0.13.0 at the moment of writing).
+SuperHTML tracks the latest Zig release (0.15.0-dev at the moment of writing).
 
 ### Contributing to the HTML parser & LSP
 Contributing to the HTML parser and LSP doesn't require you to be familiar with the templating language, basically limiting the scope of what you have to worry about to:
