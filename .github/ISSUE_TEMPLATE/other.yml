@@ -1,0 +1,11 @@
+name: Feature Request
+description: Do not use this template to report missing diagnostics.
+labels: ["feature-request"]
+body:
+  - type: textarea
+    id: text
+    attributes:
+      label: The Feature Request
+      description: Please make sure to search Issues history in case that this feature has already been requested.
+    validations:
+      required: true

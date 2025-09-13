@@ -18,7 +18,7 @@ body:
       placeholder: "Linux, helix"
     validations:
       required: true
-  - type: markdown
+  - type: textarea
     id: repro
     attributes:
       label: Steps to Reproduce and Observed Behavior

@@ -10,17 +10,17 @@ body:
       placeholder: "v0.5.3-dev.59+0336596"
     validations:
       required: true
-  - type: markdown
+  - type: textarea
     id: repro
     attributes:
       label: Steps to Reproduce and Observed Behavior
       description: What exactly can someone else do, in order to observe the problem that you observed? Include error messages, if any.
     validations:
       required: true
-  - type: markdown
+  - type: textarea
     id: expected
     attributes:
       label: Expected Output according to the HTML spec
-      description: "NOTE: failing to provide a quote from the WHATWG HTML living specification that shows the discrepancy might cause your issue to be closed without any explanation."
+      description: "NOTE: failing to provide a quote from the WHATWG HTML living specification that shows the discrepancy might cause your issue to be closed without any explanation. Additionally note that SuperHTML purposely does not support implicitly closed tags."
     validations:
       required: true
