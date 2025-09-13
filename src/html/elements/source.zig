@@ -12,7 +12,7 @@ pub const source: Element = .{
     .meta = .{
         .categories_superset = .none,
     },
-    .attributes = .manual,
+    .attributes = .manual, // done by <audio>, <video> and <picture>
     .content = .model,
     .desc =
     \\The `<source>` HTML element specifies one or more media resources for

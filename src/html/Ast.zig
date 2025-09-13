@@ -718,17 +718,17 @@ pub fn init(
                         current = &nodes.items[current.parent_idx];
                     }
 
+                    const name = tag.name.slice(src);
                     const end_kind = switch (language) {
-                        // .superhtml => {
-                        // if (elements.get(name)) |element| {
-                        //     break :node .{
-                        //         .kind = element.tag,
-                        //         .content = .all,
-                        //         .open = tag.span,
-                        //     };
-                        // } else continue :lang .html;
-                        // },
-                        .html, .superhtml => kinds.get(tag.name.slice(src)) orelse .___,
+                        .superhtml => if (std.ascii.eqlIgnoreCase("ctx", name))
+                            .ctx
+                        else if (std.ascii.eqlIgnoreCase("super", name))
+                            .super
+                        else if (std.ascii.eqlIgnoreCase("extend", name))
+                            .extend
+                        else
+                            kinds.get(name) orelse .___,
+                        .html => kinds.get(name) orelse .___,
                         .xml => .___,
                     };
 
