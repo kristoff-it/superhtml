@@ -30,27 +30,32 @@ pub fn panic(
     ret_addr: ?usize,
 ) noreturn {
     if (lsp_mode) {
-        std.log.err("{s}\n\n{?f}", .{ msg, trace });
+        std.log.err("\n{s}\n\n{?f}", .{ msg, trace });
     } else {
-        std.debug.print("{s}\n\n{?f}", .{ msg, trace });
+        std.debug.print("\n{s}\n\n{?f}", .{ msg, trace });
     }
     blk: {
         const out: std.fs.File = if (!lsp_mode) std.fs.File.stderr() else logging.log_file orelse break :blk;
-        var writer = out.writer(&.{});
+        var writer = out.writerStreaming(&.{});
         const w = &writer.interface;
+        w.print("\n{s}\n\n{?f}", .{ msg, trace }) catch {};
         if (builtin.strip_debug_info) {
-            w.print("Unable to dump stack trace: debug info stripped\n", .{}) catch return;
+            w.print("Unable to dump stack trace: debug info stripped\n", .{}) catch {};
             break :blk;
         }
         const debug_info = std.debug.getSelfDebugInfo() catch |err| {
-            w.print("Unable to dump stack trace: Unable to open debug info: {s}\n", .{@errorName(err)}) catch break :blk;
+            w.print(
+                "Unable to dump stack trace: Unable to open debug info: {s}\n",
+                .{@errorName(err)},
+            ) catch {};
             break :blk;
         };
         std.debug.writeCurrentStackTrace(w, debug_info, .no_color, ret_addr) catch |err| {
-            w.print("Unable to dump stack trace: {t}\n", .{err}) catch break :blk;
+            w.print("Unable to dump stack trace: {t}\n", .{err}) catch {};
             break :blk;
         };
     }
+
     if (builtin.mode == .Debug) @breakpoint();
     std.process.exit(1);
 }

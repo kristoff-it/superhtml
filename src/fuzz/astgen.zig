@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const Writer = std.Io.Writer;
 
 const builtin = @import("builtin");
@@ -79,6 +80,7 @@ const Element = struct {
 
     pub fn commit(
         e: *Element,
+        gpa: Allocator,
         w: *Writer,
         src: []const u8,
         ends: *std.ArrayList(Tag),
@@ -109,7 +111,7 @@ const Element = struct {
         defer {
             w.writeAll(">") catch unreachable;
             switch (e.kind) {
-                .div => ends.append(e.kind) catch unreachable,
+                .div => ends.append(gpa, e.kind) catch unreachable,
                 .super, .br, .extend, .none, .text, .comment => {},
             }
             e.* = .{};
@@ -189,27 +191,29 @@ const Element = struct {
 };
 
 pub fn build(gpa: std.mem.Allocator, src: []const u8) ![]const u8 {
-    var out = std.ArrayList(u8).init(gpa);
-    var ends = std.ArrayList(Element.Tag).init(gpa);
-    const w = out.writer();
+    var ends: std.ArrayList(Element.Tag) = .empty;
+    var out: Writer.Allocating = .init(gpa);
+    const w = &out.writer;
+
     var current: Element = .{};
 
-    buildInternal(w, src, &ends, &current) catch |err| switch (err) {
+    buildInternal(gpa, w, src, &ends, &current) catch |err| switch (err) {
         error.Break => {},
         else => unreachable,
     };
 
-    current.commit(w, src, &ends) catch |err| switch (err) {
+    current.commit(gpa, w, src, &ends) catch |err| switch (err) {
         error.Break => {},
         else => unreachable,
     };
 
-    while (ends.popOrNull()) |kind|
+    while (ends.pop()) |kind|
         try w.print("</{s}>", .{@tagName(kind)});
 
-    return out.items;
+    return out.written();
 }
 pub fn buildInternal(
+    gpa: Allocator,
     w: *Writer,
     src: []const u8,
     ends: *std.ArrayList(Element.Tag),
@@ -221,28 +225,28 @@ pub fn buildInternal(
         switch (op) {
             // add <extend> attribute
             .n => {
-                try current.commit(w, src, ends);
+                try current.commit(gpa, w, src, ends);
                 current.kind = .extend;
             },
             // add <extend> attribute and give it a template attribute
             .N => {
-                try current.commit(w, src, ends);
+                try current.commit(gpa, w, src, ends);
                 current.kind = .extend;
                 current.attrs = .{ .start = idx, .end = idx + 1 };
             },
             // add new element, enter it
             .e => {
-                try current.commit(w, src, ends);
+                try current.commit(gpa, w, src, ends);
                 current.kind = .div;
             },
             // add a new non-semantic void element
             .E => {
-                try current.commit(w, src, ends);
+                try current.commit(gpa, w, src, ends);
                 current.kind = .br;
             },
             // add <super> element
             .s => {
-                try current.commit(w, src, ends);
+                try current.commit(gpa, w, src, ends);
                 current.kind = .super;
             },
             // add <super> element into the current element and give id
@@ -262,12 +266,12 @@ pub fn buildInternal(
             // },
             // add text element
             .t => {
-                try current.commit(w, src, ends);
+                try current.commit(gpa, w, src, ends);
                 current.kind = .text;
             },
             // add comment
             .c => {
-                try current.commit(w, src, ends);
+                try current.commit(gpa, w, src, ends);
                 current.kind = .comment;
             },
             // attributes
@@ -285,8 +289,8 @@ pub fn buildInternal(
             // select the parent element of the current element
             // (noop when a top-level element is already selected)
             .u => {
-                try current.commit(w, src, ends);
-                if (ends.popOrNull()) |kind|
+                try current.commit(gpa, w, src, ends);
+                if (ends.pop()) |kind|
                     try w.print("</{s}>", .{@tagName(kind)})
                 else
                     break;
@@ -317,5 +321,5 @@ pub fn main() !void {
     const src = args[1];
 
     const out = try build(gpa, src);
-    try std.io.getStdOut().writeAll(out);
+    try std.fs.File.stdout().writeAll(out);
 }
