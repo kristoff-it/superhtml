@@ -992,10 +992,10 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     }
                 }
 
-                const child_start = ast.nodes[current.first_child_idx].open.start;
-                const child_is_vertical =
-                    current.first_child_idx != 0 and
-                    src[current.open.end..child_start].len > 0;
+                const child_is_vertical = if (ast.child(current)) |c|
+                    (c.kind == .text or c.open.start - current.open.end > 0)
+                else
+                    false;
                 if (!current.self_closing and
                     current.kind.isElement() and
                     !current.kind.isVoid() and
@@ -1022,10 +1022,10 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     current,
                 });
 
-                const child_start = ast.nodes[current.first_child_idx].open.start;
-                const child_was_vertical =
-                    current.first_child_idx != 0 and
-                    src[current.open.end..child_start].len > 0;
+                const child_was_vertical = if (ast.child(current)) |c|
+                    (c.kind == .text or c.open.start - current.open.end > 0)
+                else
+                    false;
                 if (!current.self_closing and
                     current.kind.isElement() and
                     !current.kind.isVoid() and
@@ -1207,7 +1207,11 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
 
                     // if (std.mem.eql(u8, name, "path")) @breakpoint();
 
-                    const attr_indent = indentation - @intFromBool(!current.kind.isVoid() and !current.self_closing);
+                    const child_is_vertical = if (ast.child(current)) |c|
+                        (c.kind == .text or c.open.start - current.open.end > 0)
+                    else
+                        false;
+                    const attr_indent = indentation - @intFromBool(!current.kind.isVoid() and !current.self_closing and child_is_vertical);
                     const extra = blk: {
                         if (current.kind == .doctype) break :blk 1;
                         assert(current.kind.isElement());
@@ -1661,21 +1665,22 @@ test "newlines" {
 }
 
 test "tight tags inner indentation" {
-    const case =
+    const case = comptime std.fmt.comptimePrint(
         \\<!DOCTYPE html>
         \\<html>
-        \\  <head></head>
-        \\  <body>
-        \\    <div><nav><ul>
-        \\      <li></li>
-        \\    </ul></nav></div>
-        \\  </body>
+        \\{0c}<head></head>
+        \\{0c}<body>
+        \\{0c}{0c}<div><nav><ul>
+        \\{0c}{0c}{0c}<li></li>
+        \\{0c}{0c}</ul></nav></div>
+        \\{0c}</body>
         \\</html>
-    ;
-    const ast = try Ast.init(std.testing.allocator, case, .html);
+        \\
+    , .{'\t'});
+    const ast = try Ast.init(std.testing.allocator, case, .html, true);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(case, "{s}", .{ast.formatter(case)});
+    try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
 }
 
 test "bad html" {
