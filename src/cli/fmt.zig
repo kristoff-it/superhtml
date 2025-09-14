@@ -237,7 +237,7 @@ const Command = struct {
             }
 
             if (std.mem.eql(u8, arg, "--no-strict-tags")) {
-                strict = true;
+                strict = false;
                 continue;
             }
 
