@@ -114,7 +114,7 @@ fn validate(
             return progress.model;
         };
 
-        if (number <= 0) {
+        if (number < 0) {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_value = .{
