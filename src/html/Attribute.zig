@@ -855,6 +855,11 @@ const LanguageTagRejection = struct {
 };
 
 fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
+    for (language_tag_registry.grandfathereds) |grandfathered| {
+        if (grandfathered.is_deprecated) continue;
+        if (std.ascii.eqlIgnoreCase(grandfathered.tag, bytes)) return null;
+    }
+
     const ParseState = enum {
         language,
         extlang,
