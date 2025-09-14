@@ -9,7 +9,8 @@ const root = @import("../root.zig");
 const Language = root.Language;
 const Span = root.Span;
 const log = std.log.scoped(.attribute);
-const language_tag_data = @import("language_tag_data.zon");
+const Registry = @import("../language-tag/parse.zig").Registry;
+const language_tag_registry: Registry = @import("language-tag-registry");
 
 rule: Rule,
 desc: []const u8,
@@ -871,107 +872,111 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
     var subtags = std.mem.splitScalar(u8, bytes, '-');
     while (subtags.next()) |subtag| state: switch (parse_state) {
         .language => switch (subtag.len) {
-            0 => return .init(bytes, subtag, "the language code cannot be empty"),
+            0 => return .init(bytes, subtag, "cannot be empty"),
             // ISO 639 code
             2...3 => {
-                const code_set: std.StaticStringMap(void) = comptime set: {
-                    var codes: [language_tag_data.codes.len * 2]struct { []const u8 } = undefined;
-                    for (language_tag_data.codes, 0..) |data, i| {
-                        codes[i] = .{data.two};
-                        codes[i + language_tag_data.codes.len] = .{data.three};
-                    }
-                    break :set .initComptime(&codes);
-                };
-                if (!code_set.has(subtag)) {
-                    return .init(bytes, subtag, "unknown language code");
+                for (language_tag_registry.languages) |lang| {
+                    if (!std.ascii.eqlIgnoreCase(lang.subtag, subtag)) continue;
+                    if (lang.is_deprecated) return .init(bytes, subtag, "deprecated language");
+                    break;
+                } else {
+                    return .init(bytes, subtag, "unknown language");
                 }
                 parse_state = .extlang;
             },
             // reserved for future use
             4 => {
-                // TODO
                 parse_state = .script;
             },
             // registered language subtag
             5...8 => {
-                // TODO
                 parse_state = .script;
             },
-            else => return .init(bytes, subtag, "the language code must be 2 to 8 characters long"),
+            else => return .init(bytes, subtag, "wrong language length"),
         },
         .extlang => if (subtag.len == 3) {
             if (std.ascii.isDigit(subtag[0])) continue :state .region;
-            for (subtag) |char| if (!std.ascii.isAlphabetic(char)) {
-                return .init(bytes, subtag, "the language extension code must be alphabetic");
-            };
+            for (language_tag_registry.extlangs) |ext| {
+                if (!std.ascii.eqlIgnoreCase(ext.subtag, subtag)) continue;
+                if (ext.is_deprecated) return .init(bytes, subtag, "deprecated language extension");
+                break;
+            } else {
+                return .init(bytes, subtag, "unknown language extension");
+            }
             extlang_count += 1;
             if (extlang_count > 3) {
-                return .init(bytes, subtag, "there cannot be more than 3 language extension codes");
+                return .init(bytes, subtag, "more than 3 language extensions");
             }
-        } else continue :state .script,
+        } else {
+            continue :state .script;
+        },
         .script => if (subtag.len == 4) {
             if (std.ascii.isDigit(subtag[0])) continue :state .variant;
-            const script_set: std.StaticStringMap(void) = comptime set: {
-                var scripts: [language_tag_data.scripts.len]struct { []const u8 } = undefined;
-                for (language_tag_data.scripts, 0..) |data, i| {
-                    scripts[i] = .{data.code};
-                }
-                break :set .initComptime(&scripts);
-            };
-            if (!script_set.has(subtag)) {
+            for (language_tag_registry.scripts) |script| {
+                if (std.ascii.eqlIgnoreCase(script.subtag, subtag)) break;
+            } else {
                 return .init(bytes, subtag, "unknown language script");
             }
             parse_state = .region;
-        } else continue :state .region,
+        } else {
+            continue :state .region;
+        },
         .region => switch (subtag.len) {
-            // ISO 3166 code
-            2 => {
-                // TODO
-                parse_state = .variant;
-            },
-            // UN M.49 code
-            3 => {
-                // TODO
+            // ISO 3166 or UN M.49 code
+            2...3 => {
+                for (language_tag_registry.regions) |region| {
+                    if (!std.ascii.eqlIgnoreCase(region.subtag, subtag)) continue;
+                    if (region.is_deprecated) return .init(bytes, subtag, "deprecated language region");
+                    break;
+                } else {
+                    return .init(bytes, subtag, "unknown language region");
+                }
                 parse_state = .variant;
             },
             else => continue :state .variant,
         },
         .variant => switch (subtag.len) {
-            4, 5...8 => {
-                // TODO
+            4...8 => {
+                for (language_tag_registry.variants) |variant| {
+                    if (!std.ascii.eqlIgnoreCase(variant.subtag, subtag)) continue;
+                    if (variant.is_deprecated) return .init(bytes, subtag, "deprecated language variant");
+                    break;
+                } else {
+                    return .init(bytes, subtag, "unknown language variant");
+                }
                 parse_state = .variant;
             },
             else => continue :state .singleton,
         },
         .singleton => {
             if (subtag.len != 1) {
-                return .init(bytes, subtag, "the extension prefix must be a single character");
+                return .init(bytes, subtag, "extension prefix must be a single character");
             }
             parse_state = switch (std.ascii.toLower(subtag[0])) {
                 'x' => .privateuse,
                 'a'...'w', 'y'...'z', '0'...'9' => .extension,
-                else => return .init(bytes, subtag, "the extension prefix must be alphanumeric"),
+                else => return .init(bytes, subtag, "extension prefix must be alphanumeric"),
             };
         },
         .extension => switch (subtag.len) {
             2...8 => {
                 for (subtag) |char| if (!std.ascii.isAlphanumeric(char)) {
-                    return .init(bytes, subtag, "the extension must be alphanumeric");
+                    return .init(bytes, subtag, "extension must be alphanumeric");
                 };
                 parse_state = .singleton;
             },
-            else => return .init(bytes, subtag, "each extension subtag must be 2 to 8 characters long"),
+            else => return .init(bytes, subtag, "wrong extension length"),
         },
         .privateuse => switch (subtag.len) {
             1...8 => {
                 for (subtag) |char| if (!std.ascii.isAlphanumeric(char)) {
-                    return .init(bytes, subtag, "the private use extension must be alphanumeric");
+                    return .init(bytes, subtag, "private use extension must be alphanumeric");
                 };
                 parse_state = .end;
             },
-            else => return .init(bytes, subtag, "each private use extension subtag must be 1 to 8 characters long"),
+            else => return .init(bytes, subtag, "wrong private use extension length"),
         },
-        .end => return .init(bytes, subtag, "there cannot be language subtags after the private use extension"),
+        .end => return .init(bytes, subtag, "subtag after private use extension"),
     };
     return null;
 }
@@ -1101,15 +1106,7 @@ pub fn completions(
                     },
                     .lang => {
                         if (value_content.len == 0) {
-                            return &language_code_completions;
-                        }
-                        // currently not working because completions are not
-                        // sent when the content is invalid
-                        if (std.mem.endsWith(u8, value_content, "-")) {
-                            switch (std.mem.count(u8, value_content, "-")) {
-                                1 => return &language_script_completions,
-                                else => {},
-                            }
+                            return &language_completions;
                         }
                     },
                     .list => |l| {
@@ -1239,23 +1236,13 @@ pub fn completions(
     return items;
 }
 
-const language_code_completions = blk: {
-    var comps: [language_tag_data.codes.len]Ast.Completion = undefined;
-    for (language_tag_data.codes, &comps) |code, *completion| {
+const language_completions = blk: {
+    @setEvalBranchQuota(language_tag_registry.languages.len);
+    var comps: [language_tag_registry.languages.len]Ast.Completion = undefined;
+    for (language_tag_registry.languages, &comps) |lang, *completion| {
         completion.* = .{
-            .label = code.two,
-            .desc = code.name,
-        };
-    }
-    break :blk comps;
-};
-
-const language_script_completions = blk: {
-    var comps: [language_tag_data.scripts.len]Ast.Completion = undefined;
-    for (language_tag_data.scripts, &comps) |script, *completion| {
-        completion.* = .{
-            .label = script.code,
-            .desc = script.name,
+            .label = lang.subtag,
+            .desc = lang.description,
         };
     }
     break :blk comps;
