@@ -582,6 +582,7 @@ pub fn findNode(doc: *const Document, offset: u32) u32 {
     var cur_idx: u32 = 1;
     while (cur_idx != 0) {
         const n = doc.html.nodes[cur_idx];
+        if (!n.kind.isElement()) cur_idx = 0;
         if (n.open.start <= offset and n.open.end > offset) {
             break;
         }
@@ -599,7 +600,6 @@ pub fn findNode(doc: *const Document, offset: u32) u32 {
     return cur_idx;
 }
 
-// TODO this should not allocate
 pub fn tagRanges(
     self: *Handler,
     arena: std.mem.Allocator,
@@ -625,6 +625,8 @@ pub fn tagRanges(
             if (err.node_idx != 0) break err.node_idx;
         }
     } else findNode(doc, @intCast(offset));
+
+    if (node_idx == 0) return &.{};
 
     const node = doc.html.nodes[node_idx];
 
