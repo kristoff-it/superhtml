@@ -16,6 +16,7 @@ const Attribute = @import("Attribute.zig");
 
 const log = std.log.scoped(.@"html/ast");
 const fmtlog = std.log.scoped(.@"html/ast/fmt");
+const cpllog = std.log.scoped(.@"html/ast/completions");
 
 has_syntax_errors: bool,
 language: Language,
@@ -1433,7 +1434,9 @@ pub fn completions(
     offset: u32,
 ) ![]const Completion {
     for (ast.errors) |err| {
-        if (err.tag != .token or offset != err.main_location.start) continue;
+        if (err.tag != .token or
+            offset < err.main_location.start or
+            offset > err.main_location.end) continue;
 
         var idx = offset;
         while (idx > 0) {
@@ -1445,7 +1448,7 @@ pub fn completions(
             }
         } else return &.{};
 
-        log.debug("completions before check", .{});
+        cpllog.debug("completions before check", .{});
         const parent_idx = err.node_idx;
         const parent_node = ast.nodes[parent_idx];
         if ((!parent_node.kind.isElement() and
@@ -1453,19 +1456,19 @@ pub fn completions(
             parent_node.kind == .svg or
             parent_node.kind == .math) return &.{};
 
-        log.debug("completions past check", .{});
+        cpllog.debug("completions past check", .{});
 
         const e = Element.all.get(parent_node.kind);
-        log.debug("===== completions content: {t}", .{parent_node.kind});
+        cpllog.debug("===== completions content: {t}", .{parent_node.kind});
         return e.completions(arena, ast, src, parent_idx, offset, .content);
     }
 
     const node_idx = ast.findNodeTagsIdx(offset);
-    log.debug("===== completions: attrs node: {}", .{node_idx});
+    cpllog.debug("===== completions: attrs node: {}", .{node_idx});
     if (node_idx == 0) return &.{};
 
     const n = ast.nodes[node_idx];
-    log.debug("===== node: {any}", .{n});
+    cpllog.debug("===== node: {any}", .{n});
     if (!n.kind.isElement()) return &.{};
     if (offset >= n.open.end) return &.{};
 

@@ -531,6 +531,7 @@ pub fn @"textDocument/completion"(
                 },
             },
             .commitCharacters = &.{" >"},
+            .preselect = cpl.label[0] == '/',
         };
     }
 

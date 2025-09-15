@@ -552,10 +552,10 @@ pub inline fn completions(
     offset: u32,
     mode: CompletionMode,
 ) ![]const Ast.Completion {
-    switch (mode) {
-        .attrs => {
+    const children = switch (mode) {
+        .attrs => blk: {
             var stt = ast.nodes[node_idx].startTagIterator(src, ast.language);
-            return Attribute.completions(
+            break :blk try Attribute.completions(
                 arena,
                 src,
                 &stt,
@@ -564,7 +564,7 @@ pub inline fn completions(
             );
         },
         .content => content: switch (element.content) {
-            .custom => |custom| return custom.completions(
+            .custom => |custom| try custom.completions(
                 arena,
                 ast,
                 src,
@@ -572,29 +572,51 @@ pub inline fn completions(
                 offset,
             ),
             .model => continue :content .{ .simple = .{} },
-            .simple => |simple| return simpleCompletions(
+            .simple => |simple| try simpleCompletions(
                 arena,
                 &.{},
                 ast.nodes[node_idx].model.content,
                 element.meta.content_reject,
                 simple,
             ),
-            .anything => {
+            .anything => blk: {
                 const start: usize = @intFromEnum(Kind.___) + 1;
                 const all_elems = all.values[start..];
-                const anything: [all_elems.len]Ast.Completion = comptime blk: {
+                const anything: [all_elems.len]Ast.Completion = comptime a: {
                     var anything: [all_elems.len]Ast.Completion = undefined;
                     for (all_elems, &anything) |in, *out| out.* = .{
                         .label = @tagName(in.tag),
                         .desc = in.desc,
                     };
-                    break :blk anything;
+                    break :a anything;
                 };
 
-                return &anything;
+                break :blk &anything;
             },
         },
+    };
+
+    var result: std.ArrayList(Ast.Completion) = .empty;
+
+    var ancestor_idx = node_idx;
+    while (ancestor_idx != 0) {
+        const ancestor = ast.nodes[ancestor_idx];
+        if (!ancestor.isClosed()) {
+            const name = ancestor.span(src).slice(src);
+            const slashed = try std.fmt.allocPrint(arena, "/{s}", .{name});
+            try result.append(arena, .{
+                .label = slashed,
+                .value = if (src[offset -| 1] == '/') name else slashed,
+                .desc = "",
+            });
+            break;
+        }
+        ancestor_idx = ancestor.parent_idx;
     }
+
+    try result.ensureTotalCapacityPrecise(arena, result.items.len + children.len);
+    result.appendSliceAssumeCapacity(children);
+    return result.items;
 }
 
 pub fn simpleCompletions(
