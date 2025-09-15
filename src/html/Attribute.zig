@@ -866,18 +866,18 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
         variant,
         singleton,
         extension,
+        extension_extra,
         privateuse,
-        end,
+        privateuse_extra,
     };
     var parse_state: ParseState = .language;
-    var extlang_count: u8 = 0;
 
     var subtags = std.mem.splitScalar(u8, bytes, '-');
     while (subtags.next()) |subtag| state: switch (parse_state) {
         .language => switch (subtag.len) {
             0 => return .init(bytes, subtag, "cannot be empty"),
-            // ISO 639 code
-            2...3 => {
+            1 => return .init(bytes, subtag, "too short"),
+            2...8 => {
                 if (language_tag.maps.language.get(subtag)) |data| {
                     if (data.is_deprecated) return .init(bytes, subtag, "deprecated language");
                 } else {
@@ -885,38 +885,29 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
                 }
                 parse_state = .extlang;
             },
-            // reserved for future use
+            else => return .init(bytes, subtag, "too long"),
+        },
+        .extlang => switch (subtag.len) {
+            3 => {
+                if (std.ascii.isDigit(subtag[0])) continue :state .region;
+                if (language_tag.maps.extlang.get(subtag)) |data| {
+                    if (data.is_deprecated) return .init(bytes, subtag, "deprecated language extension");
+                } else {
+                    return .init(bytes, subtag, "unknown language extension");
+                }
+                parse_state = .script;
+            },
+            else => continue :state .script,
+        },
+        .script => switch (subtag.len) {
             4 => {
-                parse_state = .script;
+                if (std.ascii.isDigit(subtag[0])) continue :state .variant;
+                if (!language_tag.maps.script.has(subtag)) {
+                    return .init(bytes, subtag, "unknown language script");
+                }
+                parse_state = .region;
             },
-            // registered language subtag
-            5...8 => {
-                parse_state = .script;
-            },
-            else => return .init(bytes, subtag, "wrong language length"),
-        },
-        .extlang => if (subtag.len == 3) {
-            if (std.ascii.isDigit(subtag[0])) continue :state .region;
-            if (language_tag.maps.extlang.get(subtag)) |data| {
-                if (data.is_deprecated) return .init(bytes, subtag, "deprecated language extension");
-            } else {
-                return .init(bytes, subtag, "unknown language extension");
-            }
-            extlang_count += 1;
-            if (extlang_count > 3) {
-                return .init(bytes, subtag, "more than 3 language extensions");
-            }
-        } else {
-            continue :state .script;
-        },
-        .script => if (subtag.len == 4) {
-            if (std.ascii.isDigit(subtag[0])) continue :state .variant;
-            if (!language_tag.maps.script.has(subtag)) {
-                return .init(bytes, subtag, "unknown language script");
-            }
-            parse_state = .region;
-        } else {
-            continue :state .region;
+            else => continue :state .region,
         },
         .region => switch (subtag.len) {
             // ISO 3166 or UN M.49 code
@@ -956,20 +947,27 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
                 for (subtag) |char| if (!std.ascii.isAlphanumeric(char)) {
                     return .init(bytes, subtag, "extension must be alphanumeric");
                 };
-                parse_state = .singleton;
+                parse_state = .extension_extra;
             },
             else => return .init(bytes, subtag, "wrong extension length"),
+        },
+        .extension_extra => switch (subtag.len) {
+            2...8 => continue :state .extension,
+            else => continue :state .singleton,
         },
         .privateuse => switch (subtag.len) {
             1...8 => {
                 for (subtag) |char| if (!std.ascii.isAlphanumeric(char)) {
                     return .init(bytes, subtag, "private use extension must be alphanumeric");
                 };
-                parse_state = .end;
+                parse_state = .privateuse_extra;
             },
             else => return .init(bytes, subtag, "wrong private use extension length"),
         },
-        .end => return .init(bytes, subtag, "subtag after private use extension"),
+        .privateuse_extra => switch (subtag.len) {
+            1...8 => continue :state .privateuse,
+            else => return .init(bytes, subtag, "subtag after private use extension"),
+        },
     };
     return null;
 }
