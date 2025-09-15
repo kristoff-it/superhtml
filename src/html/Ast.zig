@@ -15,6 +15,7 @@ const kinds = Element.elements;
 const Attribute = @import("Attribute.zig");
 
 const log = std.log.scoped(.@"html/ast");
+const fmtlog = std.log.scoped(.@"html/ast/fmt");
 
 has_syntax_errors: bool,
 language: Language,
@@ -949,34 +950,40 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
     var current = ast.nodes[1];
     var direction: enum { enter, exit } = .enter;
     var last_rbracket: u32 = 0;
+    var last_was_text = false;
     var pre: u32 = 0;
     while (true) {
         const zone_outer = tracy.trace(@src());
         defer zone_outer.end();
-        log.debug("looping, ind: {}, dir: {s}", .{
+        fmtlog.debug("looping, ind: {}, dir: {s}", .{
             indentation,
             @tagName(direction),
         });
+
+        const crt = current;
+        defer last_was_text = crt.kind == .text;
         switch (direction) {
             .enter => {
                 const zone = tracy.trace(@src());
                 defer zone.end();
-                log.debug("rendering enter ({}): {s} {any}", .{
+                fmtlog.debug("rendering enter ({}): {t} lwt: {}", .{
                     indentation,
-                    "",
-                    // current.open.slice(src),
-                    current,
+                    current.kind,
+                    last_was_text,
                 });
 
                 const maybe_ws = src[last_rbracket..current.open.start];
-                log.debug("maybe_ws = '{s}'", .{maybe_ws});
+                fmtlog.debug("maybe_ws = '{s}'", .{maybe_ws});
                 if (pre > 0) {
                     try w.writeAll(maybe_ws);
                 } else {
-                    const vertical = maybe_ws.len > 0;
+                    const vertical = if (last_was_text and current.kind != .text)
+                        std.mem.indexOfScalar(u8, maybe_ws, '\n') != null
+                    else
+                        maybe_ws.len > 0;
 
                     if (vertical) {
-                        log.debug("adding a newline", .{});
+                        fmtlog.debug("adding a newline", .{});
                         const lines = std.mem.count(u8, maybe_ws, "\n");
                         if (last_rbracket > 0) {
                             if (lines >= 2) {
@@ -989,6 +996,8 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                         for (0..indentation) |_| {
                             try w.writeAll("\t");
                         }
+                    } else if ((last_was_text or current.kind == .text) and maybe_ws.len > 0) {
+                        try w.writeAll(" ");
                     }
                 }
 
@@ -1016,7 +1025,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     return;
                 }
 
-                log.debug("rendering exit ({}): {s} {any}", .{
+                fmtlog.debug("rendering exit ({}): {s} {any}", .{
                     indentation,
                     current.open.slice(src),
                     current,
@@ -1034,12 +1043,24 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     indentation -= 1;
                 }
 
-                const open_was_vertical = std.ascii.isWhitespace(src[current.open.end]);
-
                 if (pre > 0) {
                     const maybe_ws = src[last_rbracket..current.close.start];
                     try w.writeAll(maybe_ws);
                 } else {
+                    // const first_child_is_text = if (ast.child(current)) |ch|
+                    //     ch.kind == .text
+                    // else
+                    //     false;
+                    // const open_was_vertical = if (first_child_is_text)
+                    //     std.mem.indexOfScalar(
+                    //         u8,
+                    //         src[current.open.end..ast.nodes[current.first_child_idx].open.start],
+                    //         '\n',
+                    //     ) != null
+                    // else
+                    // std.ascii.isWhitespace(src[current.open.end]);
+
+                    const open_was_vertical = std.ascii.isWhitespace(src[current.open.end]);
                     if (open_was_vertical) {
                         try w.writeAll("\n");
                         for (0..indentation) |_| {
@@ -1069,7 +1090,29 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                 const txt = current.open.slice(src);
                 const parent_kind = ast.nodes[current.parent_idx].kind;
                 switch (parent_kind) {
-                    else => try w.writeAll(txt),
+                    else => {
+                        var it = std.mem.splitScalar(u8, txt, '\n');
+                        var first = true;
+                        var empty_line = false;
+                        while (it.next()) |raw_line| {
+                            const line = std.mem.trim(
+                                u8,
+                                raw_line,
+                                &std.ascii.whitespace,
+                            );
+                            if (line.len == 0) {
+                                if (empty_line) continue;
+                                empty_line = true;
+                                if (!first) for (0..indentation) |_| try w.print("\t", .{});
+                                try w.print("\n", .{});
+                                continue;
+                            } else empty_line = false;
+                            if (!first) for (0..indentation) |_| try w.print("\t", .{});
+                            try w.print("{s}", .{line});
+                            if (it.peek() != null) try w.print("\n", .{});
+                            first = false;
+                        }
+                    },
                     .style, .script => {
                         var css_indent = indentation;
                         var it = std.mem.splitScalar(u8, txt, '\n');
@@ -1110,7 +1153,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                 last_rbracket = current.open.end;
 
                 if (current.next_idx != 0) {
-                    log.debug("text next: {}", .{current.next_idx});
+                    fmtlog.debug("text next: {}", .{current.next_idx});
                     current = ast.nodes[current.next_idx];
                 } else {
                     current = ast.nodes[current.parent_idx];
@@ -1141,7 +1184,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                 const maybe_name, const maybe_extra = blk: {
                     var tt: Tokenizer = .{ .language = ast.language };
                     const tag = current.open.slice(src);
-                    log.debug("doctype tag: {s} {any}", .{ tag, current });
+                    fmtlog.debug("doctype tag: {s} {any}", .{ tag, current });
                     const dt = tt.next(tag).?.doctype;
                     const maybe_name: ?[]const u8 = if (dt.name) |name|
                         name.slice(tag)
@@ -1203,7 +1246,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                         break :blk true;
                     };
 
-                    log.debug("element <{s}> vertical = {}", .{ name, vertical });
+                    fmtlog.debug("element <{s}> vertical = {}", .{ name, vertical });
 
                     // if (std.mem.eql(u8, name, "path")) @breakpoint();
 
@@ -1294,7 +1337,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                                 .return_attrs = true,
                             };
                             const tag = current.open.slice(src);
-                            log.debug("retokenize {s}\n", .{tag});
+                            fmtlog.debug("retokenize {s}\n", .{tag});
                             break :blk tt.getName(tag).?.slice(tag);
                         };
 
@@ -1870,17 +1913,13 @@ test "spans" {
 test "arrow span" {
     const case =
         \\<a href="$if.permalink()">← <span var="$if.title"></span></a>
-    ;
-    const expected = comptime std.fmt.comptimePrint(
-        \\<a href="$if.permalink()">←
-        \\{c}<span var="$if.title"></span></a>
         \\
-    , .{'\t'});
+    ;
 
     const ast = try Ast.init(std.testing.allocator, case, .html, true);
     defer ast.deinit(std.testing.allocator);
 
-    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+    try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
 }
 
 test "self-closing tag complex example" {
