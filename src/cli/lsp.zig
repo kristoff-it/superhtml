@@ -11,7 +11,7 @@ const logic = @import("lsp/logic.zig");
 
 const log = std.log.scoped(.super_lsp);
 
-pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
+pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
     _ = args;
 
     log.debug("SuperHTML LSP started!", .{});
@@ -36,6 +36,8 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
         &handler,
         log.err,
     );
+
+    std.process.exit(0);
 }
 
 pub const Handler = @This();

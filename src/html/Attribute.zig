@@ -167,8 +167,8 @@ pub const Rule = union(enum) {
             }
 
             switch (list.extra) {
-                .missing, .manual => unreachable,
-                .none => {},
+                .manual => unreachable,
+                .none, .missing => {},
                 .not_empty => if (item.len > 0) return .custom,
                 .missing_or_empty => return if (item.len > 0) .custom else .empty,
                 .custom => {
@@ -851,7 +851,12 @@ pub const ValidatingIterator = struct {
             .node_idx = node_idx,
         };
 
-        result.name = result.it.next(src).?.tag_name;
+        // we need to discard potential error tokens because unexpected solidus errors
+        // will be reported before the full name
+        result.name = while (result.it.next(src)) |tok| {
+            if (tok == .tag_name) break tok.tag_name;
+        } else unreachable;
+
         return result;
     }
 
@@ -1076,7 +1081,7 @@ const empty_set: *const AttributeSet = &.{
     .map = .initComptime(.{}),
 };
 
-const Named = struct { name: []const u8, model: Attribute };
+pub const Named = struct { name: []const u8, model: Attribute };
 pub const AttributeSet = struct {
     list: []const Named,
     map: Map,
@@ -1250,7 +1255,10 @@ const temp: Attribute = .{
 
 pub fn isData(name: []const u8) bool {
     if (name.len < "data-*".len) return false;
-    return std.ascii.eqlIgnoreCase("data-", name[0.."data-".len]);
+    const data = std.ascii.eqlIgnoreCase("data-", name[0.."data-".len]);
+    // TODO: remove this hack once aria attributes are implemented
+    const aria = std.ascii.eqlIgnoreCase("aria-", name[0.."aria-".len]);
+    return data or aria;
 }
 
 pub const global: AttributeSet = .init(&.{
@@ -1656,6 +1664,13 @@ pub const global: AttributeSet = .init(&.{
                     },
                 }),
             },
+        },
+    },
+    .{
+        .name = "role",
+        .model = .{
+            .desc = "The `role` property of the Element interface returns the explicitly set WAI-ARIA role for the element.",
+            .rule = .not_empty, // TODO: make it a list attribute
         },
     },
     .{

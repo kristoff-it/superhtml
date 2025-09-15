@@ -495,7 +495,15 @@ pub inline fn validateAttrs(
 
     return switch (element.attributes) {
         .manual => return element.model,
-        .dynamic => |validate| validate(gpa, errors, src, nodes, parent_idx, node_idx, &vait),
+        .dynamic => |validate| validate(
+            gpa,
+            errors,
+            src,
+            nodes,
+            parent_idx,
+            node_idx,
+            &vait,
+        ),
         .static => blk: {
             // const max_len = comptime max: {
             //     var max: u32 = 0;

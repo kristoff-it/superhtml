@@ -3,7 +3,7 @@ const super = @import("superhtml");
 
 const FileType = enum { html, super };
 
-pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
+pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
     const cmd = Command.parse(args);
     var any_error = false;
     switch (cmd.mode) {
@@ -64,6 +64,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     if (any_error) {
         std.process.exit(1);
     }
+    std.process.exit(0);
 }
 
 fn checkDir(
@@ -107,10 +108,9 @@ fn checkFile(
     const arena = arena_impl.allocator();
 
     const in_bytes = try base_dir.readFileAllocOptions(
-        arena,
         sub_path,
-        super.max_size,
-        null,
+        arena,
+        .limited(super.max_size),
         .of(u8),
         0,
     );

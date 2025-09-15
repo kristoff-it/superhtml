@@ -2361,7 +2361,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .parse_error = .{
                                 .tag = .eof_in_tag,
                                 .span = .{
-                                    .start = self.idx - 1,
+                                    .start = state.tag.span.start,
                                     .end = self.idx,
                                 },
                             },
@@ -5522,4 +5522,16 @@ fn testTokenizeWithState(tokenizer: *Tokenizer, src: []const u8, expected_tokens
 fn testTokenize(src: []const u8, expected_tokens: []const Token) !void {
     var tokenizer: Tokenizer = .{ .language = .html };
     return testTokenizeWithState(&tokenizer, src, expected_tokens);
+}
+
+test "fuzz" {
+    const Context = struct {
+        fn testOne(_: @This(), input: []const u8) anyerror!void {
+            var t: Tokenizer = .{ .language = .html };
+            while (t.next(input)) |tok| {
+                _ = tok;
+            }
+        }
+    };
+    try std.testing.fuzz(Context{}, Context.testOne, .{});
 }

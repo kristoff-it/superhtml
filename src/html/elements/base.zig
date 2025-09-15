@@ -117,7 +117,7 @@ fn validate(
     var before_idx = node_idx - 1;
     while (before_idx != 0) : (before_idx -= 1) {
         const node = nodes[before_idx];
-        if (!node.kind.isElement()) continue;
+        if (!node.kind.isElement() or node.kind == .___) continue;
 
         // There must be no more than one base element per document.
         if (node.kind == .base) {

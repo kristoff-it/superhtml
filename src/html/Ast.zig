@@ -145,7 +145,7 @@ pub const Node = struct {
     next_idx: u32 = 0,
 
     kind: Kind,
-    self_closing: bool = false, // TODO fold into element tags
+    self_closing: bool,
     model: Element.Model,
 
     pub fn isClosed(n: Node) bool {
@@ -291,7 +291,7 @@ pub const Error = struct {
             src: []const u8,
             pub fn format(tf: Tag.Formatter, w: *std.Io.Writer) !void {
                 return switch (tf.tag) {
-                    .token => w.print("syntax error", .{}),
+                    .token => |terr| try w.print("syntax error: {t}", .{terr}),
                     .unsupported_doctype => w.print(
                         "unsupported doctype: superhtml only supports the 'html' doctype",
                         .{},
@@ -485,6 +485,7 @@ pub fn init(
             .categories = .none,
             .content = .all,
         },
+        .self_closing = false,
     });
 
     var tokenizer: Tokenizer = .{ .language = language };
@@ -509,6 +510,7 @@ pub fn init(
                         .categories = .none,
                         .content = .none,
                     },
+                    .self_closing = false,
                 };
 
                 switch (current.direction()) {
@@ -533,6 +535,7 @@ pub fn init(
                 .start_self,
                 => {
                     const name = tag.name.slice(src);
+                    const self_closing = tag.kind == .start_self;
                     var new: Node = node: switch (tag.kind) {
                         else => unreachable,
                         .start_self => {
@@ -572,6 +575,7 @@ pub fn init(
                                         .categories = .all,
                                         .content = .all,
                                     },
+                                    .self_closing = self_closing,
                                 };
                             },
                             .html => {
@@ -598,6 +602,7 @@ pub fn init(
                                         .open = tag.span,
                                         .kind = kind,
                                         .model = model,
+                                        .self_closing = self_closing,
                                     };
                                 } else if (std.mem.indexOfScalar(u8, name, '-') == null) {
                                     try errors.append(gpa, .{
@@ -614,6 +619,7 @@ pub fn init(
                                         .categories = .all,
                                         .content = .all,
                                     },
+                                    .self_closing = self_closing,
                                 };
                             },
                             .xml => break :node .{
@@ -623,6 +629,7 @@ pub fn init(
                                     .categories = .all,
                                     .content = .all,
                                 },
+                                .self_closing = self_closing,
                             },
                         },
                     };
@@ -842,6 +849,7 @@ pub fn init(
                         },
                         .content = .none,
                     },
+                    .self_closing = false,
                 };
 
                 switch (current.direction()) {
@@ -872,6 +880,7 @@ pub fn init(
                         .categories = .all,
                         .content = .none,
                     },
+                    .self_closing = false,
                 };
 
                 log.debug("comment => current ({any})", .{current.*});
@@ -915,6 +924,7 @@ pub fn init(
     // finalize tree
     while (current.kind != .root) {
         if (!current.isClosed()) {
+            has_syntax_errors = true;
             try errors.append(gpa, .{
                 .tag = .missing_end_tag,
                 .main_location = current.open,
@@ -1061,7 +1071,8 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     // else
                     // std.ascii.isWhitespace(src[current.open.end]);
 
-                    const open_was_vertical = std.ascii.isWhitespace(src[current.open.end]);
+                    const open_was_vertical = current.open.end < src.len and
+                        std.ascii.isWhitespace(src[current.open.end]);
                     if (open_was_vertical) {
                         try w.writeAll("\n");
                         for (0..indentation) |_| {
@@ -1228,7 +1239,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     var sti = current.startTagIterator(src, ast.language);
                     const name = sti.name_span.slice(src);
 
-                    if (current.kind == .pre) {
+                    if (current.kind == .pre and !current.self_closing) {
                         pre += 1;
                     }
 
@@ -2051,3 +2062,37 @@ pub const Cursor = struct {
         };
     }
 };
+
+test "fuzz" {
+    const Reader = std.Io.Reader;
+    const generator = @import("../generator/html.zig");
+    const Context = struct {
+        arena: *std.heap.ArenaAllocator,
+        gpa: Allocator,
+        out: *Writer,
+        fn testOne(ctx: @This(), input: []const u8) anyerror!void {
+            _ = ctx.arena.reset(.retain_capacity);
+
+            var in: Reader = .fixed(input);
+            var out: Writer.Allocating = .init(ctx.gpa);
+            try generator.generate(ctx.gpa, &in, &out.writer);
+            std.debug.print("--begin--\n{s}\n\n", .{out.written()});
+
+            const ast: Ast = try .init(ctx.gpa, out.written(), .html, false);
+            // _ = ast;
+            var devnull: Writer.Discarding = .init(&.{});
+            if (!ast.has_syntax_errors) {
+                try ast.render(out.written(), &devnull.writer);
+            }
+        }
+    };
+
+    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    var buf: [4096]u8 = undefined;
+    var out = std.fs.File.stdout().writer(&buf);
+    try std.testing.fuzz(Context{
+        .arena = &arena,
+        .gpa = arena.allocator(),
+        .out = &out.interface,
+    }, Context.testOne, .{});
+}
