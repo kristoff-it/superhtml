@@ -1471,6 +1471,8 @@ pub fn findNodeTagsIdx(ast: *const Ast, offset: u32) u32 {
     var cur_idx: u32 = 1;
     while (cur_idx != 0) {
         const n = ast.nodes[cur_idx];
+        if (!n.kind.isElement()) cur_idx = 0;
+
         if (n.open.start <= offset and n.open.end > offset) {
             break;
         }

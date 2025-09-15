@@ -349,6 +349,8 @@ pub fn @"textDocument/prepareRename"(
     if (node_idx == 0) return null;
 
     const node = doc.html.nodes[node_idx];
+    if (!node.kind.isElement()) return null;
+
     const it = node.startTagIterator(doc.src, doc.language);
 
     const range = lsp.offsets.locToRange(doc.src, .{
