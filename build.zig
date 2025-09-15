@@ -26,16 +26,16 @@ pub fn build(b: *std.Build) !void {
     superhtml.addImport("scripty", scripty.module("scripty"));
     superhtml.addImport("tracy", tracy.module("tracy"));
 
-    const language_tag_registry_parser = b.addExecutable(.{
-        .name = "language-tag-registry-parser",
+    const language_tag_parser = b.addExecutable(.{
+        .name = "language-tag-parser",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/language-tag/parse.zig"),
+            .root_source_file = b.path("src/html/language_tag/parse.zig"),
             .target = target,
         }),
     });
-    const parse_language_tag_registry = b.addRunArtifact(language_tag_registry_parser);
+    const language_tag_parse = b.addRunArtifact(language_tag_parser);
     superhtml.addImport("language-tag-registry", b.createModule(.{
-        .root_source_file = parse_language_tag_registry.addOutputFileArg("registry.zon"),
+        .root_source_file = language_tag_parse.addOutputFileArg("registry.zon"),
     }));
 
     if (target.result.os.tag == .windows) {

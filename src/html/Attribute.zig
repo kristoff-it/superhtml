@@ -9,8 +9,7 @@ const root = @import("../root.zig");
 const Language = root.Language;
 const Span = root.Span;
 const log = std.log.scoped(.attribute);
-const Registry = @import("../language-tag/parse.zig").Registry;
-const language_tag_registry: Registry = @import("language-tag-registry");
+const language_tag = @import("language_tag.zig");
 
 rule: Rule,
 desc: []const u8,
@@ -855,9 +854,8 @@ const LanguageTagRejection = struct {
 };
 
 fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
-    for (language_tag_registry.grandfathereds) |grandfathered| {
-        if (grandfathered.is_deprecated) continue;
-        if (std.ascii.eqlIgnoreCase(grandfathered.tag, bytes)) return null;
+    if (language_tag.maps.grandfathered.get(bytes)) |data| {
+        if (!data.is_deprecated) return null;
     }
 
     const ParseState = enum {
@@ -880,10 +878,8 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
             0 => return .init(bytes, subtag, "cannot be empty"),
             // ISO 639 code
             2...3 => {
-                for (language_tag_registry.languages) |lang| {
-                    if (!std.ascii.eqlIgnoreCase(lang.subtag, subtag)) continue;
-                    if (lang.is_deprecated) return .init(bytes, subtag, "deprecated language");
-                    break;
+                if (language_tag.maps.language.get(subtag)) |data| {
+                    if (data.is_deprecated) return .init(bytes, subtag, "deprecated language");
                 } else {
                     return .init(bytes, subtag, "unknown language");
                 }
@@ -901,10 +897,8 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
         },
         .extlang => if (subtag.len == 3) {
             if (std.ascii.isDigit(subtag[0])) continue :state .region;
-            for (language_tag_registry.extlangs) |ext| {
-                if (!std.ascii.eqlIgnoreCase(ext.subtag, subtag)) continue;
-                if (ext.is_deprecated) return .init(bytes, subtag, "deprecated language extension");
-                break;
+            if (language_tag.maps.extlang.get(subtag)) |data| {
+                if (data.is_deprecated) return .init(bytes, subtag, "deprecated language extension");
             } else {
                 return .init(bytes, subtag, "unknown language extension");
             }
@@ -917,9 +911,7 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
         },
         .script => if (subtag.len == 4) {
             if (std.ascii.isDigit(subtag[0])) continue :state .variant;
-            for (language_tag_registry.scripts) |script| {
-                if (std.ascii.eqlIgnoreCase(script.subtag, subtag)) break;
-            } else {
+            if (!language_tag.maps.script.has(subtag)) {
                 return .init(bytes, subtag, "unknown language script");
             }
             parse_state = .region;
@@ -929,10 +921,8 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
         .region => switch (subtag.len) {
             // ISO 3166 or UN M.49 code
             2...3 => {
-                for (language_tag_registry.regions) |region| {
-                    if (!std.ascii.eqlIgnoreCase(region.subtag, subtag)) continue;
-                    if (region.is_deprecated) return .init(bytes, subtag, "deprecated language region");
-                    break;
+                if (language_tag.maps.region.get(subtag)) |data| {
+                    if (data.is_deprecated) return .init(bytes, subtag, "deprecated language region");
                 } else {
                     return .init(bytes, subtag, "unknown language region");
                 }
@@ -942,10 +932,8 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
         },
         .variant => switch (subtag.len) {
             4...8 => {
-                for (language_tag_registry.variants) |variant| {
-                    if (!std.ascii.eqlIgnoreCase(variant.subtag, subtag)) continue;
-                    if (variant.is_deprecated) return .init(bytes, subtag, "deprecated language variant");
-                    break;
+                if (language_tag.maps.variant.get(subtag)) |data| {
+                    if (data.is_deprecated) return .init(bytes, subtag, "deprecated language variant");
                 } else {
                     return .init(bytes, subtag, "unknown language variant");
                 }
@@ -1111,7 +1099,7 @@ pub fn completions(
                     },
                     .lang => {
                         if (value_content.len == 0) {
-                            return &language_completions;
+                            return &language_tag.completions.language;
                         }
                     },
                     .list => |l| {
@@ -1240,18 +1228,6 @@ pub fn completions(
     assert(items_idx == items.len);
     return items;
 }
-
-const language_completions = blk: {
-    @setEvalBranchQuota(language_tag_registry.languages.len);
-    var comps: [language_tag_registry.languages.len]Ast.Completion = undefined;
-    for (language_tag_registry.languages, &comps) |lang, *completion| {
-        completion.* = .{
-            .label = lang.subtag,
-            .desc = lang.description,
-        };
-    }
-    break :blk comps;
-};
 
 const empty_set: *const AttributeSet = &.{
     .list = &.{},
