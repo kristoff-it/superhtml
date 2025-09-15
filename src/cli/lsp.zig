@@ -125,7 +125,7 @@ pub fn initialize(
             .triggerCharacters = &.{
                 "<",  "/", " ",
                 "\n", "'", "\"",
-                "=",  ",",
+                "=",  ",", "-",
             },
         },
 
