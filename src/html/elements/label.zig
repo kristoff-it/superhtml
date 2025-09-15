@@ -7,7 +7,7 @@ const Attribute = @import("../Attribute.zig");
 const AttributeSet = Attribute.AttributeSet;
 
 pub const label: Element = .{
-    .tag = .kbd,
+    .tag = .label,
     .model = .{
         .categories = .{
             .flow = true,
