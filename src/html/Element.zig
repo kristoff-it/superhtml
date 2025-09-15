@@ -345,6 +345,7 @@ pub inline fn validateContent(
                 switch (child.kind) {
                     else => {},
                     .doctype => continue,
+                    .comment => continue,
                     .text => {
                         if (!parent.model.content.flow and
                             !parent.model.content.phrasing and
@@ -401,7 +402,7 @@ pub inline fn validateContent(
                                 .reason = rejection.reason,
                             },
                         },
-                        .main_location = child.startTagIterator(src, .html).name_span,
+                        .main_location = child.span(src),
                         .node_idx = child_idx,
                     });
                 }

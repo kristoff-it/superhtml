@@ -50,6 +50,7 @@ pub fn validateContent(
     while (child_idx != 0) {
         const child = nodes[child_idx];
         defer child_idx = child.next_idx;
+        if (child.kind == .comment) continue;
 
         const child_span = child.span(src);
 
