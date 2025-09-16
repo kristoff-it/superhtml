@@ -1303,7 +1303,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                         }
                     }
 
-                    if (current.self_closing) {
+                    if (current.self_closing and !current.kind.isVoid()) {
                         try w.print("/", .{});
                     }
                     try w.print(">", .{});
