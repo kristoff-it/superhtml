@@ -26,6 +26,18 @@ pub fn build(b: *std.Build) !void {
     superhtml.addImport("scripty", scripty.module("scripty"));
     superhtml.addImport("tracy", tracy.module("tracy"));
 
+    const language_tag_parser = b.addExecutable(.{
+        .name = "language-tag-parser",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/html/language_tag/parse.zig"),
+            .target = target,
+        }),
+    });
+    const language_tag_parse = b.addRunArtifact(language_tag_parser);
+    superhtml.addImport("language-tag-registry", b.createModule(.{
+        .root_source_file = language_tag_parse.addOutputFileArg("registry.zon"),
+    }));
+
     if (target.result.os.tag == .windows) {
         superhtml.linkSystemLibrary("advapi32", .{});
 
@@ -61,6 +73,7 @@ pub fn build(b: *std.Build) !void {
     setupTestStep(b, superhtml, check);
     setupCliTool(b, target, optimize, options, superhtml, folders, lsp);
     setupWasmStep(b, optimize, options, superhtml, lsp);
+    setupFetchLanguageSubtagRegistryStep(b, target);
     if (version == .tag) {
         setupReleaseStep(b, options, superhtml, folders, lsp);
     }
@@ -179,6 +192,27 @@ fn setupWasmStep(
         .dest_dir = .{ .override = .{ .custom = "" } },
     });
     wasm.dependOn(&target_output.step);
+}
+
+fn setupFetchLanguageSubtagRegistryStep(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+) void {
+    const step = b.step(
+        "fetch-language-subtag-registry",
+        "Fetch the IANA language subtag registry",
+    );
+    const fetcher = b.addExecutable(.{
+        .name = "language-subtag-fetcher",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/html/language_tag/fetch.zig"),
+            .target = target,
+        }),
+    });
+    const fetch = b.addRunArtifact(fetcher);
+    fetch.has_side_effects = true;
+    fetch.addFileArg(b.path("src/html/language_tag/registry.txt"));
+    step.dependOn(&fetch.step);
 }
 
 fn setupReleaseStep(

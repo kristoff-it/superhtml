@@ -79,7 +79,7 @@ pub const attributes: AttributeSet = .init(&.{
     .{
         .name = "srclang",
         .model = .{
-            .rule = .not_empty,
+            .rule = .lang,
             .desc = "Language of the track text data. It must be a valid BCP 47 language tag. If the `kind` attribute is set to 'subtitles', then `srclang` must be defined.",
         },
     },

@@ -9,6 +9,7 @@ const root = @import("../root.zig");
 const Language = root.Language;
 const Span = root.Span;
 const log = std.log.scoped(.attribute);
+const language_tag = @import("language_tag.zig");
 
 rule: Rule,
 desc: []const u8,
@@ -73,6 +74,9 @@ pub const Rule = union(enum) {
 
     /// MIME
     mime,
+
+    /// BCP 47 language tag
+    lang,
 
     /// Not negative integer
     non_neg_int: struct {
@@ -257,6 +261,20 @@ pub const Rule = union(enum) {
             },
             .mime => return validateMime(gpa, errors, src, node_idx, attr),
             .cors => continue :rule .{ .list = cors_list },
+            .lang => {
+                const value = attr.value orelse return;
+                const value_slice = value.span.slice(src);
+                if (language_tag.validate(value_slice)) |rejection| return errors.append(gpa, .{
+                    .tag = .{
+                        .invalid_attr_value = .{ .reason = rejection.reason },
+                    },
+                    .main_location = .{
+                        .start = value.span.start + rejection.offset,
+                        .end = value.span.start + rejection.offset + rejection.length,
+                    },
+                    .node_idx = node_idx,
+                });
+            },
             .not_empty => {
                 const value = attr.value orelse return errors.append(gpa, .{
                     .tag = .missing_attr_value,
@@ -944,6 +962,9 @@ pub fn completions(
                     .cors => if (value_content.len == 0) {
                         return Rule.cors_list.completions;
                     },
+                    .lang => {
+                        return language_tag.completions(value_content);
+                    },
                     .list => |l| {
                         if (value_content.len == 0) {
                             return l.completions;
@@ -1625,7 +1646,7 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "lang",
         .model = .{
-            .rule = .not_empty,
+            .rule = .lang,
             .desc = "The `lang` global attribute helps define the language of an element: the language that non-editable elements are written in, or the language that the editable elements should be written in by the user. The attribute contains a single BCP 47 language tag.",
         },
     },
