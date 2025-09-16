@@ -390,12 +390,14 @@ pub const Error = struct {
     node_idx: u32, // 0 = missing node
 };
 
+pub const SelfClosingVoidMode = enum { never, preserve, always };
+
 pub const ParseOptions = struct {
     /// When true only official HTML tag names will be allowed.
     /// Strict mode currently only supports HTML and SuperHTML.
     strict_tags: bool,
     /// How to handle self-closing HTML void tags like <br />.
-    self_closing_void: enum { never, preserve, always },
+    self_closing_void: SelfClosingVoidMode,
 };
 
 pub fn cursor(ast: Ast, idx: u32) Cursor {

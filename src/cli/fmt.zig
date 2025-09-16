@@ -6,8 +6,8 @@ const FileType = enum { html, super };
 pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     const cmd = Command.parse(args);
     const options = super.html.Ast.ParseOptions{
-        .strict_tags = cmd.strict,
-        .self_closing_void = .never,
+        .strict_tags = cmd.strict_tags,
+        .self_closing_void = cmd.self_closing_void,
     };
     var any_error = false;
     switch (cmd.mode) {
@@ -213,7 +213,8 @@ fn oom() noreturn {
 const Command = struct {
     check: bool,
     mode: Mode,
-    strict: bool,
+    strict_tags: bool,
+    self_closing_void: super.html.Ast.SelfClosingVoidMode,
 
     const Mode = union(enum) {
         stdin,
@@ -224,7 +225,8 @@ const Command = struct {
     fn parse(args: []const []const u8) Command {
         var check: bool = false;
         var mode: ?Mode = null;
-        var strict: ?bool = null;
+        var strict_tags: ?bool = null;
+        var self_closing_void: ?super.html.Ast.SelfClosingVoidMode = null;
 
         var idx: usize = 0;
         while (idx < args.len) : (idx += 1) {
@@ -241,7 +243,23 @@ const Command = struct {
             }
 
             if (std.mem.eql(u8, arg, "--no-strict-tags")) {
-                strict = false;
+                strict_tags = false;
+                continue;
+            }
+
+            if (std.mem.eql(u8, arg, "--self-closing-void")) {
+                if (idx + 1 >= args.len) {
+                    std.debug.print("expected a value after --self-closing-void: one of never, preserve, always\n", .{});
+                    std.process.exit(1);
+                }
+
+                const val = args[idx + 1];
+                self_closing_void = std.meta.stringToEnum(super.html.Ast.SelfClosingVoidMode, val) orelse {
+                    std.debug.print("unexpected value for --self-closing-void: '{s}'; expected one of: never, preserve, always\n", .{val});
+                    std.process.exit(1);
+                };
+
+                idx += 1;
                 continue;
             }
 
@@ -296,7 +314,8 @@ const Command = struct {
         return .{
             .check = check,
             .mode = m,
-            .strict = strict orelse true,
+            .strict_tags = strict_tags orelse true,
+            .self_closing_void = self_closing_void orelse .never,
         };
     }
 

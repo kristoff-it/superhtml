@@ -6,8 +6,8 @@ const FileType = enum { html, super };
 pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     const cmd = Command.parse(args);
     const options = super.html.Ast.ParseOptions{
-        .strict_tags = cmd.strict,
-        .self_closing_void = .never,
+        .strict_tags = cmd.strict_tags,
+        .self_closing_void = if (cmd.self_closing_void) .preserve else .never,
     };
     switch (cmd.mode) {
         .stdin => {
@@ -101,7 +101,8 @@ fn oom() noreturn {
 
 const Command = struct {
     mode: Mode,
-    strict: bool,
+    strict_tags: bool,
+    self_closing_void: bool,
 
     const Mode = union(enum) {
         stdin,
@@ -110,7 +111,8 @@ const Command = struct {
 
     fn parse(args: []const []const u8) Command {
         var mode: ?Mode = null;
-        var strict: ?bool = null;
+        var strict_tags: ?bool = null;
+        var self_closing_void: ?bool = null;
 
         var idx: usize = 0;
         while (idx < args.len) : (idx += 1) {
@@ -122,7 +124,12 @@ const Command = struct {
             }
 
             if (std.mem.eql(u8, arg, "--no-strict-tags")) {
-                strict = false;
+                strict_tags = false;
+                continue;
+            }
+
+            if (std.mem.eql(u8, arg, "--self-closing-void")) {
+                self_closing_void = true;
                 continue;
             }
 
@@ -160,7 +167,8 @@ const Command = struct {
 
         return .{
             .mode = m,
-            .strict = strict orelse true,
+            .strict_tags = strict_tags orelse true,
+            .self_closing_void = self_closing_void orelse false,
         };
     }
 

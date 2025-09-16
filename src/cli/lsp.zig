@@ -12,7 +12,24 @@ const logic = @import("lsp/logic.zig");
 const log = std.log.scoped(.super_lsp);
 
 pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
-    _ = args;
+    var self_closing_void = super.html.Ast.SelfClosingVoidMode.never;
+    var idx: usize = 0;
+    while (idx < args.len) : (idx += 1) {
+        if (std.mem.eql(u8, args[idx], "--self-closing-void")) {
+            if (idx + 1 >= args.len) {
+                std.debug.print("expected a value after --self-closing-void: one of never, preserve, always\n", .{});
+                std.process.exit(1);
+            }
+
+            const val = args[idx + 1];
+            self_closing_void = std.meta.stringToEnum(super.html.Ast.SelfClosingVoidMode, val) orelse {
+                std.debug.print("unexpected value for --self-closing-void: '{s}'; expected one of: never, preserve, always\n", .{val});
+                std.process.exit(1);
+            };
+
+            break;
+        }
+    }
 
     log.debug("SuperHTML LSP started!", .{});
 
@@ -27,6 +44,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
         .gpa = gpa,
         .transport = &stdio.transport,
         .strict_tags = true,
+        .self_closing_void = self_closing_void,
     };
     defer handler.deinit();
 
@@ -45,6 +63,7 @@ transport: *lsp.Transport,
 files: std.StringHashMapUnmanaged(Document) = .{},
 offset_encoding: offsets.Encoding = .@"utf-16",
 strict_tags: bool,
+self_closing_void: super.html.Ast.SelfClosingVoidMode,
 
 fn deinit(self: *Handler) void {
     var file_it = self.files.valueIterator();
