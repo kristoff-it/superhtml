@@ -5,13 +5,17 @@ const FileType = enum { html, super };
 
 pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     const cmd = Command.parse(args);
+    const options = super.html.Ast.ParseOptions{
+        .strict_tags = cmd.strict,
+        .self_closing_void = .never,
+    };
     switch (cmd.mode) {
         .stdin => {
             var fr = std.fs.File.stdin().reader(&.{});
             var aw: std.Io.Writer.Allocating = .init(gpa);
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
-            const out_bytes = try renderInterface(gpa, null, in_bytes, cmd.strict);
+            const out_bytes = try renderInterface(gpa, null, in_bytes, options);
             try std.fs.File.stdout().writeAll(out_bytes);
         },
         .path => |path| {
@@ -21,7 +25,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                 std.fs.cwd(),
                 path,
                 path,
-                cmd.strict,
+                options,
             ) catch |err| switch (err) {
                 error.IsDir => {
                     std.debug.print("error: '{s}' is a directory\n\n", .{
@@ -48,7 +52,7 @@ fn printInterfaceFromFile(
     base_dir: std.fs.Dir,
     sub_path: []const u8,
     full_path: []const u8,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) ![]const u8 {
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
@@ -62,16 +66,16 @@ fn printInterfaceFromFile(
         0,
     );
 
-    return renderInterface(arena, full_path, in_bytes, strict);
+    return renderInterface(arena, full_path, in_bytes, options);
 }
 
 fn renderInterface(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) ![]const u8 {
-    const html_ast = try super.html.Ast.init(arena, code, .superhtml, strict);
+    const html_ast = try super.html.Ast.init(arena, code, .superhtml, options);
     if (html_ast.errors.len > 0) {
         var ew = std.fs.File.stderr().writer(&.{});
         try html_ast.printErrors(code, path, &ew.interface);

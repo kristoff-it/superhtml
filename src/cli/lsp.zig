@@ -26,7 +26,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     var handler: Handler = .{
         .gpa = gpa,
         .transport = &stdio.transport,
-        .strict = true,
+        .strict_tags = true,
     };
     defer handler.deinit();
 
@@ -44,7 +44,7 @@ gpa: std.mem.Allocator,
 transport: *lsp.Transport,
 files: std.StringHashMapUnmanaged(Document) = .{},
 offset_encoding: offsets.Encoding = .@"utf-16",
-strict: bool,
+strict_tags: bool,
 
 fn deinit(self: *Handler) void {
     var file_it = self.files.valueIterator();
@@ -274,7 +274,7 @@ pub fn @"textDocument/codeAction"(
         self.offset_encoding,
     );
 
-    if (!self.strict) return null;
+    if (!self.strict_tags) return null;
 
     for (doc.html.errors) |err| {
         if (err.tag != .invalid_html_tag_name) continue;

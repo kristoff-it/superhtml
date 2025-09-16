@@ -20,12 +20,12 @@ pub fn init(
     gpa: std.mem.Allocator,
     src: []const u8,
     language: super.Language,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) error{OutOfMemory}!Document {
     var doc: Document = .{
         .src = src,
         .language = language,
-        .html = try super.html.Ast.init(gpa, src, language, strict),
+        .html = try super.html.Ast.init(gpa, src, language, options),
     };
     errdefer doc.html.deinit(gpa);
 
@@ -38,9 +38,13 @@ pub fn init(
     return doc;
 }
 
-pub fn reparse(doc: *Document, gpa: std.mem.Allocator, strict: bool) !void {
+pub fn reparse(
+    doc: *Document,
+    gpa: std.mem.Allocator,
+    options: super.html.Ast.ParseOptions,
+) !void {
     doc.deinit(gpa);
-    doc.html = try super.html.Ast.init(gpa, doc.src, doc.language, strict);
+    doc.html = try super.html.Ast.init(gpa, doc.src, doc.language, options);
     errdefer doc.html.deinit(gpa);
 
     if (doc.language == .superhtml and doc.html.errors.len == 0) {

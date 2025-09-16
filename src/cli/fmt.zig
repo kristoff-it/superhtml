@@ -5,6 +5,10 @@ const FileType = enum { html, super };
 
 pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     const cmd = Command.parse(args);
+    const options = super.html.Ast.ParseOptions{
+        .strict_tags = cmd.strict,
+        .self_closing_void = .never,
+    };
     var any_error = false;
     switch (cmd.mode) {
         .stdin => {
@@ -13,7 +17,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            const out_bytes = try fmtHtml(gpa, null, in_bytes, cmd.strict);
+            const out_bytes = try fmtHtml(gpa, null, in_bytes, options);
 
             try std.fs.File.stdout().writeAll(out_bytes);
         },
@@ -23,7 +27,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            const out_bytes = try fmtSuper(gpa, null, in_bytes, cmd.strict);
+            const out_bytes = try fmtSuper(gpa, null, in_bytes, options);
             try std.fs.File.stdout().writeAll(out_bytes);
         },
         .paths => |paths| {
@@ -37,7 +41,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                     path,
                     path,
                     &any_error,
-                    cmd.strict,
+                    options,
                 ) catch |err| switch (err) {
                     error.IsDir, error.AccessDenied => {
                         formatDir(
@@ -46,7 +50,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                             cmd.check,
                             path,
                             &any_error,
-                            cmd.strict,
+                            options,
                         ) catch |dir_err| {
                             std.debug.print("Error walking dir '{s}': {s}\n", .{
                                 path,
@@ -77,7 +81,7 @@ fn formatDir(
     check: bool,
     path: []const u8,
     any_error: *bool,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) !void {
     var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer dir.close();
@@ -93,7 +97,7 @@ fn formatDir(
                     item.basename,
                     item.path,
                     any_error,
-                    strict,
+                    options,
                 );
             },
             else => {},
@@ -108,7 +112,7 @@ fn formatFile(
     sub_path: []const u8,
     full_path: []const u8,
     any_error: *bool,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) !void {
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
@@ -141,13 +145,13 @@ fn formatFile(
             arena,
             full_path,
             in_bytes,
-            strict,
+            options,
         ),
         .super => try fmtSuper(
             arena,
             full_path,
             in_bytes,
-            strict,
+            options,
         ),
     };
 
@@ -173,9 +177,9 @@ pub fn fmtHtml(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) ![]const u8 {
-    const ast = try super.html.Ast.init(arena, code, .html, strict);
+    const ast = try super.html.Ast.init(arena, code, .html, options);
     if (ast.errors.len > 0) {
         var ew = std.fs.File.stderr().writer(&.{});
         try ast.printErrors(code, path, &ew.interface);
@@ -189,9 +193,9 @@ fn fmtSuper(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) ![]const u8 {
-    const ast = try super.html.Ast.init(arena, code, .superhtml, strict);
+    const ast = try super.html.Ast.init(arena, code, .superhtml, options);
     if (ast.errors.len > 0) {
         var ew = std.fs.File.stderr().writer(&.{});
         try ast.printErrors(code, path, &ew.interface);

@@ -390,6 +390,14 @@ pub const Error = struct {
     node_idx: u32, // 0 = missing node
 };
 
+pub const ParseOptions = struct {
+    /// When true only official HTML tag names will be allowed.
+    /// Strict mode currently only supports HTML and SuperHTML.
+    strict_tags: bool,
+    /// How to handle self-closing HTML void tags like <br />.
+    self_closing_void: enum { never, preserve, always },
+};
+
 pub fn cursor(ast: Ast, idx: u32) Cursor {
     return .{ .ast = ast, .idx = idx, .dir = .in };
 }
@@ -450,9 +458,7 @@ pub fn init(
     gpa: Allocator,
     src: []const u8,
     language: Language,
-    /// When true only official HTML tag names will be allowed.
-    /// Strict mode currently only supports HTML and SuperHTML.
-    strict: bool,
+    options: ParseOptions,
 ) error{OutOfMemory}!Ast {
     if (src.len > std.math.maxInt(u32)) @panic("too long");
 
@@ -533,25 +539,28 @@ pub fn init(
                 .start_self,
                 => {
                     const name = tag.name.slice(src);
+                    const is_void = tag.isVoid(src, language);
+
+                    var self_closing = false;
+                    if (is_void and options.self_closing_void == .always) {
+                        self_closing = true;
+                    }
+
                     var new: Node = node: switch (tag.kind) {
                         else => unreachable,
                         .start_self => {
-                            if (svg_lvl != 0 or math_lvl != 0 or language == .xml) {
-                                break :node .{
-                                    .kind = .___,
-                                    .open = tag.span,
-                                    .model = .{
-                                        .categories = .all,
-                                        .content = .all,
-                                    },
-                                    .self_closing = true,
-                                };
+                            const non_html = svg_lvl != 0 or math_lvl != 0 or language == .xml;
+                            const permitted = is_void and options.self_closing_void != .never;
+                            if (non_html or permitted) {
+                                self_closing = true;
+                            } else {
+                                try errors.append(gpa, .{
+                                    .tag = .html_elements_cant_self_close,
+                                    .main_location = tag.name,
+                                    .node_idx = current_idx + 1,
+                                });
                             }
-                            try errors.append(gpa, .{
-                                .tag = .html_elements_cant_self_close,
-                                .main_location = tag.name,
-                                .node_idx = current_idx + 1,
-                            });
+
                             continue :node .start;
                         },
                         .start => switch (language) {
@@ -568,6 +577,7 @@ pub fn init(
                                 break :node .{
                                     .open = tag.span,
                                     .kind = kind,
+                                    .self_closing = self_closing,
                                     .model = .{
                                         .categories = .all,
                                         .content = .all,
@@ -597,6 +607,7 @@ pub fn init(
                                     break :node .{
                                         .open = tag.span,
                                         .kind = kind,
+                                        .self_closing = self_closing,
                                         .model = model,
                                     };
                                 } else if (std.mem.indexOfScalar(u8, name, '-') == null) {
@@ -610,6 +621,7 @@ pub fn init(
                                 break :node .{
                                     .kind = .___,
                                     .open = tag.span,
+                                    .self_closing = self_closing,
                                     .model = .{
                                         .categories = .all,
                                         .content = .all,
@@ -654,7 +666,7 @@ pub fn init(
                     try nodes.append(new);
                     current = &nodes.items[current_idx];
 
-                    if (strict and current.kind == .main) {
+                    if (options.strict_tags and current.kind == .main) {
                         var ancestor_idx = current.parent_idx;
                         while (ancestor_idx != 0) {
                             const ancestor = nodes.items[ancestor_idx];
@@ -926,7 +938,7 @@ pub fn init(
         current = &nodes.items[current.parent_idx];
     }
 
-    if (strict and !has_syntax_errors and language == .html) try validateNesting(
+    if (options.strict_tags and !has_syntax_errors and language == .html) try validateNesting(
         gpa,
         nodes.items,
         &errors,

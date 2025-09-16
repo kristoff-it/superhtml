@@ -22,11 +22,16 @@ pub fn loadFile(
         .diagnostics = &.{},
     };
 
+    const options = super.html.Ast.ParseOptions{
+        .strict_tags = self.strict_tags,
+        .self_closing_void = .never,
+    };
+
     const doc = try Document.init(
         self.gpa,
         new_text,
         language,
-        self.strict,
+        options,
     );
 
     log.debug("document init", .{});

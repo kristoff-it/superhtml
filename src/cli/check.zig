@@ -5,6 +5,10 @@ const FileType = enum { html, super };
 
 pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     const cmd = Command.parse(args);
+    const options = super.html.Ast.ParseOptions{
+        .strict_tags = cmd.strict,
+        .self_closing_void = .never,
+    };
     var any_error = false;
     switch (cmd.mode) {
         .stdin => {
@@ -13,7 +17,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkHtml(gpa, null, in_bytes, cmd.strict);
+            try checkHtml(gpa, null, in_bytes, options);
         },
         .stdin_super => {
             var fr = std.fs.File.stdin().reader(&.{});
@@ -21,7 +25,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkSuper(gpa, null, in_bytes, cmd.strict);
+            try checkSuper(gpa, null, in_bytes, options);
         },
         .paths => |paths| {
             // checkFile will reset the arena at the end of each call
@@ -33,7 +37,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                     path,
                     path,
                     &any_error,
-                    cmd.strict,
+                    options,
                 ) catch |err| switch (err) {
                     error.IsDir, error.AccessDenied => {
                         checkDir(
@@ -41,7 +45,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
                             &arena_impl,
                             path,
                             &any_error,
-                            cmd.strict,
+                            options,
                         ) catch |dir_err| {
                             std.debug.print("Error walking dir '{s}': {t}\n", .{
                                 path,
@@ -71,7 +75,7 @@ fn checkDir(
     arena_impl: *std.heap.ArenaAllocator,
     path: []const u8,
     any_error: *bool,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) !void {
     var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer dir.close();
@@ -86,7 +90,7 @@ fn checkDir(
                     item.basename,
                     item.path,
                     any_error,
-                    strict,
+                    options,
                 );
             },
             else => {},
@@ -100,7 +104,7 @@ fn checkFile(
     sub_path: []const u8,
     full_path: []const u8,
     any_error: *bool,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) !void {
     _ = any_error;
     defer _ = arena_impl.reset(.retain_capacity);
@@ -134,13 +138,13 @@ fn checkFile(
             arena,
             full_path,
             in_bytes,
-            strict,
+            options,
         ),
         .super => try checkSuper(
             arena,
             full_path,
             in_bytes,
-            strict,
+            options,
         ),
     }
 }
@@ -149,9 +153,9 @@ pub fn checkHtml(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) !void {
-    const ast = try super.html.Ast.init(arena, code, .html, strict);
+    const ast = try super.html.Ast.init(arena, code, .html, options);
     if (ast.errors.len > 0) {
         var stderr = std.fs.File.stderr().writer(&.{});
         try ast.printErrors(code, path, &stderr.interface);
@@ -163,9 +167,9 @@ fn checkSuper(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
-    strict: bool,
+    options: super.html.Ast.ParseOptions,
 ) !void {
-    const html = try super.html.Ast.init(arena, code, .superhtml, strict);
+    const html = try super.html.Ast.init(arena, code, .superhtml, options);
     if (html.errors.len > 0) {
         var stderr = std.fs.File.stderr().writer(&.{});
         try html.printErrors(code, path, &stderr.interface);
