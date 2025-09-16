@@ -1099,9 +1099,8 @@ pub fn completions(
                         if (value_content.len == 0) {
                             return &language_tag.completions.language;
                         }
-                        if (std.mem.endsWith(u8, value_content, "-") and
-                            std.mem.indexOfScalar(u8, value_content, '-') == value_content.len - 1)
-                        {
+
+                        if (std.mem.endsWith(u8, value_content, "-")) {
                             return &language_tag.completions.region;
                         }
                     },
