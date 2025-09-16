@@ -1248,17 +1248,22 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
 
                     try w.print("<{s}", .{name});
 
-                    const vertical = std.ascii.isWhitespace(
-                        // <div arst="arst" >
-                        //                 ^
-                        src[current.open.end - 2],
-                    ) and blk: {
+                    const vertical = blk: {
                         // Don't do vertical alignment if we don't have
                         // at least 2 attributes.
                         var temp_sti = sti;
                         _ = temp_sti.next(src) orelse break :blk false;
                         _ = temp_sti.next(src) orelse break :blk false;
-                        break :blk true;
+
+                        if (current.self_closing) {
+                            // <path d="M10 10"  />
+                            //                 ^^
+                            break :blk std.ascii.isWhitespace(src[current.open.end - 3]) and std.ascii.isWhitespace(src[current.open.end - 4]);
+                        } else {
+                            // <div arst="arst" >
+                            //                 ^
+                            break :blk std.ascii.isWhitespace(src[current.open.end - 2]);
+                        }
                     };
 
                     fmtlog.debug("element <{s}> vertical = {}", .{ name, vertical });
@@ -1318,9 +1323,14 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     }
 
                     if (current.self_closing) {
-                        try w.print("/", .{});
+                        if (vertical) {
+                            try w.print("/>", .{});
+                        } else {
+                            try w.print(" />", .{});
+                        }
+                    } else {
+                        try w.print(">", .{});
                     }
-                    try w.print(">", .{});
 
                     assert(current.kind.isElement());
 
