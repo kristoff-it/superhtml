@@ -871,6 +871,7 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
         privateuse_extra,
     };
     var parse_state: ParseState = .language;
+    var language: ?[]const u8 = null;
 
     var subtags = std.mem.splitScalar(u8, bytes, '-');
     while (subtags.next()) |subtag| state: switch (parse_state) {
@@ -883,6 +884,7 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
                 } else {
                     return .init(bytes, subtag, "unknown language");
                 }
+                language = subtag;
                 parse_state = .extlang;
             },
             else => return .init(bytes, subtag, "too long"),
@@ -892,6 +894,11 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
                 if (std.ascii.isDigit(subtag[0])) continue :state .region;
                 if (language_tag.maps.extlang.get(subtag)) |data| {
                     if (data.is_deprecated) return .init(bytes, subtag, "deprecated language extension");
+                    if (data.prefix) |prefix| {
+                        if (!std.ascii.eqlIgnoreCase(language.?, prefix)) {
+                            return .init(bytes, subtag, "incompatible language extension");
+                        }
+                    }
                 } else {
                     return .init(bytes, subtag, "unknown language extension");
                 }
@@ -925,6 +932,11 @@ fn validateLanguageTag(bytes: []const u8) ?LanguageTagRejection {
             4...8 => {
                 if (language_tag.maps.variant.get(subtag)) |data| {
                     if (data.is_deprecated) return .init(bytes, subtag, "deprecated language variant");
+                    if (data.prefix) |prefix| {
+                        if (!std.ascii.eqlIgnoreCase(language.?, prefix)) {
+                            return .init(bytes, subtag, "incompatible language variant");
+                        }
+                    }
                 } else {
                     return .init(bytes, subtag, "unknown language variant");
                 }
