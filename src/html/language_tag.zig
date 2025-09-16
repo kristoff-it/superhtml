@@ -1,5 +1,5 @@
 const std = @import("std");
-const Completion = @import("../html/Ast.zig").Completion;
+const Completion = @import("Ast.zig").Completion;
 const Registry = @import("language_tag/parse.zig").Registry;
 const registry: Registry = @import("language-tag-registry");
 
