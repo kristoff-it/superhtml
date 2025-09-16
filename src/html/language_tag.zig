@@ -56,10 +56,10 @@ pub fn validate(bytes: []const u8) ?Rejection {
                 if (std.ascii.isDigit(subtag[0])) continue :state .region;
                 if (maps.extlang.get(subtag)) |data| {
                     if (data.is_deprecated) return .init(bytes, subtag, "deprecated language extension");
-                    if (data.prefix) |prefix| {
-                        if (!std.ascii.startsWithIgnoreCase(bytes, prefix)) {
-                            return .init(bytes, subtag, "incompatible language extension");
-                        }
+                    for (data.prefixes) |prefix| {
+                        if (std.ascii.startsWithIgnoreCase(bytes, prefix)) break;
+                    } else {
+                        return .init(bytes, subtag, "incompatible language extension");
                     }
                 } else {
                     return .init(bytes, subtag, "unknown language extension");
@@ -94,10 +94,10 @@ pub fn validate(bytes: []const u8) ?Rejection {
             4...8 => {
                 if (maps.variant.get(subtag)) |data| {
                     if (data.is_deprecated) return .init(bytes, subtag, "deprecated language variant");
-                    if (data.prefix) |prefix| {
-                        if (!std.ascii.startsWithIgnoreCase(bytes, prefix)) {
-                            return .init(bytes, subtag, "incompatible language variant");
-                        }
+                    for (data.prefixes) |prefix| {
+                        if (std.ascii.startsWithIgnoreCase(bytes, prefix)) break;
+                    } else {
+                        return .init(bytes, subtag, "incompatible language variant");
                     }
                 } else {
                     return .init(bytes, subtag, "unknown language variant");
@@ -200,4 +200,14 @@ test "validate: all subtags" {
     const value = "sgn-ase-Latn-US-blasl-a-abcd-x-1234";
     const result = validate(value);
     try std.testing.expectEqual(null, result);
+}
+
+test "validate: multiple prefixes" {
+    const valid_1 = "sgn-ase-blasl";
+    const valid_2 = "ase-blasl";
+    try std.testing.expectEqual(null, validate(valid_1));
+    try std.testing.expectEqual(null, validate(valid_2));
+
+    const invalid = "it-blasl";
+    try std.testing.expect(validate(invalid) != null);
 }

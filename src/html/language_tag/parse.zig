@@ -16,9 +16,8 @@ pub const Registry = struct {
 
         pub const Data = struct {
             description: ?[]const u8 = null,
-            prefix: ?[]const u8 = null,
+            prefixes: []const []const u8,
             is_deprecated: bool = false,
-            preferred: ?[]const u8 = null,
         };
     };
 };
@@ -51,8 +50,9 @@ const Parser = struct {
     pub inline fn next(parser: *Parser, arena: std.mem.Allocator) !?Result {
         var kind: ?Result.Kind = null;
         var name: ?[]const u8 = null;
-        var data: Registry.Subtag.Data = .{};
-        var description: std.ArrayList(u8) = .empty;
+        var description: ?[]const u8 = null;
+        var prefixes: std.ArrayList([]const u8) = .empty;
+        var is_deprecated: bool = false;
 
         while (parser.lines.next()) |line| {
             if (line.len == 0 or std.mem.eql(u8, line, "%%")) {
@@ -60,7 +60,11 @@ const Parser = struct {
                     .kind = kind.?,
                     .subtag = .{
                         .name = name.?,
-                        .data = data,
+                        .data = .{
+                            .description = description,
+                            .prefixes = prefixes.items,
+                            .is_deprecated = is_deprecated,
+                        },
                     },
                 };
             }
@@ -76,25 +80,26 @@ const Parser = struct {
             } else if (std.mem.eql(u8, key, "Subtag") or std.mem.eql(u8, key, "Tag")) {
                 name = value;
             } else if (std.mem.eql(u8, key, "Description")) {
-                try description.appendSlice(arena, value);
+                var buffer: std.ArrayList(u8) = .empty;
+                try buffer.appendSlice(arena, value);
                 while (parser.lines.peek()) |subline| {
                     if (!std.mem.startsWith(u8, subline, "  ")) break;
                     // keep one of the two spances to join the lines
-                    try description.appendSlice(arena, subline[1..]);
+                    try buffer.appendSlice(arena, subline[1..]);
                     _ = parser.lines.next();
                 }
-                data.description = description.items;
+                description = buffer.items;
             } else if (std.mem.eql(u8, key, "Prefix")) {
-                data.prefix = value;
+                try prefixes.append(arena, value);
             } else if (std.mem.eql(u8, key, "Deprecated")) {
-                data.is_deprecated = true;
-            } else if (std.mem.eql(u8, key, "Preferred-Value")) {
-                data.preferred = value;
+                is_deprecated = true;
             } else if (std.mem.eql(u8, key, "Comments")) {
                 while (parser.lines.peek()) |subline| {
                     if (!std.mem.startsWith(u8, subline, "  ")) break;
                     _ = parser.lines.next();
                 }
+            } else if (std.mem.eql(u8, key, "Preferred-Value")) {
+                // skip
             } else if (std.mem.eql(u8, key, "Added")) {
                 // skip
             } else if (std.mem.eql(u8, key, "Scope")) {
