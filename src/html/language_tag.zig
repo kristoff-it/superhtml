@@ -35,7 +35,6 @@ pub fn validate(bytes: []const u8) ?Rejection {
         privateuse_extra,
     };
     var parse_state: ParseState = .language;
-    var language: ?[]const u8 = null;
 
     var subtags = std.mem.splitScalar(u8, bytes, '-');
     while (subtags.next()) |subtag| state: switch (parse_state) {
@@ -48,7 +47,6 @@ pub fn validate(bytes: []const u8) ?Rejection {
                 } else {
                     return .init(bytes, subtag, "unknown language");
                 }
-                language = subtag;
                 parse_state = .extlang;
             },
             else => return .init(bytes, subtag, "too long"),
@@ -59,7 +57,7 @@ pub fn validate(bytes: []const u8) ?Rejection {
                 if (maps.extlang.get(subtag)) |data| {
                     if (data.is_deprecated) return .init(bytes, subtag, "deprecated language extension");
                     if (data.prefix) |prefix| {
-                        if (!std.ascii.eqlIgnoreCase(language.?, prefix)) {
+                        if (!std.ascii.startsWithIgnoreCase(bytes, prefix)) {
                             return .init(bytes, subtag, "incompatible language extension");
                         }
                     }
@@ -97,7 +95,7 @@ pub fn validate(bytes: []const u8) ?Rejection {
                 if (maps.variant.get(subtag)) |data| {
                     if (data.is_deprecated) return .init(bytes, subtag, "deprecated language variant");
                     if (data.prefix) |prefix| {
-                        if (!std.ascii.eqlIgnoreCase(language.?, prefix)) {
+                        if (!std.ascii.startsWithIgnoreCase(bytes, prefix)) {
                             return .init(bytes, subtag, "incompatible language variant");
                         }
                     }
@@ -196,4 +194,10 @@ fn makeCompletions(comptime kind: []const u8) [@field(registry, kind).len]Comple
         };
     }
     return comps;
+}
+
+test "validate: all subtags" {
+    const value = "sgn-ase-Latn-US-blasl-a-abcd-x-1234";
+    const result = validate(value);
+    try std.testing.expectEqual(null, result);
 }
