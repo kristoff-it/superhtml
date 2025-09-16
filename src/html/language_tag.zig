@@ -79,7 +79,6 @@ pub fn validate(bytes: []const u8) ?Rejection {
             else => continue :state .region,
         },
         .region => switch (subtag.len) {
-            // ISO 3166 or UN M.49 code
             2...3 => {
                 if (maps.region.get(subtag)) |data| {
                     if (data.is_deprecated) return .init(bytes, subtag, "deprecated language region");
@@ -198,8 +197,12 @@ fn makeCompletions(comptime kind: []const u8) [@field(registry, kind).len]Comple
 
 test "validate: all subtags" {
     const value = "sgn-ase-Latn-US-blasl-a-abcd-x-1234";
-    const result = validate(value);
-    try std.testing.expectEqual(null, result);
+    try std.testing.expectEqual(null, validate(value));
+}
+
+test "validate: deprecated language" {
+    const value = "in";
+    try std.testing.expect(validate(value) != null);
 }
 
 test "validate: multiple prefixes" {
