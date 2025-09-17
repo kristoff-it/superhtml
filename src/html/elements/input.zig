@@ -644,7 +644,7 @@ fn validate(
             attributes.comptimeIndex("max"),
             => switch (type_value) {
                 .date => .date,
-                .month => .any,
+                .month => .month,
                 .week => .any,
                 .time => .any,
                 .@"datetime-local" => .any,
