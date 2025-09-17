@@ -88,6 +88,10 @@ pub const Rule = union(enum) {
     /// See: https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#valid-floating-point-number
     float,
 
+    /// Month
+    /// See: https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#valid-month-string
+    month,
+
     /// Date
     /// See: https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#valid-date-string
     date,
@@ -465,6 +469,33 @@ pub const Rule = union(enum) {
                     } else return;
                 }
                 return errors.append(gpa, float_error);
+            },
+            .month => {
+                const value = attr.value orelse return errors.append(gpa, .{
+                    .tag = .missing_attr_value,
+                    .main_location = attr.name,
+                    .node_idx = node_idx,
+                });
+                const date_error: Ast.Error = .{
+                    .tag = .{ .invalid_attr_value = .{ .reason = "invalid month" } },
+                    .main_location = value.span,
+                    .node_idx = node_idx,
+                };
+
+                const value_slice = value.span.slice(src);
+                const date = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
+                var chunks = std.mem.splitScalar(u8, date, '-');
+
+                // 1. Four or more ASCII digits, representing year, where year > 0
+                const year_str = chunks.first();
+                if (year_str.len < 4) return errors.append(gpa, date_error);
+                const year = std.fmt.parseInt(u64, year_str, 10) catch return errors.append(gpa, date_error);
+                if (year == 0) return errors.append(gpa, date_error);
+                // 3. Two ASCII digits, representing the month month, in the range 1 ≤ month ≤ 12
+                const month_str = chunks.rest();
+                if (month_str.len != 2) return errors.append(gpa, date_error);
+                const month = std.fmt.parseInt(u8, month_str, 10) catch return errors.append(gpa, date_error);
+                if (month < 1 or month > 12) return errors.append(gpa, date_error);
             },
             .date => {
                 const value = attr.value orelse return errors.append(gpa, .{
