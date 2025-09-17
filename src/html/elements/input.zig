@@ -643,7 +643,7 @@ fn validate(
             attributes.comptimeIndex("min"),
             attributes.comptimeIndex("max"),
             => switch (type_value) {
-                .date => .any,
+                .date => .date,
                 .month => .any,
                 .week => .any,
                 .time => .any,
