@@ -1138,14 +1138,14 @@ pub const AttributeSet = struct {
 };
 
 pub const element_attrs: std.EnumArray(Ast.Kind, *const AttributeSet) = .init(.{
-    .root = undefined,
-    .doctype = undefined,
-    .comment = undefined,
-    .text = undefined,
+    .root = empty_set,
+    .doctype = empty_set,
+    .comment = empty_set,
+    .text = empty_set,
     .extend = &@import("elements/extend.zig").attributes,
-    .super = undefined,
-    .ctx = undefined,
-    .___ = undefined,
+    .super = empty_set,
+    .ctx = empty_set,
+    .___ = empty_set,
     .a = &@import("elements/a.zig").attributes,
     .abbr = empty_set,
     .address = empty_set,
