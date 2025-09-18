@@ -45,10 +45,14 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
+    _ = seen_attrs;
+    _ = seen_ids;
     // If the span attribute is present: Nothing.
     // If the span attribute is absent: Zero or more col and template elements.
 

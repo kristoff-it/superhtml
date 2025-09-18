@@ -825,6 +825,7 @@ pub const ValidatingIterator = struct {
     it: Tokenizer,
     errors: *std.ArrayListUnmanaged(Ast.Error),
     seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     end: u32,
     node_idx: u32,
     name: Span = undefined,
@@ -833,6 +834,7 @@ pub const ValidatingIterator = struct {
     pub fn init(
         errors: *std.ArrayListUnmanaged(Ast.Error),
         seen_attrs: *std.StringHashMapUnmanaged(Span),
+        seen_ids: *std.StringHashMapUnmanaged(Span),
         lang: Language,
         tag: Span,
         src: []const u8,
@@ -847,6 +849,7 @@ pub const ValidatingIterator = struct {
             },
             .errors = errors,
             .seen_attrs = seen_attrs,
+            .seen_ids = seen_ids,
             .end = tag.end,
             .node_idx = node_idx,
         };
@@ -889,6 +892,18 @@ pub const ValidatingIterator = struct {
                         });
                         continue;
                     } else {
+                        if (std.ascii.eqlIgnoreCase(attr_name, "id")) {
+                            if (attr.value) |v| {
+                                const idgop = try vait.seen_ids.getOrPut(gpa, v.span.slice(src));
+                                if (idgop.found_existing) {
+                                    try vait.errors.append(gpa, .{
+                                        .tag = .{ .duplicate_id = idgop.value_ptr.* },
+                                        .main_location = v.span,
+                                        .node_idx = vait.node_idx,
+                                    });
+                                } else idgop.value_ptr.* = v.span;
+                            }
+                        }
                         gop.value_ptr.* = attr.name;
                         return attr;
                     }

@@ -280,6 +280,7 @@ pub const Error = struct {
         void_end_tag,
         duplicate_attribute_name: Span, // original attribute
         duplicate_sibling_attr: Span, // original attribute in another element
+        duplicate_id: Span, // original location
         deprecated_and_unsupported,
 
         const Tag = @This();
@@ -381,6 +382,10 @@ pub const Error = struct {
                         "duplicate attribute name across sibling elements",
                         .{},
                     ),
+                    .duplicate_id => w.print(
+                        "duplicate id value",
+                        .{},
+                    ),
                     .deprecated_and_unsupported => w.print("deprecated and unsupported", .{}),
                 };
             }
@@ -417,8 +422,10 @@ fn printSourceLine(src: []const u8, span: Span, w: *Writer) !void {
     // test.html:3:7: invalid attribute for this element
     //         <div foo bar baz>
     //              ^^^
-    //
-    var idx = span.start;
+
+    // If the error starts on a newline (eg `foo="bar\n`), we want to consider
+    // it ast part of the previous line.
+    var idx = span.start -| 1;
     var spaces_left: u32 = 0;
     const line_start = while (idx > 0) : (idx -= 1) switch (src[idx]) {
         '\n' => break idx + 1,
@@ -427,7 +434,7 @@ fn printSourceLine(src: []const u8, span: Span, w: *Writer) !void {
     } else 0;
 
     idx = span.start;
-    var last_non_space = idx;
+    var last_non_space = idx -| 1; // if span.start is a newline don't print it
     while (idx < src.len) : (idx += 1) switch (src[idx]) {
         '\n' => break,
         ' ', '\t', ('\n' + 1)...'\r' => {},
@@ -464,6 +471,14 @@ pub fn init(
 
     var seen_attrs: std.StringHashMapUnmanaged(Span) = .empty;
     defer seen_attrs.deinit(gpa);
+
+    // It's a stack because of <template> (which can also be nested)
+    var seen_ids_stack: std.ArrayList(std.StringHashMapUnmanaged(Span)) = .empty;
+    try seen_ids_stack.append(gpa, .empty);
+    defer {
+        for (seen_ids_stack.items) |*seen_ids| seen_ids.deinit(gpa);
+        seen_ids_stack.deinit(gpa);
+    }
 
     var has_syntax_errors = false;
 
@@ -591,12 +606,17 @@ pub fn init(
                                         language,
                                         &errors,
                                         &seen_attrs,
+                                        &seen_ids_stack.items[seen_ids_stack.items.len - 1],
                                         nodes.items,
                                         parent_idx,
                                         src,
                                         tag.span,
                                         @intCast(nodes.items.len),
                                     );
+
+                                    if (kind == .template) {
+                                        try seen_ids_stack.append(gpa, .empty);
+                                    }
 
                                     break :node .{
                                         .open = tag.span,
@@ -797,7 +817,13 @@ pub fn init(
                             if (std.ascii.eqlIgnoreCase(current_name, "math")) {
                                 math_lvl -= 1;
                             }
+                            if (current.kind == .template) {
+                                var map = seen_ids_stack.pop().?;
+                                map.deinit(gpa);
+                            }
+
                             current.close = tag.span;
+
                             var cur = original_current;
                             while (cur != current) {
                                 if (!cur.isClosed()) {
@@ -939,6 +965,8 @@ pub fn init(
     if (strict and !has_syntax_errors and language == .html) try validateNesting(
         gpa,
         nodes.items,
+        &seen_attrs,
+        &seen_ids_stack,
         &errors,
         src,
         language,
@@ -1374,6 +1402,8 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
 pub fn validateNesting(
     gpa: Allocator,
     nodes: []const Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids_stack: *std.ArrayList(std.StringHashMapUnmanaged(Span)),
     errors: *std.ArrayListUnmanaged(Error),
     src: []const u8,
     language: Language,
@@ -1409,6 +1439,11 @@ pub fn validateNesting(
             .text,
             .doctype,
             => {
+                if (std.debug.runtime_safety and n.kind.isElement()) {
+                    const element: Element = elements.get(n.kind);
+                    assert(element.attributes != .manual);
+                }
+
                 var next = n;
                 node_idx = while (true) {
                     if (next.next_idx != 0) break next.next_idx;
@@ -1420,15 +1455,29 @@ pub fn validateNesting(
             else => {},
         }
 
-        defer node_idx += 1;
         const element: Element = elements.get(n.kind);
         try element.validateContent(
             gpa,
             nodes,
+            seen_attrs,
+            &seen_ids_stack.items[seen_ids_stack.items.len - 1],
             errors,
             src,
             node_idx,
         );
+
+        if (n.kind == .template) try seen_ids_stack.append(gpa, .empty);
+
+        var next = n;
+        node_idx = while (true) {
+            if (next.kind == .template) {
+                var map = seen_ids_stack.pop().?;
+                map.deinit(gpa);
+            }
+            if (next.next_idx != 0) break next.next_idx;
+            if (next.parent_idx == 0) return;
+            next = nodes[next.parent_idx];
+        };
     }
 }
 
@@ -2075,7 +2124,11 @@ test "fuzz" {
 
             var in: Reader = .fixed(input);
             var out: Writer.Allocating = .init(ctx.gpa);
-            try generator.generate(ctx.gpa, &in, &out.writer);
+            generator.generate(ctx.gpa, &in, &out.writer) catch |err| {
+                if (err == error.Skip) return;
+                return err;
+            };
+
             std.debug.print("--begin--\n{s}\n\n", .{out.written()});
 
             const ast: Ast = try .init(ctx.gpa, out.written(), .html, false);
@@ -2083,6 +2136,10 @@ test "fuzz" {
             var devnull: Writer.Discarding = .init(&.{});
             if (!ast.has_syntax_errors) {
                 try ast.render(out.written(), &devnull.writer);
+            }
+
+            if (ast.errors.len > 0) {
+                try ast.printErrors(out.written(), null, &devnull.writer);
             }
         }
     };

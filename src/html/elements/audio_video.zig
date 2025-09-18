@@ -232,6 +232,8 @@ pub fn validateAttrs(
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -251,8 +253,6 @@ pub fn validateContent(
         break :blk .{ it.name_span, false };
     };
 
-    var seen_attrs: std.StringHashMapUnmanaged(Span) = .empty;
-    defer seen_attrs.deinit(gpa);
     var state: enum { source, track, rest } = if (has_src) .track else .source;
     var first_default: ?Span = null;
     var child_idx = parent.first_child_idx;
@@ -272,7 +272,8 @@ pub fn validateContent(
                 try validateSource(
                     gpa,
                     errors,
-                    &seen_attrs,
+                    seen_attrs,
+                    seen_ids,
                     src,
                     parent.kind,
                     child.open,
@@ -306,7 +307,8 @@ pub fn validateContent(
                 try validateTrack(
                     gpa,
                     errors,
-                    &seen_attrs,
+                    seen_attrs,
+                    seen_ids,
                     src,
                     parent.kind,
                     child.open,
@@ -368,6 +370,7 @@ fn validateSource(
     gpa: Allocator,
     errors: *std.ArrayList(Ast.Error),
     seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     src: []const u8,
     parent_kind: Ast.Kind,
     node_span: Span,
@@ -379,6 +382,7 @@ fn validateSource(
     var vait: ValidatingIterator = .init(
         errors,
         seen_attrs,
+        seen_ids,
         .html,
         node_span,
         src,
@@ -437,6 +441,7 @@ fn validateTrack(
     gpa: Allocator,
     errors: *std.ArrayList(Ast.Error),
     seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     src: []const u8,
     parent_kind: Ast.Kind,
     node_span: Span,
@@ -466,6 +471,7 @@ fn validateTrack(
     var vait: ValidatingIterator = .init(
         errors,
         seen_attrs,
+        seen_ids,
         .html,
         node_span,
         src,

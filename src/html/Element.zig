@@ -67,6 +67,8 @@ content: union(enum) {
         validate: *const fn (
             gpa: Allocator,
             nodes: []const Ast.Node,
+            seen_attrs: *std.StringHashMapUnmanaged(Span),
+            seen_ids: *std.StringHashMapUnmanaged(Span),
             errors: *std.ArrayListUnmanaged(Ast.Error),
             src: []const u8,
             parent_idx: u32,
@@ -322,13 +324,23 @@ pub inline fn validateContent(
     parent_element: *const Element,
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) !void {
     content: switch (parent_element.content) {
         .anything => {},
-        .custom => |custom| try custom.validate(gpa, nodes, errors, src, parent_idx),
+        .custom => |custom| try custom.validate(
+            gpa,
+            nodes,
+            seen_attrs,
+            seen_ids,
+            errors,
+            src,
+            parent_idx,
+        ),
         .model => continue :content .{ .simple = .{} },
         .simple => |simple| {
             const parent = nodes[parent_idx];
@@ -380,7 +392,7 @@ pub inline fn validateContent(
                                     .span = parent_span,
                                 },
                             },
-                            .main_location = child.startTagIterator(src, .html).name_span,
+                            .main_location = child.span(src),
                             .node_idx = child_idx,
                         });
                         continue :outer;
@@ -445,7 +457,7 @@ pub inline fn validateContent(
                                     .span = parent_span,
                                 },
                             },
-                            .main_location = node.startTagIterator(src, .html).name_span,
+                            .main_location = node.span(src),
                             .node_idx = node_idx,
                         });
                         continue :outer;
@@ -462,7 +474,7 @@ pub inline fn validateContent(
                                 .reason = "presence of [tabindex]",
                             },
                         },
-                        .main_location = node.startTagIterator(src, .html).name_span,
+                        .main_location = node.span(src),
                         .node_idx = node_idx,
                     });
                     continue :outer;
@@ -478,6 +490,7 @@ pub inline fn validateAttrs(
     lang: Language,
     errors: *std.ArrayListUnmanaged(Error),
     seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     nodes: []const Ast.Node,
     parent_idx: u32,
     src: []const u8,
@@ -487,6 +500,7 @@ pub inline fn validateAttrs(
     var vait: Attribute.ValidatingIterator = .init(
         errors,
         seen_attrs,
+        seen_ids,
         lang,
         tag,
         src,

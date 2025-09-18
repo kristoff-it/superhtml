@@ -1,5 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const root = @import("../../root.zig");
+const Span = root.Span;
 const Element = @import("../Element.zig");
 const Model = Element.Model;
 const Ast = @import("../Ast.zig");
@@ -36,10 +38,14 @@ pub const div: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
+    _ = seen_attrs;
+    _ = seen_ids;
 
     // If the element is a child of a dl element: One or more dt elements followed by one or more dd elements, optionally intermixed with script-supporting elements.
     // Otherwise, if the element is a descendant of an option element: Zero or more option element inner content elements.

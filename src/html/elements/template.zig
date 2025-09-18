@@ -21,7 +21,7 @@ pub const template: Element = .{
             .phrasing = true,
         },
     },
-    .attributes = .manual,
+    .attributes = .static,
     .content = .anything,
     .desc =
     \\The `<template>` HTML element serves as a mechanism for holding

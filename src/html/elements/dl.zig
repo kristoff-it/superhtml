@@ -38,10 +38,14 @@ pub const dl: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
+    _ = seen_attrs;
+    _ = seen_ids;
     // Either: Zero or more groups each consisting of one or more dt elements followed by one or more dd elements, optionally intermixed with script-supporting elements.
     // Or: One or more div elements, optionally intermixed with script-supporting elements.
 
