@@ -55,17 +55,17 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
-    var seen_attrs: std.StringHashMapUnmanaged(Span) = .{};
-    defer seen_attrs.deinit(gpa);
-
     const parent = nodes[parent_idx];
     var vait: Attribute.ValidatingIterator = .init(
         errors,
-        &seen_attrs,
+        seen_attrs,
+        seen_ids,
         .html,
         parent.open,
         src,

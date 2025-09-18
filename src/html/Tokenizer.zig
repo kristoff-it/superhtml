@@ -916,6 +916,11 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .{
                             .self_closing_start_tag = tag,
                         };
+
+                        std.debug.assert(tag.name.len() > 0);
+                        if (self.return_attrs) {
+                            return .{ .token = .{ .tag_name = tag.name } };
+                        }
                     },
                     // U+003E GREATER-THAN SIGN (>)
                     // Switch to the data state. Emit the current tag token.
@@ -2356,7 +2361,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .parse_error = .{
                                 .tag = .eof_in_tag,
                                 .span = .{
-                                    .start = self.idx - 1,
+                                    .start = state.tag.span.start,
                                     .end = self.idx,
                                 },
                             },
@@ -2886,15 +2891,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         };
 
                         if (self.return_attrs and tag.attr_count == 0) {
-                            const deferred: Token = if (tag.kind == .end_self) .{
-                                .parse_error = .{
-                                    .tag = .end_tag_with_trailing_solidus,
-                                    .span = tag.span,
-                                },
-                            } else .{ .tag = tag };
                             return .{
-                                .token = .{ .tag_name = tag.name },
-                                .deferred = deferred,
+                                .token = if (tag.kind == .end_self) .{
+                                    .parse_error = .{
+                                        .tag = .end_tag_with_trailing_solidus,
+                                        .span = tag.span,
+                                    },
+                                } else .{ .tag = tag },
                             };
                         }
 
@@ -5519,4 +5522,16 @@ fn testTokenizeWithState(tokenizer: *Tokenizer, src: []const u8, expected_tokens
 fn testTokenize(src: []const u8, expected_tokens: []const Token) !void {
     var tokenizer: Tokenizer = .{ .language = .html };
     return testTokenizeWithState(&tokenizer, src, expected_tokens);
+}
+
+test "fuzz" {
+    const Context = struct {
+        fn testOne(_: @This(), input: []const u8) anyerror!void {
+            var t: Tokenizer = .{ .language = .html };
+            while (t.next(input)) |tok| {
+                _ = tok;
+            }
+        }
+    };
+    try std.testing.fuzz(Context{}, Context.testOne, .{});
 }

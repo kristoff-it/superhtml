@@ -1,9 +1,10 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const super = @import("superhtml");
 
 const FileType = enum { html, super };
 
-pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
+pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
     const cmd = Command.parse(args);
     var any_error = false;
     switch (cmd.mode) {
@@ -64,6 +65,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
     if (any_error) {
         std.process.exit(1);
     }
+    std.process.exit(0);
 }
 
 fn checkDir(
@@ -106,11 +108,17 @@ fn checkFile(
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
 
-    const in_bytes = try base_dir.readFileAllocOptions(
+    const in_bytes = if (builtin.zig_version.minor == 15) try base_dir.readFileAllocOptions(
         arena,
         sub_path,
         super.max_size,
         null,
+        .of(u8),
+        0,
+    ) else try base_dir.readFileAllocOptions(
+        sub_path,
+        arena,
+        .limited(super.max_size),
         .of(u8),
         0,
     );

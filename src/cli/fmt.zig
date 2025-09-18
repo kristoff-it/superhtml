@@ -1,30 +1,33 @@
+const builtin = @import("builtin");
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Writer = std.Io.Writer;
 const super = @import("superhtml");
 
-const FileType = enum { html, super };
+var bufout: [4096]u8 = undefined;
+var buferr: [4096]u8 = undefined;
 
-pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
+var syntax_errors = false;
+pub fn run(gpa: Allocator, args: []const []const u8) !noreturn {
+    // Prints html errors found in the document
+    var stderr_writer = std.fs.File.stderr().writerStreaming(&buferr);
+    const stderr = &stderr_writer.interface;
+
+    // Prints file paths of files that were modified on disk
+    var stdout_writer = std.fs.File.stdout().writerStreaming(&bufout);
+    const stdout = &stdout_writer.interface;
+
     const cmd = Command.parse(args);
-    var any_error = false;
     switch (cmd.mode) {
-        .stdin => {
+        .stdin => |lang| {
             var fr = std.fs.File.stdin().reader(&.{});
-            var aw: std.Io.Writer.Allocating = .init(gpa);
+            var aw: Writer.Allocating = .init(gpa);
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            const out_bytes = try fmtHtml(gpa, null, in_bytes, cmd.strict);
-
-            try std.fs.File.stdout().writeAll(out_bytes);
-        },
-        .stdin_super => {
-            var fr = std.fs.File.stdin().reader(&.{});
-            var aw: std.Io.Writer.Allocating = .init(gpa);
-            _ = try fr.interface.streamRemaining(&aw.writer);
-            const in_bytes = try aw.toOwnedSliceSentinel(0);
-
-            const out_bytes = try fmtSuper(gpa, null, in_bytes, cmd.strict);
-            try std.fs.File.stdout().writeAll(out_bytes);
+            if (try fmt(gpa, stderr, null, in_bytes, lang, cmd.strict)) |fmt_src| {
+                try std.fs.File.stdout().writeAll(fmt_src);
+            }
         },
         .paths => |paths| {
             // checkFile will reset the arena at the end of each call
@@ -32,31 +35,31 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
             for (paths) |path| {
                 formatFile(
                     &arena_impl,
+                    stdout,
+                    stderr,
                     cmd.check,
                     std.fs.cwd(),
                     path,
                     path,
-                    &any_error,
                     cmd.strict,
                 ) catch |err| switch (err) {
-                    error.IsDir, error.AccessDenied => {
-                        formatDir(
-                            gpa,
-                            &arena_impl,
-                            cmd.check,
+                    error.IsDir, error.AccessDenied => formatDir(
+                        gpa,
+                        &arena_impl,
+                        stdout,
+                        stderr,
+                        cmd.check,
+                        path,
+                        cmd.strict,
+                    ) catch |dir_err| {
+                        std.debug.print("error walking dir '{s}': {s}\n", .{
                             path,
-                            &any_error,
-                            cmd.strict,
-                        ) catch |dir_err| {
-                            std.debug.print("Error walking dir '{s}': {s}\n", .{
-                                path,
-                                @errorName(dir_err),
-                            });
-                            std.process.exit(1);
-                        };
+                            @errorName(dir_err),
+                        });
+                        std.process.exit(1);
                     },
                     else => {
-                        std.debug.print("Error while accessing '{s}': {s}\n", .{
+                        std.debug.print("error while accessing '{s}': {s}\n", .{
                             path, @errorName(err),
                         });
                         std.process.exit(1);
@@ -66,36 +69,38 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !void {
         },
     }
 
-    if (any_error) {
-        std.process.exit(1);
-    }
+    try stdout.flush();
+    try stderr.flush();
+    std.process.exit(@intFromBool(syntax_errors));
 }
 
 fn formatDir(
     gpa: std.mem.Allocator,
     arena_impl: *std.heap.ArenaAllocator,
+    stdout: *Writer,
+    stderr: *Writer,
     check: bool,
     path: []const u8,
-    any_error: *bool,
     strict: bool,
 ) !void {
     var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer dir.close();
+
     var walker = dir.walk(gpa) catch oom();
     defer walker.deinit();
+
     while (try walker.next()) |item| {
         switch (item.kind) {
-            .file => {
-                try formatFile(
-                    arena_impl,
-                    check,
-                    item.dir,
-                    item.basename,
-                    item.path,
-                    any_error,
-                    strict,
-                );
-            },
+            .file => try formatFile(
+                arena_impl,
+                stdout,
+                stderr,
+                check,
+                item.dir,
+                item.basename,
+                item.path,
+                strict,
+            ),
             else => {},
         }
     }
@@ -103,26 +108,33 @@ fn formatDir(
 
 fn formatFile(
     arena_impl: *std.heap.ArenaAllocator,
+    stdout: *Writer,
+    stderr: *Writer,
     check: bool,
     base_dir: std.fs.Dir,
     sub_path: []const u8,
     full_path: []const u8,
-    any_error: *bool,
     strict: bool,
 ) !void {
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
 
-    const in_bytes = try base_dir.readFileAllocOptions(
+    const in_bytes = if (builtin.zig_version.minor == 15) try base_dir.readFileAllocOptions(
         arena,
         sub_path,
         super.max_size,
         null,
         .of(u8),
         0,
+    ) else try base_dir.readFileAllocOptions(
+        sub_path,
+        arena,
+        .limited(super.max_size),
+        .of(u8),
+        0,
     );
 
-    const file_type: FileType = blk: {
+    const language: super.Language = blk: {
         const ext = std.fs.path.extension(sub_path);
         if (std.mem.eql(u8, ext, ".html") or
             std.mem.eql(u8, ext, ".htm"))
@@ -131,74 +143,60 @@ fn formatFile(
         }
 
         if (std.mem.eql(u8, ext, ".shtml")) {
-            break :blk .super;
+            break :blk .superhtml;
         }
+
+        // Unkown file, skip it
         return;
     };
 
-    const out_bytes = switch (file_type) {
-        .html => try fmtHtml(
-            arena,
-            full_path,
-            in_bytes,
-            strict,
-        ),
-        .super => try fmtSuper(
-            arena,
-            full_path,
-            in_bytes,
-            strict,
-        ),
-    };
+    if (try fmt(arena, stderr, full_path, in_bytes, language, strict)) |fmt_src| {
+        if (std.mem.eql(u8, fmt_src, in_bytes)) return;
+        if (check) {
+            syntax_errors = true;
+            try stdout.print("{s}\n", .{full_path});
+            return;
+        }
 
-    if (std.mem.eql(u8, out_bytes, in_bytes)) return;
+        var af = try base_dir.atomicFile(sub_path, .{ .write_buffer = &.{} });
+        defer af.deinit();
 
-    var stdout_writer = std.fs.File.stdout().writer(&.{});
-    const stdout = &stdout_writer.interface;
-    if (check) {
-        any_error.* = true;
+        try af.file_writer.interface.writeAll(fmt_src);
+        try af.finish();
+        try stdout.print("{s}\n", .{full_path});
+    } else if (check) {
+        syntax_errors = true;
+        // if (true) @panic("hit");
         try stdout.print("{s}\n", .{full_path});
         return;
     }
-
-    var af = try base_dir.atomicFile(sub_path, .{ .write_buffer = &.{} });
-    defer af.deinit();
-
-    try af.file_writer.interface.writeAll(out_bytes);
-    try af.finish();
-    try stdout.print("{s}\n", .{full_path});
 }
 
-pub fn fmtHtml(
+pub fn fmt(
     arena: std.mem.Allocator,
+    stderr: *Writer,
     path: ?[]const u8,
-    code: [:0]const u8,
+    src: [:0]const u8,
+    language: super.Language,
     strict: bool,
-) ![]const u8 {
-    const ast = try super.html.Ast.init(arena, code, .html, strict);
-    if (ast.errors.len > 0) {
-        var ew = std.fs.File.stderr().writer(&.{});
-        try ast.printErrors(code, path, &ew.interface);
-        std.process.exit(1);
+) !?[]const u8 {
+    const html_ast = try super.html.Ast.init(arena, src, language, strict);
+    if (html_ast.errors.len > 0) {
+        try html_ast.printErrors(src, path, stderr);
+        if (html_ast.has_syntax_errors) {
+            syntax_errors = true;
+            return null;
+        }
+    } else if (language == .superhtml) {
+        const super_ast = try super.Ast.init(arena, html_ast, src);
+        if (super_ast.errors.len > 0) {
+            try html_ast.printErrors(src, path, stderr);
+        }
     }
 
-    return std.fmt.allocPrint(arena, "{f}", .{ast.formatter(code)});
-}
-
-fn fmtSuper(
-    arena: std.mem.Allocator,
-    path: ?[]const u8,
-    code: [:0]const u8,
-    strict: bool,
-) ![]const u8 {
-    const ast = try super.html.Ast.init(arena, code, .superhtml, strict);
-    if (ast.errors.len > 0) {
-        var ew = std.fs.File.stderr().writer(&.{});
-        try ast.printErrors(code, path, &ew.interface);
-        std.process.exit(1);
-    }
-
-    return std.fmt.allocPrint(arena, "{f}", .{ast.formatter(code)});
+    return try std.fmt.allocPrint(arena, "{f}", .{
+        html_ast.formatter(src),
+    });
 }
 
 fn oom() noreturn {
@@ -212,8 +210,7 @@ const Command = struct {
     strict: bool,
 
     const Mode = union(enum) {
-        stdin,
-        stdin_super,
+        stdin: super.Language,
         paths: []const []const u8,
     };
 
@@ -250,14 +247,14 @@ const Command = struct {
                         std.process.exit(1);
                     }
 
-                    mode = .stdin;
+                    mode = .{ .stdin = .html };
                 } else if (std.mem.eql(u8, arg, "--stdin-super")) {
                     if (mode != null) {
                         std.debug.print("unexpected flag: '{s}'\n", .{arg});
                         std.process.exit(1);
                     }
 
-                    mode = .stdin_super;
+                    mode = .{ .stdin = .superhtml };
                 } else {
                     std.debug.print("unexpected flag: '{s}'\n", .{arg});
                     std.process.exit(1);
@@ -302,6 +299,9 @@ const Command = struct {
             \\
             \\   Formats input paths inplace. If PATH is a directory, it will
             \\   be searched recursively for HTML and SuperHTML files.
+            \\   HTML errors will be printed to stderr but will only cause a
+            \\   non-zero exit code if they prevent formatting (e.g. syntax
+            \\   errors).
             \\     
             \\   Detected extensions:     
             \\        HTML          .html, .htm 
@@ -314,8 +314,9 @@ const Command = struct {
             \\
             \\   --stdin-super      Same as --stdin but for SuperHTML files.
             \\
-            \\   --check            List non-conforming files and exit with an
-            \\                      error if the list is not empty.
+            \\   --check            List non-conforming files to stdout and exit 
+            \\                      with an error if the list is not empty.
+            \\                      Does not modify files on disk.
             \\
             \\  --no-strict-tags    Disable strict checking of tag names in HTML
             \\                      and SuperHTML files. 

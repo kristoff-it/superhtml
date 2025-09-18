@@ -57,6 +57,18 @@ pub fn loadFile(
                 .source = if (err.tag == .token) "html tokenizer" else "html parser",
                 .relatedInformation = switch (err.tag) {
                     else => null,
+                    .duplicate_id => |span| try arena.dupe(
+                        lsp.types.DiagnosticRelatedInformation,
+                        &.{
+                            .{
+                                .location = .{ .uri = uri, .range = getRange(
+                                    span,
+                                    doc.src,
+                                ) },
+                                .message = "original",
+                            },
+                        },
+                    ),
                     .duplicate_class => |span| try arena.dupe(
                         lsp.types.DiagnosticRelatedInformation,
                         &.{

@@ -1,5 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const root = @import("../../root.zig");
+const Span = root.Span;
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
 
@@ -43,11 +45,12 @@ pub const span: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
-
     // If the element is a descendant of an option element: Zero or more option
     // element inner content elements, except div elements.
     // Otherwise: Phrasing content.
@@ -81,7 +84,7 @@ pub fn validateContent(
         break :blk model;
     };
 
-    try model.validateContent(gpa, nodes, errors, src, parent_idx);
+    try model.validateContent(gpa, nodes, seen_attrs, seen_ids, errors, src, parent_idx);
 }
 
 fn completionsContent(

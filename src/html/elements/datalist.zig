@@ -46,10 +46,14 @@ pub const datalist: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
+    _ = seen_attrs;
+    _ = seen_ids;
     // Either: phrasing content.
     // Or: Zero or more option and script-supporting elements.
 

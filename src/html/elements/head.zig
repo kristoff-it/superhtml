@@ -38,10 +38,14 @@ pub const head: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
+    _ = seen_attrs;
+    _ = seen_ids;
     // If the document is an iframe srcdoc document or if title information is
     // available from a higher-level protocol: Zero or more elements of metadata
     // content, of which no more than one is a title element and no more than

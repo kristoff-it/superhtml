@@ -48,6 +48,8 @@ pub const picture: Element = .{
 fn validate(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -57,8 +59,6 @@ fn validate(
     const first_child_idx = parent.first_child_idx;
 
     const source_attrs = comptime Attribute.element_attrs.get(.source);
-    var seen_attrs: std.StringHashMapUnmanaged(Span) = .empty;
-    defer seen_attrs.deinit(gpa);
 
     // Used to catch duplicate descriptors in image candidate strings
     var seen_descriptors: std.StringArrayHashMapUnmanaged(Span) = .empty;
@@ -110,7 +110,8 @@ fn validate(
                 .source => {
                     var vait: ValidatingIterator = .init(
                         errors,
-                        &seen_attrs,
+                        seen_attrs,
+                        seen_ids,
                         .html,
                         child.open,
                         src,

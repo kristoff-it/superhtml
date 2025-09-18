@@ -7,9 +7,7 @@ pub const style: Element = .{
     .tag = .style,
     .model = .{
         .categories = .{ .metadata = true },
-        .content = .{
-            .text = true,
-        },
+        .content = .{ .text = true },
     },
     .meta = .{
         .categories_superset = .{ .metadata = true },

@@ -120,12 +120,12 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) !void {
-    var seen_attrs: std.StringHashMapUnmanaged(Span) = .empty;
-    defer seen_attrs.deinit(gpa);
 
     // A select element whose multiple attribute is absent, and whose display
     // size is 1, is expected to render as an 'inline-block' one-line drop-down
@@ -142,7 +142,8 @@ pub fn validateContent(
     const parent_span = parent.span(src);
     var vait: ValidatingIterator = .init(
         errors,
-        &seen_attrs,
+        seen_attrs,
+        seen_ids,
         .html,
         parent.open,
         src,

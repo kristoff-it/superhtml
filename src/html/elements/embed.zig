@@ -100,7 +100,7 @@ fn validate(
             if (idx == Attribute.global.comptimeIndex("itemprop")) {
                 has_itemprop = true;
             }
-            break :blk attributes.list[idx].model;
+            break :blk Attribute.global.list[idx].model;
         } else {
             if (Attribute.isData(name)) continue;
             try errors.append(gpa, .{

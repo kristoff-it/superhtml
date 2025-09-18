@@ -31,9 +31,8 @@ pub fn panic(
 ) noreturn {
     if (lsp_mode) {
         std.log.err("\n{s}\n\n{?f}", .{ msg, trace });
-    } else {
-        std.debug.print("\n{s}\n\n{?f}", .{ msg, trace });
     }
+
     blk: {
         const out: std.fs.File = if (!lsp_mode) std.fs.File.stderr() else logging.log_file orelse break :blk;
         var writer = out.writerStreaming(&.{});
@@ -43,17 +42,13 @@ pub fn panic(
             w.print("Unable to dump stack trace: debug info stripped\n", .{}) catch {};
             break :blk;
         }
-        const debug_info = std.debug.getSelfDebugInfo() catch |err| {
-            w.print(
-                "Unable to dump stack trace: Unable to open debug info: {s}\n",
-                .{@errorName(err)},
-            ) catch {};
-            break :blk;
-        };
-        std.debug.writeCurrentStackTrace(w, debug_info, .no_color, ret_addr) catch |err| {
-            w.print("Unable to dump stack trace: {t}\n", .{err}) catch {};
-            break :blk;
-        };
+
+        if (builtin.zig_version.minor != 15) {
+            std.debug.writeCurrentStackTrace(.{ .first_address = ret_addr }, w, .no_color) catch |err| {
+                w.print("Unable to dump stack trace: {t}\n", .{err}) catch {};
+                break :blk;
+            };
+        }
     }
 
     if (builtin.mode == .Debug) @breakpoint();

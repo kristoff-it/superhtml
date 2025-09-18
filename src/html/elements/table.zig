@@ -1,6 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const root = @import("../../root.zig");
+const Span = root.Span;
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
 
@@ -33,10 +35,14 @@ pub const table: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
+    seen_attrs: *std.StringHashMapUnmanaged(Span),
+    seen_ids: *std.StringHashMapUnmanaged(Span),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
+    _ = seen_attrs;
+    _ = seen_ids;
 
     // In this order: optionally a caption element, followed by zero or more
     // colgroup elements, followed optionally by a thead element, followed by
