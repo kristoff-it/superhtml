@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const super = @import("superhtml");
 
@@ -107,7 +108,14 @@ fn checkFile(
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
 
-    const in_bytes = try base_dir.readFileAllocOptions(
+    const in_bytes = if (builtin.zig_version.minor == 15) try base_dir.readFileAllocOptions(
+        arena,
+        sub_path,
+        super.max_size,
+        null,
+        .of(u8),
+        0,
+    ) else try base_dir.readFileAllocOptions(
         sub_path,
         arena,
         .limited(super.max_size),

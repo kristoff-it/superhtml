@@ -42,10 +42,13 @@ pub fn panic(
             w.print("Unable to dump stack trace: debug info stripped\n", .{}) catch {};
             break :blk;
         }
-        std.debug.writeCurrentStackTrace(.{ .first_address = ret_addr }, w, .no_color) catch |err| {
-            w.print("Unable to dump stack trace: {t}\n", .{err}) catch {};
-            break :blk;
-        };
+
+        if (builtin.zig_version.minor != 15) {
+            std.debug.writeCurrentStackTrace(.{ .first_address = ret_addr }, w, .no_color) catch |err| {
+                w.print("Unable to dump stack trace: {t}\n", .{err}) catch {};
+                break :blk;
+            };
+        }
     }
 
     if (builtin.mode == .Debug) @breakpoint();
