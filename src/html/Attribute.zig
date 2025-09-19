@@ -84,6 +84,18 @@ pub const Rule = union(enum) {
         max: usize = std.math.maxInt(usize),
     },
 
+    /// Floating-point number
+    /// See: https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#valid-floating-point-number
+    float,
+
+    /// Month
+    /// See: https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#valid-month-string
+    month,
+
+    /// Date
+    /// See: https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#valid-date-string
+    date,
+
     /// E.g. "#foo"
     hash_name_ref,
 
@@ -395,6 +407,135 @@ pub const Rule = union(enum) {
                     .main_location = value.span,
                     .node_idx = node_idx,
                 });
+            },
+            .float => {
+                const value = attr.value orelse return errors.append(gpa, .{
+                    .tag = .missing_attr_value,
+                    .main_location = attr.name,
+                    .node_idx = node_idx,
+                });
+
+                const value_slice = value.span.slice(src);
+                const digits = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
+                var idx: usize = 0;
+
+                if (digits.len == 0) return errors.append(gpa, .{
+                    .tag = .missing_attr_value,
+                    .main_location = attr.name,
+                    .node_idx = node_idx,
+                });
+                const float_error: Ast.Error = .{
+                    .tag = .{ .invalid_attr_value = .{ .reason = "invalid float" } },
+                    .main_location = value.span,
+                    .node_idx = node_idx,
+                };
+
+                // A string is a valid floating-point number if it consists of:
+                // 1. Optionally, a U+002D HYPHEN-MINUS character (-).
+                if (digits[idx] == '-') idx += 1;
+                if (idx == digits.len) return errors.append(gpa, float_error);
+                // 2. One or both of the following, in the given order:
+                // 2.1. A series of one or more ASCII digits.
+                const has_integer = std.ascii.isDigit(digits[idx]);
+                for (digits[idx..]) |char| {
+                    if (!std.ascii.isDigit(char)) break;
+                    idx += 1;
+                } else return if (has_integer) {} else errors.append(gpa, float_error);
+                // 2.2. Both of the following, in the given order:
+                // 2.2.1. A single U+002E FULL STOP character (.).
+                // 2.2.2. A series of one or more ASCII digits.
+                if (digits[idx] != '.' and !has_integer) return errors.append(gpa, float_error);
+                if (digits[idx] == '.') {
+                    idx += 1;
+                    if (idx == digits.len or !std.ascii.isDigit(digits[idx])) return errors.append(gpa, float_error);
+                    for (digits[idx..]) |char| {
+                        if (!std.ascii.isDigit(char)) break;
+                        idx += 1;
+                    } else return;
+                }
+                // 3. Optionally:
+                // 3.1. Either a U+0065 LATIN SMALL LETTER E character (e) or a U+0045 LATIN CAPITAL LETTER E character (E).
+                // 3.2. Optionally, a U+002D HYPHEN-MINUS character (-) or U+002B PLUS SIGN character (+).
+                // 3.3. A series of one or more ASCII digits.
+                if (digits[idx] == 'e' or digits[idx] == 'E') {
+                    idx += 1;
+                    if (idx == digits.len) return errors.append(gpa, float_error);
+                    if (digits[idx] == '-' or digits[idx] == '+') idx += 1;
+                    if (idx == digits.len) return errors.append(gpa, float_error);
+                    if (!std.ascii.isDigit(digits[idx])) return errors.append(gpa, float_error);
+                    for (digits[idx..]) |char| {
+                        if (!std.ascii.isDigit(char)) break;
+                        idx += 1;
+                    } else return;
+                }
+                return errors.append(gpa, float_error);
+            },
+            .month => {
+                const value = attr.value orelse return errors.append(gpa, .{
+                    .tag = .missing_attr_value,
+                    .main_location = attr.name,
+                    .node_idx = node_idx,
+                });
+                const date_error: Ast.Error = .{
+                    .tag = .{ .invalid_attr_value = .{ .reason = "invalid month" } },
+                    .main_location = value.span,
+                    .node_idx = node_idx,
+                };
+
+                const value_slice = value.span.slice(src);
+                const date = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
+                var chunks = std.mem.splitScalar(u8, date, '-');
+
+                // 1. Four or more ASCII digits, representing year, where year > 0
+                const year_str = chunks.first();
+                if (year_str.len < 4) return errors.append(gpa, date_error);
+                const year = std.fmt.parseInt(u64, year_str, 10) catch return errors.append(gpa, date_error);
+                if (year == 0) return errors.append(gpa, date_error);
+                // 3. Two ASCII digits, representing the month month, in the range 1 ≤ month ≤ 12
+                const month_str = chunks.rest();
+                if (month_str.len != 2) return errors.append(gpa, date_error);
+                const month = std.fmt.parseInt(u8, month_str, 10) catch return errors.append(gpa, date_error);
+                if (month < 1 or month > 12) return errors.append(gpa, date_error);
+            },
+            .date => {
+                const value = attr.value orelse return errors.append(gpa, .{
+                    .tag = .missing_attr_value,
+                    .main_location = attr.name,
+                    .node_idx = node_idx,
+                });
+                const date_error: Ast.Error = .{
+                    .tag = .{ .invalid_attr_value = .{ .reason = "invalid date" } },
+                    .main_location = value.span,
+                    .node_idx = node_idx,
+                };
+
+                const value_slice = value.span.slice(src);
+                const date = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
+                var chunks = std.mem.splitScalar(u8, date, '-');
+
+                // 1. A valid month string, representing year and month
+                // 1.1. Four or more ASCII digits, representing year, where year > 0
+                const year_str = chunks.first();
+                if (year_str.len < 4) return errors.append(gpa, date_error);
+                const year = std.fmt.parseInt(u64, year_str, 10) catch return errors.append(gpa, date_error);
+                if (year == 0) return errors.append(gpa, date_error);
+                // 1.3. Two ASCII digits, representing the month month, in the range 1 ≤ month ≤ 12
+                const month_str = chunks.next() orelse return errors.append(gpa, date_error);
+                if (month_str.len != 2) return errors.append(gpa, date_error);
+                const month = std.fmt.parseInt(u8, month_str, 10) catch return errors.append(gpa, date_error);
+                if (month < 1 or month > 12) return errors.append(gpa, date_error);
+                // 3. Two ASCII digits, representing day, in the range 1 ≤ day ≤ maxday
+                // where maxday is the number of days in the month month and year year
+                const day_str = chunks.rest();
+                if (day_str.len != 2) return errors.append(gpa, date_error);
+                const day = std.fmt.parseInt(u8, day_str, 10) catch return errors.append(gpa, date_error);
+                const maxday: u8 = switch (month) {
+                    1, 3, 5, 7, 8, 10, 12 => 31,
+                    4, 6, 9, 11 => 30,
+                    2 => if (year % 400 == 0 or (year % 4 == 0 and year % 100 != 0)) 29 else 28,
+                    else => unreachable,
+                };
+                if (day < 1 or day > maxday) return errors.append(gpa, date_error);
             },
             .hash_name_ref => {
                 const value = attr.value orelse return errors.append(gpa, .{
