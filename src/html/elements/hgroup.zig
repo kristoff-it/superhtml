@@ -169,10 +169,7 @@ fn completionsContent(
         const tags = &.{ .p, .h1, .h2, .h3, .h4, .h5, .h6 };
 
         var all: [7]Ast.Completion = undefined;
-        for (&all, tags) |*a, t| a.* = .{
-            .label = @tagName(t),
-            .desc = Element.all.get(t).desc,
-        };
+        for (&all, tags) |*a, t| a.* = Element.all_completions.get(t);
         break :blk all;
     };
 

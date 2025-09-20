@@ -180,6 +180,7 @@ fn completionsContent(
                 .label = "DOCTYPE",
                 .desc = "The required preamble for all HTML documents.",
                 .value = "!DOCTYPE html>",
+                .kind = .attribute, // well, not really, but it's ok :^)
             },
         };
     }

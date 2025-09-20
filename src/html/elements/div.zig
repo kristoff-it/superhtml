@@ -288,14 +288,8 @@ fn completions(
             }
 
             const all: [2]Ast.Completion = .{
-                .{
-                    .label = "dt",
-                    .desc = comptime Element.all.get(.dt).desc,
-                },
-                .{
-                    .label = "dd",
-                    .desc = comptime Element.all.get(.dd).desc,
-                },
+                comptime Element.all_completions.get(.dt),
+                comptime Element.all_completions.get(.dd),
             };
 
             return switch (dlstate) {
@@ -320,10 +314,7 @@ fn completions(
                 };
 
                 var all: [7]Ast.Completion = undefined;
-                for (&all, tags) |*a, t| a.* = .{
-                    .label = @tagName(t),
-                    .desc = Element.all.get(t).desc,
-                };
+                for (&all, tags) |*a, t| a.* = Element.all_completions.get(t);
                 break :blk all;
             };
 

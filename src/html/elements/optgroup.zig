@@ -204,12 +204,7 @@ fn completionsContent(
 
     switch (state) {
         .legend => switch (kind_after_cursor) {
-            .legend => return &.{
-                .{
-                    .label = "legend",
-                    .desc = comptime Element.all.get(.legend).desc,
-                },
-            },
+            .legend => return &.{Element.all_completions.get(.legend)},
             else => return Element.simpleCompletions(
                 arena,
                 &.{.legend},

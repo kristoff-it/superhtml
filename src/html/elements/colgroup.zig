@@ -111,7 +111,7 @@ fn completionsContent(
     if (has_span) return &.{};
 
     return &.{
-        .{ .label = "col", .desc = comptime Element.all.get(.col).desc },
-        .{ .label = "template", .desc = comptime Element.all.get(.template).desc },
+        comptime Element.all_completions.get(.col),
+        comptime Element.all_completions.get(.template),
     };
 }

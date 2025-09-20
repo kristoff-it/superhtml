@@ -634,18 +634,13 @@ fn completionsContent(
         }
     }
 
-    const source = comptime Element.all.get(.source);
-    const track = comptime Element.all.get(.track);
+    const source = comptime Element.all_completions.get(.source);
+    const track = comptime Element.all_completions.get(.track);
 
     switch (state) {
         .source => switch (kind_after_cursor) {
-            .source => return &.{
-                .{ .label = @tagName(source.tag), .desc = source.desc },
-            },
-            .track => return &.{
-                .{ .label = @tagName(source.tag), .desc = source.desc },
-                .{ .label = @tagName(track.tag), .desc = track.desc },
-            },
+            .source => return &.{source},
+            .track => return &.{ source, track },
             else => return Element.simpleCompletions(
                 arena,
                 &.{ .source, .track },
@@ -656,9 +651,7 @@ fn completionsContent(
         },
 
         .track => switch (kind_after_cursor) {
-            .track => return &.{
-                .{ .label = @tagName(track.tag), .desc = track.desc },
-            },
+            .track => return &.{track},
             else => return Element.simpleCompletions(
                 arena,
                 &.{.track},

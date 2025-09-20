@@ -158,8 +158,8 @@ fn completionsContent(
     }
 
     const all: []const Ast.Completion = &.{
-        .{ .label = "head", .desc = comptime Element.all.get(.head).desc },
-        .{ .label = "body", .desc = comptime Element.all.get(.body).desc },
+        comptime Element.all_completions.get(.head),
+        comptime Element.all_completions.get(.body),
     };
 
     if (has_head) {

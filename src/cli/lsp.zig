@@ -523,9 +523,23 @@ pub fn @"textDocument/completion"(
     const completions = try doc.html.completions(arena, doc.src, @intCast(offset));
     const items = try arena.alloc(lsp.types.CompletionItem, completions.len);
     for (items, completions) |*it, cpl| {
+        log.debug("label = '{s}' desc = '{s}'", .{ cpl.label, cpl.desc });
+        const insert_text = if (cpl.value) |v| blk: {
+            if (cpl.kind != .element_open) break :blk v;
+            var idx = offset;
+            const has_closing_bracket = while (idx < doc.src.len) : (idx += 1) {
+                switch (doc.src[idx]) {
+                    else => {},
+                    '\n' => break false,
+                    '>' => break true,
+                }
+            } else false;
+            if (has_closing_bracket) break :blk v[0..cpl.label.len];
+            break :blk v;
+        } else null;
         it.* = .{
             .label = cpl.label,
-            .insertText = cpl.value,
+            .insertText = insert_text,
             .documentation = if (cpl.desc.len == 0) null else .{
                 .MarkupContent = .{
                     .kind = .markdown,
@@ -534,6 +548,7 @@ pub fn @"textDocument/completion"(
             },
             .commitCharacters = &.{" >"},
             .preselect = cpl.label[0] == '/',
+            .insertTextFormat = if (cpl.kind == .element_open) .Snippet else null,
         };
     }
 

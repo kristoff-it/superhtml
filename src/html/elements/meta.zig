@@ -275,7 +275,7 @@ fn validate(
 
         const content = attrs[attributes.comptimeIndex("content")] orelse {
             try errors.append(gpa, .{
-                .tag = .{ .missing_required_attr = "content" },
+                .tag = .{ .missing_required_attr = "[content]" },
                 .main_location = vait.name,
                 .node_idx = node_idx,
             });

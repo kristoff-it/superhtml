@@ -245,11 +245,7 @@ fn completionsContent(
             .none,
             .{},
         ),
-        .rp_start => &.{
-            .{ .label = "rt", .desc = comptime Element.all.get(.rt).desc },
-        },
-        .rp_rt => &.{
-            .{ .label = "rp", .desc = comptime Element.all.get(.rp).desc },
-        },
+        .rp_start => &.{comptime Element.all_completions.get(.rt)},
+        .rp_rt => &.{comptime Element.all_completions.get(.rp)},
     };
 }

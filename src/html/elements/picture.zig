@@ -774,28 +774,16 @@ fn completions(
         }
     }
 
-    const source = comptime Element.all.get(.source);
-    const img = comptime Element.all.get(.img);
-    const script = comptime Element.all.get(.script);
-    const template = comptime Element.all.get(.template);
+    const source = comptime Element.all_completions.get(.source);
+    const img = comptime Element.all_completions.get(.img);
+    const script = comptime Element.all_completions.get(.script);
+    const template = comptime Element.all_completions.get(.template);
 
     return switch (state) {
         .source => switch (kind_after_cursor) {
-            .source, .img => &.{
-                .{ .label = @tagName(source.tag), .desc = source.desc },
-                .{ .label = @tagName(script.tag), .desc = script.desc },
-                .{ .label = @tagName(template.tag), .desc = template.desc },
-            },
-            else => &.{
-                .{ .label = @tagName(source.tag), .desc = source.desc },
-                .{ .label = @tagName(img.tag), .desc = img.desc },
-                .{ .label = @tagName(script.tag), .desc = script.desc },
-                .{ .label = @tagName(template.tag), .desc = template.desc },
-            },
+            .source, .img => &.{ source, script, template },
+            else => &.{ source, img, script, template },
         },
-        .img => &.{
-            .{ .label = @tagName(script.tag), .desc = script.desc },
-            .{ .label = @tagName(template.tag), .desc = template.desc },
-        },
+        .img => &.{ script, template },
     };
 }

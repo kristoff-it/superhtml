@@ -671,14 +671,14 @@ fn completionsContent(
     }
 
     const prefix: []const Ast.Completion = &.{
-        .{ .label = "caption", .desc = comptime Element.all.get(.caption).desc },
-        .{ .label = "colgroup", .desc = comptime Element.all.get(.colgroup).desc },
-        .{ .label = "thead", .desc = comptime Element.all.get(.thead).desc },
-        .{ .label = "tbody", .desc = comptime Element.all.get(.tbody).desc },
-        .{ .label = "tr", .desc = comptime Element.all.get(.tr).desc },
-        .{ .label = "tfoot", .desc = comptime Element.all.get(.tfoot).desc },
-        .{ .label = "script", .desc = comptime Element.all.get(.script).desc },
-        .{ .label = "template", .desc = comptime Element.all.get(.template).desc },
+        comptime Element.all_completions.get(.caption),
+        comptime Element.all_completions.get(.colgroup),
+        comptime Element.all_completions.get(.thead),
+        comptime Element.all_completions.get(.tbody),
+        comptime Element.all_completions.get(.tr),
+        comptime Element.all_completions.get(.tfoot),
+        comptime Element.all_completions.get(.script),
+        comptime Element.all_completions.get(.template),
     };
 
     return switch (state) {

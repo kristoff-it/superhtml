@@ -575,10 +575,10 @@ pub inline fn completions(
     offset: u32,
     mode: CompletionMode,
 ) ![]const Ast.Completion {
-    const children = switch (mode) {
-        .attrs => blk: {
+    switch (mode) {
+        .attrs => {
             var stt = ast.nodes[node_idx].startTagIterator(src, ast.language);
-            break :blk try Attribute.completions(
+            return Attribute.completions(
                 arena,
                 src,
                 &stt,
@@ -586,60 +586,74 @@ pub inline fn completions(
                 offset,
             );
         },
-        .content => content: switch (element.content) {
-            .custom => |custom| try custom.completions(
-                arena,
-                ast,
-                src,
-                node_idx,
-                offset,
-            ),
-            .model => continue :content .{ .simple = .{} },
-            .simple => |simple| try simpleCompletions(
-                arena,
-                &.{},
-                ast.nodes[node_idx].model.content,
-                element.meta.content_reject,
-                simple,
-            ),
-            .anything => blk: {
-                const start: usize = @intFromEnum(Kind.___) + 1;
-                const all_elems = all.values[start..];
-                const anything: [all_elems.len]Ast.Completion = comptime a: {
-                    var anything: [all_elems.len]Ast.Completion = undefined;
-                    for (all_elems, &anything) |in, *out| out.* = .{
-                        .label = @tagName(in.tag),
-                        .desc = in.desc,
-                    };
-                    break :a anything;
-                };
+        .content => {
+            const children = content: switch (element.content) {
+                .custom => |custom| try custom.completions(
+                    arena,
+                    ast,
+                    src,
+                    node_idx,
+                    offset,
+                ),
+                .model => continue :content .{ .simple = .{} },
+                .simple => |simple| try simpleCompletions(
+                    arena,
+                    &.{},
+                    ast.nodes[node_idx].model.content,
+                    element.meta.content_reject,
+                    simple,
+                ),
+                .anything => {
+                    // const start: usize = @intFromEnum(Kind.___) + 1;
+                    // const all_elems = all.values[start..];
+                    // const anything: [all_elems.len]Ast.Completion = comptime a: {
+                    //     var anything: [all_elems.len]Ast.Completion = undefined;
+                    //     for (all_elems, &anything) |in, *out| out.* = .{
+                    //         .label = @tagName(in.tag),
+                    //         .desc = in.desc,
+                    //     };
+                    //     break :a anything;
+                    // };
 
-                break :blk &anything;
-            },
+                    // break :content &anything;
+                    break :content all_completions.values[8..];
+                },
+            };
+
+            var result: std.ArrayList(Ast.Completion) = .empty;
+
+            var ancestor_idx = node_idx;
+            while (ancestor_idx != 0) {
+                const ancestor = ast.nodes[ancestor_idx];
+                if (!ancestor.isClosed()) {
+                    const name = ancestor.span(src).slice(src);
+                    log.debug("open ancestor = {any}, open = '{s}'\n", .{ ancestor, name });
+                    const slashed = try std.fmt.allocPrint(arena, "/{s}>", .{name});
+                    var idx = offset;
+                    const has_slash: u32 = @intFromBool(src[offset -| 1] == '/');
+                    const has_closing_bracket: u32 = while (idx < src.len) : (idx += 1) {
+                        switch (src[idx]) {
+                            else => {},
+                            '\n' => break 0,
+                            '>' => break 1,
+                        }
+                    } else 1;
+                    try result.append(arena, .{
+                        .label = slashed[0 .. slashed.len - 1],
+                        .value = slashed[has_slash .. slashed.len - has_closing_bracket],
+                        .desc = "Close the last open element.",
+                        .kind = .element_close,
+                    });
+                    break;
+                }
+                ancestor_idx = ancestor.parent_idx;
+            }
+
+            try result.ensureTotalCapacityPrecise(arena, result.items.len + children.len);
+            result.appendSliceAssumeCapacity(children);
+            return result.items;
         },
-    };
-
-    var result: std.ArrayList(Ast.Completion) = .empty;
-
-    var ancestor_idx = node_idx;
-    while (ancestor_idx != 0) {
-        const ancestor = ast.nodes[ancestor_idx];
-        if (!ancestor.isClosed()) {
-            const name = ancestor.span(src).slice(src);
-            const slashed = try std.fmt.allocPrint(arena, "/{s}", .{name});
-            try result.append(arena, .{
-                .label = slashed,
-                .value = if (src[offset -| 1] == '/') name else slashed,
-                .desc = "",
-            });
-            break;
-        }
-        ancestor_idx = ancestor.parent_idx;
     }
-
-    try result.ensureTotalCapacityPrecise(arena, result.items.len + children.len);
-    result.appendSliceAssumeCapacity(children);
-    return result.items;
 }
 
 pub fn simpleCompletions(
@@ -655,10 +669,7 @@ pub fn simpleCompletions(
         all.values.len - @intFromEnum(Kind.___),
     );
 
-    for (prefix) |p| list.appendAssumeCapacity(.{
-        .label = @tagName(p),
-        .desc = all.get(p).desc,
-    });
+    for (prefix) |p| list.appendAssumeCapacity(all_completions.get(p));
 
     const start: usize = @intFromEnum(Kind.___) + 1;
     outer: for (all.values[start..], start..) |e, idx| {
@@ -680,19 +691,13 @@ pub fn simpleCompletions(
 
         const child_cs = e.meta.categories_superset;
         if (parent_content.overlaps(child_cs)) {
-            list.appendAssumeCapacity(.{
-                .label = @tagName(child_kind),
-                .desc = e.desc,
-            });
+            list.appendAssumeCapacity(all_completions.get(child_kind));
             continue :outer;
         }
 
         for (simple.extra_children) |ec| {
             if (ec == child_kind) {
-                list.appendAssumeCapacity(.{
-                    .label = @tagName(child_kind),
-                    .desc = e.desc,
-                });
+                list.appendAssumeCapacity(all_completions.get(child_kind));
                 continue :outer;
             }
         }
@@ -718,6 +723,22 @@ pub const elements: KindMap = blk: {
     }};
 
     break :blk .initComptime(keys);
+};
+
+pub const all_completions = blk: {
+    var ac: std.EnumArray(Ast.Kind, Ast.Completion) = undefined;
+
+    const fields = std.meta.fields(Ast.Kind)[8..];
+    assert(std.mem.eql(u8, fields[0].name, "a"));
+    for (ac.values[8..], fields, all.values[8..]) |*completion, f, elem| {
+        completion.* = .{
+            .label = f.name,
+            .value = f.name ++ "$1>$0</" ++ f.name ++ ">",
+            .desc = elem.desc,
+            .kind = .element_open,
+        };
+    }
+    break :blk ac;
 };
 
 const temp: Element = .{

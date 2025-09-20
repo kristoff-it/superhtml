@@ -142,9 +142,9 @@ fn completionsContent(
             .{},
         ),
         .option => &.{
-            .{ .label = "option", .desc = comptime Element.all.get(.option).desc },
-            .{ .label = "script", .desc = comptime Element.all.get(.script).desc },
-            .{ .label = "template", .desc = comptime Element.all.get(.template).desc },
+            Element.all_completions.get(.option),
+            Element.all_completions.get(.script),
+            Element.all_completions.get(.template),
         },
         .phrasing => Element.simpleCompletions(
             arena,

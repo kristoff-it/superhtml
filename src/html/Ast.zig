@@ -344,7 +344,7 @@ pub const Error = struct {
                             .first_or_last => "first or last",
                         }},
                     ),
-                    .missing_ancestor => |e| w.print("missing ancestor: {t}", .{e}),
+                    .missing_ancestor => |e| w.print("missing ancestor: <{t}>", .{e}),
                     .missing_child => |e| w.print("missing child: <{t}>", .{e}),
                     .duplicate_child => |dc| {
                         try w.print("duplicate child", .{});
@@ -1439,11 +1439,6 @@ pub fn validateNesting(
             .text,
             .doctype,
             => {
-                if (std.debug.runtime_safety and n.kind.isElement()) {
-                    const element: Element = elements.get(n.kind);
-                    assert(element.attributes != .manual);
-                }
-
                 var next = n;
                 node_idx = while (true) {
                     if (next.next_idx != 0) break next.next_idx;
@@ -1468,6 +1463,11 @@ pub fn validateNesting(
 
         if (n.kind == .template) try seen_ids_stack.append(gpa, .empty);
 
+        if (n.first_child_idx != 0) {
+            node_idx = n.first_child_idx;
+            continue;
+        }
+
         var next = n;
         node_idx = while (true) {
             if (next.kind == .template) {
@@ -1485,6 +1485,9 @@ pub const Completion = struct {
     label: []const u8,
     desc: []const u8,
     value: ?[]const u8 = null,
+    // This value is used by the lsp to know how to interpret
+    // the value field of this list of suggestions.
+    kind: enum { attribute, element_open, element_close } = .attribute,
 };
 
 pub fn completions(
@@ -2117,23 +2120,24 @@ test "fuzz" {
     const generator = @import("../generator/html.zig");
     const Context = struct {
         arena: *std.heap.ArenaAllocator,
-        gpa: Allocator,
         out: *Writer,
         fn testOne(ctx: @This(), input: []const u8) anyerror!void {
             _ = ctx.arena.reset(.retain_capacity);
+            const gpa = ctx.arena.allocator();
 
             var in: Reader = .fixed(input);
-            var out: Writer.Allocating = .init(ctx.gpa);
-            generator.generate(ctx.gpa, &in, &out.writer) catch |err| {
+            var out: Writer.Allocating = .init(gpa);
+            generator.generate(gpa, &in, &out.writer) catch |err| {
                 if (err == error.Skip) return;
                 return err;
             };
 
-            std.debug.print("--begin--\n{s}\n\n", .{out.written()});
+            log.debug("--begin--\n{s}\n\n", .{out.written()});
 
-            const ast: Ast = try .init(ctx.gpa, out.written(), .html, false);
-            // _ = ast;
-            var devnull: Writer.Discarding = .init(&.{});
+            const ast: Ast = try .init(gpa, out.written(), .html, false);
+
+            var bufnull: [4096]u8 = undefined;
+            var devnull: Writer.Discarding = .init(&bufnull);
             if (!ast.has_syntax_errors) {
                 try ast.render(out.written(), &devnull.writer);
             }
@@ -2149,7 +2153,6 @@ test "fuzz" {
     var out = std.fs.File.stdout().writer(&buf);
     try std.testing.fuzz(Context{
         .arena = &arena,
-        .gpa = arena.allocator(),
         .out = &out.interface,
     }, Context.testOne, .{});
 }

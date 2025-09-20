@@ -191,23 +191,8 @@ fn completions(
         .div => &.{ div, script, template },
     };
 }
-const dt: Ast.Completion = .{
-    .label = "dt",
-    .desc = Element.all.get(.dt).desc,
-};
-const dd: Ast.Completion = .{
-    .label = "dd",
-    .desc = Element.all.get(.dd).desc,
-};
-const div: Ast.Completion = .{
-    .label = "div",
-    .desc = Element.all.get(.div).desc,
-};
-const script: Ast.Completion = .{
-    .label = "script",
-    .desc = Element.all.get(.script).desc,
-};
-const template: Ast.Completion = .{
-    .label = "template",
-    .desc = Element.all.get(.template).desc,
-};
+const dt: Ast.Completion = Element.all_completions.get(.dt);
+const dd: Ast.Completion = Element.all_completions.get(.dd);
+const div: Ast.Completion = Element.all_completions.get(.div);
+const script: Ast.Completion = Element.all_completions.get(.script);
+const template: Ast.Completion = Element.all_completions.get(.template);
