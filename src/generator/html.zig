@@ -132,13 +132,40 @@ fn renderAttr(
     _ = gpa;
     try w.print(" {s}", .{named_model.name});
     if (!has_value) return;
-    switch (named_model.model.rule) {
-        else => {
-            const len = input.takeByte() catch return;
-            const value = input.take(len) catch return;
-            try w.print("=\"{s}\"", .{value});
+
+    const rng = input.takeByte() catch return;
+    const rng_extra = rng >> 6;
+    switch (rng_extra) {
+        else => unreachable,
+        1 => return, // no value
+        2 => try w.writeAll("=''"),
+        3 => try w.writeAll("='not_empty'"),
+        0 => switch (named_model.model.rule) { // apply rule semantically
+            else => {
+                const len = input.takeByte() catch return;
+                const value = input.take(len) catch return;
+                try w.print("=\"{s}\"", .{value});
+            },
+
+            .list => |list_rule| {
+                const case = list_rule.completions[rng % list_rule.completions.len];
+                try w.print("=\"{s}\"", .{case.label});
+            },
+            .cors => {
+                const case: []const []const u8 = &.{
+                    "anonymous", "use-credentials", "arst",
+                };
+
+                try w.print("=\"{s}\"", .{case[rng % case.len]});
+            },
+            .non_neg_int => {
+                const case: []const []const u8 = &.{
+                    "0", "1", "2", "-1", "100", "-99", "101", "-101", "-102",
+                };
+
+                try w.print("=\"{s}\"", .{case[rng % case.len]});
+            },
         },
-        // .list => {},
     }
 }
 
