@@ -4,12 +4,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const version: Version = if (b.option(
-        []const u8,
-        "force-version",
-        "When building the SuperHTML CLI tool force a specific version, bypassing 'git describe'",
-    )) |v| .{ .commit = v } else getVersion(b);
-
+    const version = getVersion(b);
     const enable_tracy = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
 
     const tracy = b.dependency("tracy", .{ .enable = enable_tracy });
@@ -75,8 +70,29 @@ pub fn build(b: *std.Build) !void {
     setupCliTool(b, target, optimize, options, superhtml, folders, lsp);
     setupWasmStep(b, optimize, options, superhtml, lsp);
     setupFetchLanguageSubtagRegistryStep(b, target);
+
+    const release = b.step("release", "Create release builds of Zine");
     if (version == .tag) {
-        setupReleaseStep(b, options, superhtml, folders, lsp);
+        const zon = @import("build.zig.zon");
+        if (std.mem.eql(u8, zon.version, version.tag[1..])) {
+            setupReleaseStep(
+                b,
+                options,
+                superhtml,
+                folders,
+                lsp,
+                release,
+            );
+        } else {
+            release.dependOn(&b.addFail(b.fmt(
+                "error: git tag does not match zon package version (zon: '{s}', git: '{s}')",
+                .{ zon.version, version.tag[1..] },
+            )).step);
+        }
+    } else {
+        release.dependOn(&b.addFail(
+            "error: git tag missing, cannot make release builds",
+        ).step);
     }
 
     setupGeneratorStep(b, target);
@@ -237,11 +253,8 @@ fn setupReleaseStep(
     superhtml: *std.Build.Module,
     folders: *std.Build.Dependency,
     lsp: *std.Build.Dependency,
+    release_step: *std.Build.Step,
 ) void {
-    const release_step = b.step(
-        "release",
-        "Create releases for the SuperHTML CLI",
-    );
     const targets: []const std.Target.Query = &.{
         .{ .cpu_arch = .aarch64, .os_tag = .macos },
         .{ .cpu_arch = .aarch64, .os_tag = .linux },
@@ -271,15 +284,53 @@ fn setupReleaseStep(
         super_exe_release.root_module.addImport("lsp", lsp.module("lsp"));
         super_exe_release.root_module.addOptions("build_options", options);
 
-        const target_output = b.addInstallArtifact(super_exe_release, .{
-            .dest_dir = .{
-                .override = .{
-                    .custom = t.zigTriple(b.allocator) catch unreachable,
-                },
-            },
-        });
+        switch (t.os_tag.?) {
+            .macos, .windows => {
+                const archive_name = b.fmt("{s}.zip", .{
+                    t.zigTriple(b.allocator) catch unreachable,
+                });
 
-        release_step.dependOn(&target_output.step);
+                const zip = b.addSystemCommand(&.{
+                    "zip",
+                    "-9",
+                    // "-dd",
+                    "-q",
+                    "-j",
+                });
+                const archive = zip.addOutputFileArg(archive_name);
+                zip.addDirectoryArg(super_exe_release.getEmittedBin());
+                _ = zip.captureStdOut();
+
+                release_step.dependOn(&b.addInstallFileWithDir(
+                    archive,
+                    .{ .custom = "releases" },
+                    archive_name,
+                ).step);
+            },
+            else => {
+                const archive_name = b.fmt("{s}.tar.xz", .{
+                    t.zigTriple(b.allocator) catch unreachable,
+                });
+
+                const tar = b.addSystemCommand(&.{
+                    "gtar",
+                    "-cJf",
+                });
+
+                const archive = tar.addOutputFileArg(archive_name);
+                tar.addArg("-C");
+
+                tar.addDirectoryArg(super_exe_release.getEmittedBinDirectory());
+                tar.addArg("superhtml");
+                _ = tar.captureStdOut();
+
+                release_step.dependOn(&b.addInstallFileWithDir(
+                    archive,
+                    .{ .custom = "releases" },
+                    archive_name,
+                ).step);
+            },
+        }
     }
 
     // wasm
@@ -305,7 +356,7 @@ fn setupReleaseStep(
         const target_output = b.addInstallArtifact(super_wasm_lsp, .{
             .dest_dir = .{
                 .override = .{
-                    .custom = "wasm-wasi-lsponly",
+                    .custom = "releases/wasm-wasi-lsponly",
                 },
             },
         });
