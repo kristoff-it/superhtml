@@ -457,10 +457,9 @@ pub fn init(
     gpa: Allocator,
     src: []const u8,
     language: Language,
-    /// When true only official HTML tag names will be allowed.
-    /// Strict mode currently only supports HTML and SuperHTML.
-    strict: bool,
+    syntax_only: bool,
 ) error{OutOfMemory}!Ast {
+    log.debug("INIT ---- syntax only: {}", .{syntax_only});
     if (src.len > std.math.maxInt(u32)) @panic("too long");
 
     var nodes = std.array_list.Managed(Node).init(gpa);
@@ -601,18 +600,21 @@ pub fn init(
                                     };
 
                                     const e = elements.get(kind);
-                                    const model = try e.validateAttrs(
-                                        gpa,
-                                        language,
-                                        &errors,
-                                        &seen_attrs,
-                                        &seen_ids_stack.items[seen_ids_stack.items.len - 1],
-                                        nodes.items,
-                                        parent_idx,
-                                        src,
-                                        tag.span,
-                                        @intCast(nodes.items.len),
-                                    );
+                                    const model = if (syntax_only or language != .html)
+                                        undefined
+                                    else
+                                        try e.validateAttrs(
+                                            gpa,
+                                            language,
+                                            &errors,
+                                            &seen_attrs,
+                                            &seen_ids_stack.items[seen_ids_stack.items.len - 1],
+                                            nodes.items,
+                                            parent_idx,
+                                            src,
+                                            tag.span,
+                                            @intCast(nodes.items.len),
+                                        );
 
                                     if (kind == .template) {
                                         try seen_ids_stack.append(gpa, .empty);
@@ -681,7 +683,7 @@ pub fn init(
                     try nodes.append(new);
                     current = &nodes.items[current_idx];
 
-                    if (strict and current.kind == .main) {
+                    if (!syntax_only and current.kind == .main) {
                         var ancestor_idx = current.parent_idx;
                         while (ancestor_idx != 0) {
                             const ancestor = nodes.items[ancestor_idx];
@@ -962,7 +964,7 @@ pub fn init(
         current = &nodes.items[current.parent_idx];
     }
 
-    if (strict and !has_syntax_errors and language == .html) try validateNesting(
+    if (!syntax_only and !has_syntax_errors and language == .html) try validateNesting(
         gpa,
         nodes.items,
         &seen_attrs,
@@ -1731,7 +1733,7 @@ fn debugNodes(nodes: []const Node, src: []const u8) void {
 test "basics" {
     const case = "<html><head></head><body><div><br></div></body></html>\n";
 
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
@@ -1742,7 +1744,7 @@ test "basics - attributes" {
         \\<div id="foo" class="bar">
     ++ "<link></div></body></html>\n";
 
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
@@ -1769,7 +1771,7 @@ test "newlines" {
         \\</html>
         \\
     , .{'\t'});
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1788,7 +1790,7 @@ test "tight tags inner indentation" {
         \\</html>
         \\
     , .{'\t'});
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
@@ -1805,7 +1807,7 @@ test "bad html" {
         \\
         \\</html>
     ;
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
@@ -1827,7 +1829,7 @@ test "formatting - simple" {
         \\</html>
         \\
     , .{'\t'});
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1859,7 +1861,7 @@ test "formatting - attributes" {
         \\</html>
         \\
     , .{'\t'});
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1877,7 +1879,7 @@ test "pre" {
         \\
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1896,7 +1898,7 @@ test "pre text" {
         \\
     , .{'\t'});
 
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1934,7 +1936,7 @@ test "what" {
         \\
     , .{'\t'});
 
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1971,7 +1973,7 @@ test "spans" {
         \\
     , .{'\t'});
 
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -1982,7 +1984,7 @@ test "arrow span" {
         \\
     ;
 
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
@@ -2008,7 +2010,7 @@ test "self-closing tag complex example" {
         \\</div>
         \\
     , .{'\t'});
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -2061,7 +2063,7 @@ test "respect empty lines" {
         \\</div>
         \\
     , .{'\t'});
-    const ast = try Ast.init(std.testing.allocator, case, .html, true);
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
@@ -2132,7 +2134,7 @@ test "fuzz" {
                 return err;
             };
 
-            log.debug("--begin--\n{s}\n\n", .{out.written()});
+            std.debug.print("--begin--\n{s}\n\n", .{out.written()});
 
             const ast: Ast = try .init(gpa, out.written(), .html, false);
 

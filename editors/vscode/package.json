@@ -4,7 +4,7 @@
   "description": "Language Server for HTML and SuperHTML Templates.",
   "repository": "https://github.com/kristoff-it/superhtml/",
   "publisher": "LorisCro",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "engines": {
     "vscode": "^1.92.0"
   },
@@ -34,8 +34,7 @@
           "SuperHTML",
           "Super HTML",
           "superhtml",
-          "shtml",
-          "super"
+          "shtml"
         ],
         "extensions": [
           ".shtml"
@@ -76,6 +75,16 @@
       "type": "object",
       "title": "SuperHTML",
       "properties": {
+        "superhtml.SyntaxOnlyMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled SuperHTML will not validate element nesting and attributes. Useful for dealing with templated HTML files, for example. (requires restart)"
+        },
+        "superhtml.EnsureBuiltinHTMLExtensionIsDisabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ensure the VSCode builtin HTML extension is disabled (we ask because it generates wrong end tag suggestions, see https://github.com/kristoff-it/superhtml/issues/107)."
+        },
         "superhtml.trace.server": {
           "scope": "window",
           "type": "string",

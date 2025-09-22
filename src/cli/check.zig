@@ -14,7 +14,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkHtml(gpa, null, in_bytes, cmd.strict);
+            try checkHtml(gpa, null, in_bytes, cmd.syntax_only);
         },
         .stdin_super => {
             var fr = std.fs.File.stdin().reader(&.{});
@@ -22,7 +22,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkSuper(gpa, null, in_bytes, cmd.strict);
+            try checkSuper(gpa, null, in_bytes, cmd.syntax_only);
         },
         .paths => |paths| {
             // checkFile will reset the arena at the end of each call
@@ -34,7 +34,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
                     path,
                     path,
                     &any_error,
-                    cmd.strict,
+                    cmd.syntax_only,
                 ) catch |err| switch (err) {
                     error.IsDir, error.AccessDenied => {
                         checkDir(
@@ -42,7 +42,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
                             &arena_impl,
                             path,
                             &any_error,
-                            cmd.strict,
+                            cmd.syntax_only,
                         ) catch |dir_err| {
                             std.debug.print("Error walking dir '{s}': {t}\n", .{
                                 path,
@@ -73,7 +73,7 @@ fn checkDir(
     arena_impl: *std.heap.ArenaAllocator,
     path: []const u8,
     any_error: *bool,
-    strict: bool,
+    syntax_only: bool,
 ) !void {
     var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer dir.close();
@@ -88,7 +88,7 @@ fn checkDir(
                     item.basename,
                     item.path,
                     any_error,
-                    strict,
+                    syntax_only,
                 );
             },
             else => {},
@@ -102,7 +102,7 @@ fn checkFile(
     sub_path: []const u8,
     full_path: []const u8,
     any_error: *bool,
-    strict: bool,
+    syntax_only: bool,
 ) !void {
     _ = any_error;
     defer _ = arena_impl.reset(.retain_capacity);
@@ -142,13 +142,13 @@ fn checkFile(
             arena,
             full_path,
             in_bytes,
-            strict,
+            syntax_only,
         ),
         .super => try checkSuper(
             arena,
             full_path,
             in_bytes,
-            strict,
+            syntax_only,
         ),
     }
 }
@@ -157,9 +157,9 @@ pub fn checkHtml(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
-    strict: bool,
+    syntax_only: bool,
 ) !void {
-    const ast = try super.html.Ast.init(arena, code, .html, strict);
+    const ast = try super.html.Ast.init(arena, code, .html, syntax_only);
     if (ast.errors.len > 0) {
         var stderr = std.fs.File.stderr().writer(&.{});
         try ast.printErrors(code, path, &stderr.interface);
@@ -171,9 +171,9 @@ fn checkSuper(
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
-    strict: bool,
+    syntax_only: bool,
 ) !void {
-    const html = try super.html.Ast.init(arena, code, .superhtml, strict);
+    const html = try super.html.Ast.init(arena, code, .superhtml, syntax_only);
     if (html.errors.len > 0) {
         var stderr = std.fs.File.stderr().writer(&.{});
         try html.printErrors(code, path, &stderr.interface);
@@ -195,7 +195,7 @@ fn oom() noreturn {
 
 const Command = struct {
     mode: Mode,
-    strict: bool,
+    syntax_only: bool,
 
     const Mode = union(enum) {
         stdin,
@@ -205,7 +205,7 @@ const Command = struct {
 
     fn parse(args: []const []const u8) Command {
         var mode: ?Mode = null;
-        var strict: ?bool = null;
+        var syntax_only: ?bool = null;
 
         var idx: usize = 0;
         while (idx < args.len) : (idx += 1) {
@@ -216,8 +216,8 @@ const Command = struct {
                 fatalHelp();
             }
 
-            if (std.mem.eql(u8, arg, "--no-strict-tags")) {
-                strict = false;
+            if (std.mem.eql(u8, arg, "--syntax-only")) {
+                syntax_only = true;
                 continue;
             }
 
@@ -271,16 +271,18 @@ const Command = struct {
 
         return .{
             .mode = m,
-            .strict = strict orelse true,
+            .syntax_only = syntax_only orelse false,
         };
     }
 
     fn fatalHelp() noreturn {
         std.debug.print(
-            \\Usage: super check PATH [PATH...] [OPTIONS]
+            \\Usage: superhtml check PATH [PATH...] [OPTIONS]
             \\
-            \\   Checks for syntax errors. If PATH is a directory, it will
+            \\   Checks documents for errors. If PATH is a directory, it will
             \\   be searched recursively for HTML and SuperHTML files.
+            \\   If any syntax or validation error is found, the program will
+            \\   exit with a non-zero exit code.
             \\     
             \\   Detected extensions:     
             \\        HTML          .html, .htm 
@@ -290,13 +292,9 @@ const Command = struct {
             \\
             \\   --stdin          Format bytes from stdin and output to stdout.
             \\                    Mutually exclusive with other input arguments.
-            \\
             \\   --stdin-super    Same as --stdin but for SuperHTML files.
-            \\
-            \\  --no-strict-tags  Disable strict checking of tag names in HTML
-            \\                    and SuperHTML files. 
-            \\
-            \\   --help, -h       Prints this help and exits.
+            \\   --syntax-only    Disable HTML element and attribute validation.
+            \\   --help, -h       Print this help and exit.
             \\
         , .{});
 

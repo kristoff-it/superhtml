@@ -26,7 +26,7 @@ pub fn loadFile(
         self.gpa,
         new_text,
         language,
-        self.strict,
+        self.syntax_only,
     );
 
     log.debug("document init", .{});

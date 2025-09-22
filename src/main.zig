@@ -4,7 +4,6 @@ const build_options = @import("build_options");
 const known = @import("known_folders");
 const super = @import("super");
 const logging = @import("cli/logging.zig");
-const interface_exe = @import("cli/interface.zig");
 const check_exe = @import("cli/check.zig");
 const fmt_exe = @import("cli/fmt.zig");
 const lsp_exe = @import("cli/lsp.zig");
@@ -57,8 +56,6 @@ pub fn panic(
 
 pub const Command = enum {
     check,
-    interface,
-    i, // alias for interface
     fmt,
     lsp,
     help,
@@ -85,7 +82,6 @@ pub fn main() !void {
 
     _ = switch (cmd) {
         .check => check_exe.run(gpa, args[2..]),
-        .interface, .i => interface_exe.run(gpa, args[2..]),
         .fmt => fmt_exe.run(gpa, args[2..]),
         .lsp => lsp_exe.run(gpa, args[2..]),
         .help => fatalHelp(),
@@ -112,17 +108,15 @@ fn fatalHelp() noreturn {
         \\Usage: superhtml COMMAND [OPTIONS]
         \\
         \\Commands:
-        \\  check         Check documents for syntax errors
-        \\  interface, i  Print a SuperHTML template's interface
-        \\  fmt           Format documents
-        \\  lsp           Start the Super LSP
-        \\  help          Show this menu and exit
-        \\  version       Print Super's version and exit
+        \\  check         Check documents for errors.
+        \\  fmt           Format documents.
+        \\  lsp           Start the Language Server.
+        \\  help          Show this menu and exit.
+        \\  version       Print the version and exit.
         \\
         \\General Options:
-        \\  --help, -h        Print command specific usage
-        \\  --no-strict-tags  Disable strict checking of tag names
-        \\                    in HTML and SuperHTML files. 
+        \\  --help, -h        Print command specific usage.
+        \\  --syntax-only     Disable HTML element and attribute validation.
         \\
     , .{});
 }

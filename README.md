@@ -3,7 +3,7 @@ HTML Language Server and Templating Language Library
 
 
 ## HTML Language Server
-The Super CLI Tool offers **syntax checking** and **autoformatting** features for HTML files.
+The SuperHTML CLI Tool offers **validation** and **autoformatting** features for HTML files.
 
 The tool can be used either directly (for example by running it on save), or through a LSP client implementation.
 
@@ -12,45 +12,28 @@ $ superhtml
 Usage: superhtml COMMAND [OPTIONS]
 
 Commands:
-  check         Check documents for syntax errors
-  interface, i  Print a SuperHTML template's interface
-  fmt           Format documents
-  lsp           Start the Super LSP
-  help          Show this menu and exit
-  version       Print Super's version and exit
+  check         Check documents for errors.
+  fmt           Format documents.
+  lsp           Start the Language Server.
+  help          Show this menu and exit.
+  version       Print the version and exit.
 
 General Options:
-  --help, -h   Print command specific usage
+  --help, -h        Print command specific usage.
+  --syntax-only     Disable HTML element and attribute validation.
 ```
 
 >[!WARNING]
->SuperHTML currently only supports UTF8-encoded HTML and assumes HTML5 compliance (e.g. doesn't support XHTML, regardless of what you define the doctype to be).
+>SuperHTML only supports HTML5 (the WHATWG living spec) regardless of what you put in your doctype (a warning will be generated for unsupported doctypes).
 
 ### Diagnostics
+SuperHTML validates not only syntax but also element nesting and attribute values.
+No other language server implements the full HTML spec in its validation code.
 
-![](.github/vscode.png)
+![](.github/helix.png)
 
-This language server is stricter than the HTML spec whenever it would prevent potential human errors from being reported.
-
-
-As an example, HTML allows for closing some tags implicitly. For example the following snippet is correct HTML.
-
-```html
-<ul>
-  <li> One
-  <li> Two
-</ul>
-```
-
-This will still be reported as an error by SuperHTML because otherwise the following snippet would have to be considered correct (while it's most probably a typo):
-
-```html
-<li>item<li>
-```
 
 ### Autoformatting
-![](.github/vscode-autoformat.gif)
-
 The autoformatter has two main ways of interacting with it in order to request for horizontal / vertical alignment.
 
 1. Adding / removing whitespace between the **start tag** of an element and its content.
@@ -83,45 +66,48 @@ After:
 <div><p>Foo</p></div>
 ```
 
-#### Example of rule #2
+### Example of rule #2
 Before:
 ```html
-<div foo="bar" style="verylongstring" >
+<div foo="bar" style="verylongstring" hidden>
     Foo
 </div>
 ```
 
 After:
 ```html
-<div
-   foo="bar"
-   style="verylongstring"
+<div foo="bar" 
+     style="verylongstring" 
+     hidden
 >
     Foo
 </div>
 ```
 
-##### Reverse
+#### Reverse
 
 Before:
 ```html
-<div
-   foo="bar"
-   style="verylongstring">
+<div foo="bar" 
+     style="verylongstring"
+     hidden>
     Foo
 </div>
 ```
 
 After:
 ```html
-<div foo="bar" style="verylongstring">
+<div foo="bar" style="verylongstring" hidden>
     Foo
 </div>
 ```
 
+### Download
+See the Releases section here on GitHub.
+
 ### Editor support
 #### VSCode
-Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/items?itemName=LorisCro.super).
+Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/items?itemName=LorisCro.super) (doesn't require the CLI tool as it bundles a WASM build of the language server).
 
 #### Neovim
 1. Download a prebuilt version of `superhtml` from the Releases section (or build it yourself).
@@ -161,30 +147,15 @@ Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/i
 		```
 
 #### Helix
-
 In versions later than `24.07` `superhtml` is supported out of the box, simply add executable to your `PATH`.
 
-For `24.07` and earlier, add to your `.config/helix/languages.toml`:
-```toml
-[language-server.superhtml-lsp]
-command = "superhtml"
-args = ["lsp"]
-
-[[language]]
-name = "html"
-scope = "source.html"
-roots = []
-file-types = ["html"]
-language-servers = [ "superhtml-lsp" ]
-```
-See https://helix-editor.com for more information on how to add new language servers.
 
 #### [Flow Control](https://github.com/neurocyte/flow)
 Already defaults to using SuperHTML, just add the executable to your `PATH`.
 
 #### Vim
-Vim should be able to parse the errors that `superhtml check [PATH]`. This
-means that you can use `:make` and the quickfix window to check for syntax
+Vim should be able to parse the errors that `superhtml check [PATH]` generates.
+This means that you can use `:make` and the quickfix window to check for syntax
 errors.
 
 Set the `makeprg` to the following in your .vimrc:
@@ -196,7 +167,6 @@ autocmd filetype html setlocal formatprg=superhtml\ fmt\ --stdin
 ```
 
 #### Zed
-
 See [WeetHet/superhtml-zed](https://github.com/WeetHet/superhtml-zed).
 
 #### Other editors
@@ -208,7 +178,7 @@ Follow your editor specific instructions on how to define a new Language Server 
 SuperHTML is also a HTML templating language. More on that soon.
 
 ## Contributing
-SuperHTML tracks the latest Zig release (0.15.0-dev at the moment of writing).
+SuperHTML tracks the latest Zig release (0.15.1 at the moment of writing).
 
 ### Contributing to the HTML parser & LSP
 Contributing to the HTML parser and LSP doesn't require you to be familiar with the templating language, basically limiting the scope of what you have to worry about to:
@@ -217,10 +187,15 @@ Contributing to the HTML parser and LSP doesn't require you to be familiar with 
 - `src/cli/`
 - `src/html/`
 
-In particular, you will care about `src/html/Tokenizer.zig` and `src/html/Ast.zig`.
+In particular, you will care about the source files under `src/html`.
 
-You can run `zig test src/html/Ast.zig` to run parser unit tests without needing to worry the rest of the project.
+You can invoke `zig build test` to run all unit tests.
 
-Running `zig build` will compile the Super CLI tool, allowing you to also then test the LSP behavior directly from your favorite editor.
+Running `zig build` will compile the SuperHTML CLI tool, allowing you to also then test the LSP behavior directly from your favorite editor.
 
-The LSP will log in your cache directory so you can `tail -f ~/.cache/super/super.log` to see what happens with the LSP.
+For testing within VSCode:
+1. Run `zig build wasm -p src/editors/vscode/wasm`
+2. Open `src/editors/vscode` in VSCode
+3. Start debugging.
+
+Debug builds will produce logs in your cache directory so you can `tail -f ~/.cache/superhtml.log`.

@@ -25,7 +25,7 @@ pub fn run(gpa: Allocator, args: []const []const u8) !noreturn {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            if (try fmt(gpa, stderr, null, in_bytes, lang, cmd.strict)) |fmt_src| {
+            if (try fmt(gpa, stderr, null, in_bytes, lang, cmd.syntax_only)) |fmt_src| {
                 try std.fs.File.stdout().writeAll(fmt_src);
             }
         },
@@ -41,7 +41,7 @@ pub fn run(gpa: Allocator, args: []const []const u8) !noreturn {
                     std.fs.cwd(),
                     path,
                     path,
-                    cmd.strict,
+                    cmd.syntax_only,
                 ) catch |err| switch (err) {
                     error.IsDir, error.AccessDenied => formatDir(
                         gpa,
@@ -50,7 +50,7 @@ pub fn run(gpa: Allocator, args: []const []const u8) !noreturn {
                         stderr,
                         cmd.check,
                         path,
-                        cmd.strict,
+                        cmd.syntax_only,
                     ) catch |dir_err| {
                         std.debug.print("error walking dir '{s}': {s}\n", .{
                             path,
@@ -81,7 +81,7 @@ fn formatDir(
     stderr: *Writer,
     check: bool,
     path: []const u8,
-    strict: bool,
+    syntax_only: bool,
 ) !void {
     var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer dir.close();
@@ -99,7 +99,7 @@ fn formatDir(
                 item.dir,
                 item.basename,
                 item.path,
-                strict,
+                syntax_only,
             ),
             else => {},
         }
@@ -114,7 +114,7 @@ fn formatFile(
     base_dir: std.fs.Dir,
     sub_path: []const u8,
     full_path: []const u8,
-    strict: bool,
+    syntax_only: bool,
 ) !void {
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
@@ -150,7 +150,7 @@ fn formatFile(
         return;
     };
 
-    if (try fmt(arena, stderr, full_path, in_bytes, language, strict)) |fmt_src| {
+    if (try fmt(arena, stderr, full_path, in_bytes, language, syntax_only)) |fmt_src| {
         if (std.mem.eql(u8, fmt_src, in_bytes)) return;
         if (check) {
             syntax_errors = true;
@@ -178,9 +178,9 @@ pub fn fmt(
     path: ?[]const u8,
     src: [:0]const u8,
     language: super.Language,
-    strict: bool,
+    syntax_only: bool,
 ) !?[]const u8 {
-    const html_ast = try super.html.Ast.init(arena, src, language, strict);
+    const html_ast = try super.html.Ast.init(arena, src, language, syntax_only);
     if (html_ast.errors.len > 0) {
         try html_ast.printErrors(src, path, stderr);
         if (html_ast.has_syntax_errors) {
@@ -207,7 +207,7 @@ fn oom() noreturn {
 const Command = struct {
     check: bool,
     mode: Mode,
-    strict: bool,
+    syntax_only: bool,
 
     const Mode = union(enum) {
         stdin: super.Language,
@@ -217,7 +217,7 @@ const Command = struct {
     fn parse(args: []const []const u8) Command {
         var check: bool = false;
         var mode: ?Mode = null;
-        var strict: ?bool = null;
+        var syntax_only: ?bool = null;
 
         var idx: usize = 0;
         while (idx < args.len) : (idx += 1) {
@@ -233,8 +233,8 @@ const Command = struct {
                 continue;
             }
 
-            if (std.mem.eql(u8, arg, "--no-strict-tags")) {
-                strict = false;
+            if (std.mem.eql(u8, arg, "--syntax-only")) {
+                syntax_only = true;
                 continue;
             }
 
@@ -289,18 +289,18 @@ const Command = struct {
         return .{
             .check = check,
             .mode = m,
-            .strict = strict orelse true,
+            .syntax_only = syntax_only orelse false,
         };
     }
 
     fn fatalHelp() noreturn {
         std.debug.print(
-            \\Usage: super fmt PATH [PATH...] [OPTIONS]
+            \\Usage: superhtml fmt PATH [PATH...] [OPTIONS]
             \\
             \\   Formats input paths inplace. If PATH is a directory, it will
             \\   be searched recursively for HTML and SuperHTML files.
             \\   HTML errors will be printed to stderr but will only cause a
-            \\   non-zero exit code if they prevent formatting (e.g. syntax
+            \\   non-zero exit code if they prevent formatting (i.e. syntax
             \\   errors).
             \\     
             \\   Detected extensions:     
@@ -309,19 +309,14 @@ const Command = struct {
             \\
             \\Options:
             \\
-            \\   --stdin            Format bytes from stdin and output to stdout.
-            \\                      Mutually exclusive with other input arguments.
-            \\
-            \\   --stdin-super      Same as --stdin but for SuperHTML files.
-            \\
-            \\   --check            List non-conforming files to stdout and exit 
-            \\                      with an error if the list is not empty.
-            \\                      Does not modify files on disk.
-            \\
-            \\  --no-strict-tags    Disable strict checking of tag names in HTML
-            \\                      and SuperHTML files. 
-            \\
-            \\   --help, -h         Prints this help and exits.
+            \\   --stdin          Format bytes from stdin and output to stdout.
+            \\                    Mutually exclusive with other input arguments.
+            \\   --stdin-super    Same as --stdin but for SuperHTML files.
+            \\   --check          List non-conforming files to stdout and exit 
+            \\                    with an error if the list is not empty.
+            \\                    Does not modify files on disk.
+            \\   --syntax-only    Disable HTML element and attribute validation.
+            \\   --help, -h       Prints this help and exits.
             \\
         , .{});
 

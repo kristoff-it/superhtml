@@ -9,12 +9,13 @@ const super = @import("superhtml");
 const Document = @import("lsp/Document.zig");
 const logic = @import("lsp/logic.zig");
 
-const log = std.log.scoped(.super_lsp);
+const log = std.log.scoped(.superhtml_lsp);
 
 pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
-    _ = args;
+    log.debug("SuperHTML Langauge Server Started!", .{});
+    for (args) |arg| log.debug("arg: {s}", .{arg});
 
-    log.debug("SuperHTML LSP started!", .{});
+    const cmd = Command.parse(args);
 
     var buf: [4096]u8 = undefined;
     var stdio: lsp.Transport.Stdio = .init(
@@ -26,7 +27,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
     var handler: Handler = .{
         .gpa = gpa,
         .transport = &stdio.transport,
-        .strict = true,
+        .syntax_only = cmd.syntax_only,
     };
     defer handler.deinit();
 
@@ -46,7 +47,7 @@ gpa: std.mem.Allocator,
 transport: *lsp.Transport,
 files: std.StringHashMapUnmanaged(Document) = .{},
 offset_encoding: offsets.Encoding = .@"utf-16",
-strict: bool,
+syntax_only: bool,
 
 fn deinit(self: *Handler) void {
     var file_it = self.files.valueIterator();
@@ -276,7 +277,7 @@ pub fn @"textDocument/codeAction"(
         self.offset_encoding,
     );
 
-    if (!self.strict) return null;
+    if (self.syntax_only) return null;
 
     for (doc.html.errors) |err| {
         if (err.tag != .invalid_html_tag_name) continue;
@@ -674,4 +675,28 @@ pub fn tagRanges(
         .end = close.end - 1,
     }, doc.src);
     return ranges;
+}
+
+const Command = struct {
+    syntax_only: bool = false,
+
+    fn parse(args: []const []const u8) Command {
+        if (args.len == 0) return .{};
+        if (args.len > 1) fatalHelp();
+        if (std.mem.eql(u8, args[0], "--syntax-only")) {
+            return .{ .syntax_only = true };
+        } else fatalHelp();
+    }
+};
+
+fn fatalHelp() noreturn {
+    const msg =
+        \\Usage: superhtml lsp [--syntax-only]
+        \\
+        \\The --syntax-only flag disables HTML element and attribute validation. 
+    ;
+
+    std.debug.print(msg, .{});
+    log.err(msg, .{});
+    std.process.exit(1);
 }

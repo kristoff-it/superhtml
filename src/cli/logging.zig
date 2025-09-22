@@ -22,11 +22,11 @@ pub fn logFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    // switch (scope) {
-    //     .root, .super_lsp, .@"html/ast" => {},
-    //     else => return,
-    // }
-    inline for (build_options.enabled_scopes) |es| {
+    // if (builtin.mode == .Debug) switch (scope) {
+    if (true) switch (scope) {
+        .root, .element, .super_lsp, .@"html/ast" => {},
+        else => return,
+    } else inline for (build_options.enabled_scopes) |es| {
         if (comptime std.mem.eql(u8, es, @tagName(scope))) {
             break;
         }

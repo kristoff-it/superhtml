@@ -1,36 +1,18 @@
 # SuperHTML VSCode LSP
-Language Server for HTML and SuperHTML Templates.
+Language Server for HTML.
 
-![](../../.github/vscode-autoformat.gif)
-
-
-# NOTE: This extension bundles the full language server
-
-But you can optionally also get the CLI tool so that you can access it outside of VSCode.
-For prebuilt binaries and more info: https://github.com/kristoff-it/superhtml
+# IMPORTANT: disable the builtin VSCode HTML extension!
+Due to a bug in VSCode's builtin HTML extension, SuperHTML cannot disable wrong
+end tag suggestions from VSCode automatically.
+You can still disable them manually by following [these instructions](https://github.com/kristoff-it/superhtml/issues/107).
 
 
 ## Diagnostics
+SuperHTML validates not only syntax but also element nesting and attribute values.
+No other language server implements the full HTML spec in its validation code.
 
 ![](../../.github/vscode.png)
 
-This language server is stricter than the HTML spec whenever it would prevent potential human errors from being reported.
-
-
-As an example, HTML allows for closing some tags implicitly. For example the following snipped is correct HTML.
-
-```html
-<ul>
-  <li> One
-  <li> Two
-</ul>
-```
-
-This will still be reported as an error by SuperHTML because otherwise the following snippet would have to be considered correct (while it's much probably a typo):
-
-```html
-<h1>Title<h1>
-```
 
 ## Autoformatting
 
@@ -39,6 +21,7 @@ The autoformatter has two main ways of interacting with it in order to request f
 1. Adding / removing whitespace between the **start tag** of an element and its content.
 2. Adding / removing whitespace between the **last attribute** of a start tag and the closing  `>`.
 
+Note that the autoformatter will never accept any configuration option. You are encouraged to add a `superhtml fmt --check` step to your CI to guarantee that you only commit normalized HTML files.
 
 ### Example of rule #1
 Before:
@@ -69,16 +52,16 @@ After:
 ### Example of rule #2
 Before:
 ```html
-<div foo="bar" style="verylongstring" >
+<div foo="bar" style="verylongstring" hidden>
     Foo
 </div>
 ```
 
 After:
 ```html
-<div 
-   foo="bar" 
-   style="verylongstring" 
+<div foo="bar" 
+     style="verylongstring" 
+     hidden
 >
     Foo
 </div>
@@ -88,17 +71,22 @@ After:
 
 Before:
 ```html
-<div 
-   foo="bar" 
-   style="verylongstring">
+<div foo="bar" 
+     style="verylongstring"
+     hidden>
     Foo
 </div>
 ```
 
 After:
 ```html
-<div foo="bar" style="verylongstring">
+<div foo="bar" style="verylongstring" hidden>
     Foo
 </div>
 ```
+
+## This extension bundles the full language server
+
+But you can optionally also get the CLI tool so that you can access it outside of VSCode.
+For prebuilt binaries and more info: https://github.com/kristoff-it/superhtml
 

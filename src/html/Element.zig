@@ -281,13 +281,17 @@ pub inline fn modelRejects(
             if (!element.model.content.overlaps(descendant_rt_model.categories)) {
                 return .{
                     .reason = "",
-                    .span = ancestor.startTagIterator(src, .html).name_span,
+                    .span = ancestor.span(src),
                 };
             }
         }
 
-        log.debug("REACHED UNREACHABLE in modeleRejects", .{});
-        unreachable;
+        // if we reach here it means that we have transparent elements at the
+        // top level of our tree.
+        return .{
+            .reason = "",
+            .span = parent_span,
+        };
     }
 
     if (parent_element.meta.content_reject.overlaps(descendant_rt_model.categories)) {
@@ -733,7 +737,10 @@ pub const all_completions = blk: {
     for (ac.values[8..], fields, all.values[8..]) |*completion, f, elem| {
         completion.* = .{
             .label = f.name,
-            .value = f.name ++ "$1>$0</" ++ f.name ++ ">",
+            .value = if (@field(Ast.Kind, f.name).isVoid())
+                f.name ++ "$1>"
+            else
+                f.name ++ "$1>$0</" ++ f.name ++ ">",
             .desc = elem.desc,
             .kind = .element_open,
         };
@@ -741,39 +748,33 @@ pub const all_completions = blk: {
     break :blk ac;
 };
 
-const temp: Element = .{
-    .tag = .div,
-    .model = .{
-        .categories = .{
-            .flow = true,
-            .phrasing = true,
-        },
-        .content = .all,
-    },
-    .meta = .{
-        .categories_superset = .{
-            .flow = true,
-            .phrasing = true,
-        },
-        .content_reject = .none,
-        .extra_reject = .none,
-    },
-    .attributes = .static,
-    .content = .{
-        .simple = .{},
-    },
-    .desc = "#temporary element description#",
-};
-
 pub const all: std.EnumArray(Ast.Kind, Element) = .init(.{
     .root = @import("elements/root.zig").root,
-    .doctype = undefined,
-    .comment = undefined,
-    .text = temp,
-    .extend = @import("elements/extend.zig").extend, // done
-    .super = temp,
-    .ctx = temp,
-    .___ = temp,
+    .doctype = @import("elements/doctype.zig").doctype,
+    .comment = @import("elements/comment.zig").comment,
+    .text = @import("elements/text.zig").text,
+    .extend = @import("elements/extend.zig").extend,
+    .super = @import("elements/super.zig").super,
+    .ctx = @import("elements/ctx.zig").ctx,
+    .___ = .{
+        .tag = .___,
+        .model = .{
+            .categories = .{
+                .flow = true,
+                .phrasing = true,
+            },
+            .content = .all,
+        },
+        .meta = .{
+            .categories_superset = .{
+                .flow = true,
+                .phrasing = true,
+            },
+        },
+        .attributes = .static,
+        .content = .model,
+        .desc = "Unknown element.",
+    },
     .a = @import("elements/a.zig").a, // done
     .abbr = @import("elements/abbr.zig").abbr, // done
     .address = @import("elements/address.zig").address, // done

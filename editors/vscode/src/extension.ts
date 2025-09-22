@@ -3,7 +3,7 @@ import {
     startServer
 } from '@vscode/wasm-wasi-lsp';
 import { ProcessOptions, Stdio, Wasm } from '@vscode/wasm-wasi/v1';
-import { ConfigurationTarget, ExtensionContext, Uri, window, workspace } from 'vscode';
+import { ConfigurationTarget, ExtensionContext, Uri, window, workspace, env } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
@@ -12,8 +12,55 @@ import {
 
 let client: LanguageClient;
 export async function activate(context: ExtensionContext) {
-    await workspace.getConfiguration()
-        .update('html.suggest.html5', false, ConfigurationTarget.Global);
+    const config = workspace.getConfiguration('superhtml');
+
+    let builtin_extension_is_enabled = true;
+    try {
+        const settings = [
+            'html.suggest.html5',
+            'html.autoClosingTags',
+            'html.hover.documentation',
+            'html.hover.references'
+        ];
+
+        const cfg = workspace.getConfiguration();
+        for (const s of settings) {
+            await cfg.update(s, false, ConfigurationTarget.Global);
+        }
+    } catch {
+        // the builtin extension is disabled, we're happy
+        builtin_extension_is_enabled = false;
+    }
+
+    if (builtin_extension_is_enabled) {
+        const ensure_html_disabled = config.get<boolean>("EnsureBuiltinHTMLExtensionIsDisabled", true);
+        if (ensure_html_disabled) {
+            const see_how = "See How";
+            const never = "Don't Show This Again";
+            const dismiss = "Dismiss";
+
+            window.showWarningMessage(
+                "To prevent wrong end tag suggestions, disable the VSCode builtin HTML extension.",
+                see_how, never, dismiss,
+            ).then(async (choice) => {
+                if (choice == see_how) {
+                    const uri = Uri.parse("https://github.com/kristoff-it/superhtml/issues/107");
+                    await env.openExternal(uri);
+                } else if (choice == never) {
+                    await config.update("EnsureBuiltinHTMLExtensionIsDisabled", false, ConfigurationTarget.Global);
+                    await window.showInformationMessage(
+                        "You won't be asked to disable the VSCode HTML extension again."
+                    );
+                }
+            });
+        }
+    }
+
+    let args = [];
+    const syntax_only = config.get<boolean>("SyntaxOnlyMode", false);
+    if (syntax_only) {
+        args.push('--syntax-only');
+    }
 
     const wasm: Wasm = await Wasm.load();
 
@@ -23,6 +70,7 @@ export async function activate(context: ExtensionContext) {
         const options: ProcessOptions = {
             stdio: createStdioOptions(),
             // mountPoints: [{ kind: 'workspaceFolder' }]
+            args: args,
         };
 
         // Load the WebAssembly code

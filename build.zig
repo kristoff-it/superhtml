@@ -109,7 +109,7 @@ fn setupCheckStep(
     const super_cli_check = b.addExecutable(.{
         .name = "superhtml",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/cli.zig"),
+            .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -155,7 +155,7 @@ fn setupCliTool(
     const super_cli = b.addExecutable(.{
         .name = "superhtml",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/cli.zig"),
+            .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
             .single_threaded = true,
@@ -257,7 +257,7 @@ fn setupReleaseStep(
         const super_exe_release = b.addExecutable(.{
             .name = "superhtml",
             .root_module = b.createModule(.{
-                .root_source_file = b.path("src/cli.zig"),
+                .root_source_file = b.path("src/main.zig"),
                 .target = release_target,
                 .optimize = .ReleaseFast,
             }),
