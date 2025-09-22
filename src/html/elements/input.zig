@@ -10,6 +10,7 @@ const Element = @import("../Element.zig");
 const Model = Element.Model;
 const Attribute = @import("../Attribute.zig");
 const AttributeSet = Attribute.AttributeSet;
+const datetime = @import("../datetime.zig");
 
 pub const input: Element = .{
     .tag = .input,
@@ -643,8 +644,8 @@ fn validate(
             attributes.comptimeIndex("min"),
             attributes.comptimeIndex("max"),
             => switch (type_value) {
-                .date => .date,
-                .month => .month,
+                .date => .{ .custom = datetime.Date.validate },
+                .month => .{ .custom = datetime.Month.validate },
                 .week => .any,
                 .time => .any,
                 .@"datetime-local" => .any,
