@@ -1132,7 +1132,11 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                 const txt = current.open.slice(src);
                 const parent_kind = ast.nodes[current.parent_idx].kind;
                 switch (parent_kind) {
-                    else => {
+                    else => blk: {
+                        if (pre > 0) {
+                            try w.writeAll(txt);
+                            break :blk;
+                        }
                         var it = std.mem.splitScalar(u8, txt, '\n');
                         var first = true;
                         var empty_line = false;
@@ -2067,6 +2071,28 @@ test "respect empty lines" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "pre formatting" {
+    const case = comptime std.fmt.comptimePrint(
+        \\<!DOCTYPE html>
+        \\<html>
+        \\{0c}<head>
+        \\{0c}{0c}<title>Test</title>
+        \\{0c}</head>
+        \\{0c}<body>
+        \\{0c}{0c}<pre>Line 1
+        \\Line 2
+        \\Line 3
+        \\</pre>
+        \\{0c}</body>
+        \\</html>
+        \\
+    , .{'\t'});
+
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expectFmt(case, "{f}", .{ast.formatter(case)});
 }
 
 pub const Cursor = struct {
