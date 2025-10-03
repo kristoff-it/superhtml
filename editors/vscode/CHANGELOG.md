@@ -2,6 +2,12 @@
 
 All notable changes to the "super" extension will be documented in this file.
 
+## [v0.6.1]
+Fixes two bugs:
+
+- `fmt` now properly leaves `<pre>` tags untouched, this regressed in the recent changes to formatting code, sorry!
+- `--syntax-only` (and relative switch in VSCode) now silences also "invalid element name" errors, making it viable to use superhtml with some kinds of templated html
+
 ## [v0.6.0]
 - All major Language Server features implemented: completions, clear diagnostics, descriptions, etc.
 - New diagnostics cover element nesting errors and attribute validation, including complex interactions between different attributes and elements.
