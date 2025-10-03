@@ -1,11 +1,11 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-
-    const version = getVersion(b);
     const enable_tracy = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
+    const version = b.option([]const u8, "version", "Override the version of SuperHTML") orelse zon.version;
 
     const tracy = b.dependency("tracy", .{ .enable = enable_tracy });
     const scripty = b.dependency("scripty", .{
@@ -59,8 +59,7 @@ pub fn build(b: *std.Build) !void {
     const scopes = b.option([]const []const u8, "scope", "Enable this scope (all scopes are enabled when none is specified through this option), can be used multiple times") orelse &[0][]const u8{};
     options.addOption(bool, "verbose_logging", verbose_logging);
     options.addOption([]const []const u8, "enabled_scopes", scopes);
-    options.addOption([]const u8, "version", version.string());
-    options.addOption(Version.Kind, "version_kind", version);
+    options.addOption([]const u8, "version", version);
 
     const folders = b.dependency("known_folders", .{});
     const lsp = b.dependency("lsp_kit", .{});
@@ -72,9 +71,9 @@ pub fn build(b: *std.Build) !void {
     setupFetchLanguageSubtagRegistryStep(b, target);
 
     const release = b.step("release", "Create release builds of Zine");
-    if (version == .tag) {
-        const zon = @import("build.zig.zon");
-        if (std.mem.eql(u8, zon.version, version.tag[1..])) {
+    const git_version = getGitVersion(b);
+    if (git_version == .tag) {
+        if (std.mem.eql(u8, version, git_version.tag[1..])) {
             setupReleaseStep(
                 b,
                 options,
@@ -86,7 +85,7 @@ pub fn build(b: *std.Build) !void {
         } else {
             release.dependOn(&b.addFail(b.fmt(
                 "error: git tag does not match zon package version (zon: '{s}', git: '{s}')",
-                .{ zon.version, version.tag[1..] },
+                .{ version, git_version.tag[1..] },
             )).step);
         }
     } else {
@@ -386,7 +385,7 @@ const Version = union(Kind) {
         };
     }
 };
-fn getVersion(b: *std.Build) Version {
+fn getGitVersion(b: *std.Build) Version {
     const git_path = b.findProgram(&.{"git"}, &.{}) catch return .unknown;
     var out: u8 = undefined;
     const git_describe = std.mem.trim(

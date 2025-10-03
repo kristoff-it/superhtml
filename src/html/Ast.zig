@@ -1,5 +1,6 @@
 const Ast = @This();
 
+const builtin = @import("builtin");
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
@@ -2160,7 +2161,9 @@ test "fuzz" {
                 return err;
             };
 
-            std.debug.print("--begin--\n{s}\n\n", .{out.written()});
+            if (builtin.fuzz) {
+                std.debug.print("--begin--\n{s}\n\n", .{out.written()});
+            }
 
             const ast: Ast = try .init(gpa, out.written(), .html, false);
 
