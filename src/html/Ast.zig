@@ -627,7 +627,7 @@ pub fn init(
                                         .model = model,
                                         .self_closing = self_closing,
                                     };
-                                } else if (std.mem.indexOfScalar(u8, name, '-') == null) {
+                                } else if (std.mem.indexOfScalar(u8, name, '-') == null and !syntax_only) {
                                     try errors.append(gpa, .{
                                         .tag = .invalid_html_tag_name,
                                         .main_location = tag.name,
