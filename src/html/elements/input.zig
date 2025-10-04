@@ -10,6 +10,7 @@ const Element = @import("../Element.zig");
 const Model = Element.Model;
 const Attribute = @import("../Attribute.zig");
 const AttributeSet = Attribute.AttributeSet;
+const datetime = @import("../datetime.zig");
 
 pub const input: Element = .{
     .tag = .input,
@@ -208,14 +209,14 @@ pub const attributes: AttributeSet = .init(&.{
     .{
         .name = "min",
         .model = .{
-            .rule = .any, // TODO: .manual
+            .rule = .manual,
             .desc = "Minimum value",
         },
     },
     .{
         .name = "max",
         .model = .{
-            .rule = .any, // TODO: .manual
+            .rule = .manual,
             .desc = "Maximum value",
         },
     },
@@ -639,12 +640,22 @@ fn validate(
             continue;
         }
 
-        // if (idx == attributes.comptimeIndex("min") or
-        //     idx == attributes.comptimeIndex("max") or
-        //     idx == attributes.comptimeIndex("step")) continue;
-
-        const model = attributes.list[idx].model;
-        try model.rule.validate(gpa, errors, src, node_idx, attr);
+        const rule: Attribute.Rule = switch (idx) {
+            attributes.comptimeIndex("min"),
+            attributes.comptimeIndex("max"),
+            => switch (type_value) {
+                .date => .{ .custom = datetime.Date.validate },
+                .month => .{ .custom = datetime.Month.validate },
+                .week => .any,
+                .time => .any,
+                .@"datetime-local" => .any,
+                .number => .float,
+                .range => .any,
+                else => unreachable,
+            },
+            else => attributes.list[idx].model.rule,
+        };
+        try rule.validate(gpa, errors, src, node_idx, attr);
     }
 
     switch (type_value) {
