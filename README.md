@@ -69,7 +69,7 @@ After:
 ### Example of rule #2
 Before:
 ```html
-<div foo="bar" style="verylongstring" hidden>
+<div foo="bar" style="verylongstring" hidden >
     Foo
 </div>
 ```
