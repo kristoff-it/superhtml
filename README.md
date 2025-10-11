@@ -185,7 +185,7 @@ In particular, given this HTML code:
 <html> 
   <head></head>
   <body>
-  <div/>
+    <div/>
     <p></p>
   </body>
 </html>
