@@ -215,7 +215,48 @@ As far as I'm concerned, there is no good reason to forbid `<style>` in body, bu
 
 Related upstream issue: https://github.com/whatwg/html/issues/1605
 
- 
+### Why does SuperHTML consider unclosed `<li>` elements an error?
+
+According to the HTML spec it's legal to leave some tags unclosed.
+One common example is `<li>`, which enables this usage pattern:
+
+```html
+<ul>
+  <li> First point
+	<li> Second point
+</ul>	
+```
+
+The reason why this is not ambiguous is that `<li>`cannot be nested inside
+another `<li>` so whe the second sibling is encountered, it's possible to always
+correctly implicitly close the first `<li>`.
+
+SuperHTML breaks compatibility with the HTML spec in this regard for one main reason:
+while implicitly closed tags are unambiguous in *valid* HTML documents, it creates a
+problematic gray area when it comes to typos.
+
+Consider the following snippet:
+
+```html
+<li>first point<li>
+```
+
+If SuperHTML were to follow the HTML spec it would have to consider this valid
+HTML that represents two bullet points, the second of which contains no content.
+
+Unfortunately it's also very likely (acutally even more so) that the user just
+forgot the closing slash in the second tag.
+
+For this reason SuperHTML does not allow closing tags implicitly even if the
+HTML spec allows it.
+
+If you want to write HTML code that leverages this feature, do not use SuperHTML
+as there are no plans to ever support it.
+
+#### But what about Google AMP?
+Why are you letting an ad company decide what the world wide web should look like.
+Do you want ads? Because that's how you get ads.
+
 ## Templating Language Library
 SuperHTML is also a HTML templating language. More on that soon.
 
