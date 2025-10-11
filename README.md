@@ -1,8 +1,7 @@
 # SuperHTML
-HTML Language Server and Templating Language Library
+HTML Linter, Formatter, LSP, and Templating Language Library
 
-
-## HTML Language Server
+## SuperHTML CLI Tool
 The SuperHTML CLI Tool offers **validation** and **autoformatting** features for HTML files.
 
 The tool can be used either directly (for example by running it on save), or through a LSP client implementation.
@@ -174,6 +173,39 @@ Follow your editor specific instructions on how to define a new Language Server 
 
 *(Also feel free to contribute more specific instructions to this readme / add files under the `editors/` subdirectory).*
 
+
+## FAQs
+### Why doesn't SuperHTML support self-closing tags?
+Because self-closing tags don't exist in HTML and, while harmless when used with void elements, it just keeps misleating people into thinking that you can self-close HTML tags.
+
+In particular, given this HTML code:
+
+```html
+<!doctype html>
+<html> 
+  <head></head>
+	<body>
+    <div/>
+		<p></p>
+	</body>
+</html>
+```
+
+You might think that `<div>` and `<p>` are siblings, while in reality browsers are required **by the spec** to ignore the self-closing slash in `<div/>`, making `<p>` a child, not a sibling of it.
+
+Add to that the fact that tooling like the default HTML formatter in VSCode will provide misleading autoformatting (try it yourself, disable SuperHTML in VSCode and autoformat the snippet above), to this day people are way more confused about HTML than they need to be.
+
+Related: [#100](https://github.com/kristoff-it/superhtml/pull/100).
+
+### Why doesn't SuperHTML report duplicate values in `[class]` as an error?
+The HTML spec defines the global `class` attribute as a space-separated list of tokens, as opposed to a space-separated list of *unique* tokens, like some other attributes are (e.g. `accesskey`).
+
+### Why is `<style>` under `<body>` an error? It works in all browsers!
+As far as I'm concerned, there is no good reason to forbid `<style>` in body, but that's what the HTML spec does.
+
+Related upstream issue: https://github.com/whatwg/html/issues/1605
+
+ 
 ## Templating Language Library
 SuperHTML is also a HTML templating language. More on that soon.
 
