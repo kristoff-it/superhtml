@@ -26,7 +26,9 @@ General Options:
 >SuperHTML only supports HTML5 (the WHATWG living spec) regardless of what you put in your doctype (a warning will be generated for unsupported doctypes).
 
 >[!WARNING]
->Templated HTML (Jinja2, Angular, Mustache, ...) is not yet supported when all validation rules are enabled, use `--syntax-only` (or the relative Extension Setting in VSCode) to limit validation to syntax errors. Compatibility with populas templating languages is being explored. 
+>Templated HTML (Jinja2, Angular, Mustache, ...) is not yet supported when all validation rules are enabled, use `--syntax-only` (or the relative Extension Setting in VSCode) to limit validation to syntax errors to use SuperHTML with templated HTML documents.
+>
+> Compatibility with popular templating languages is being explored. 
 
 
 ### Diagnostics
@@ -41,6 +43,10 @@ The autoformatter has two main ways of interacting with it in order to request f
 
 1. Adding / removing whitespace between the **start tag** of an element and its content.
 2. Adding / removing whitespace between the **last attribute** of a start tag and the closing  `>`.
+
+
+>[!TIP]
+>Consider using `superhtml fmt --check` in your CI to enforce every change to be performed on normalized HTML files. This is a technique commonly used in Zig (and Go) for source code that can also help streamline frontend development.
 
 
 #### Example of rule #1
