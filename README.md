@@ -25,6 +25,10 @@ General Options:
 >[!WARNING]
 >SuperHTML only supports HTML5 (the WHATWG living spec) regardless of what you put in your doctype (a warning will be generated for unsupported doctypes).
 
+>[!WARNING]
+>Templated HTML (Jinja2, Angular, Mustache, ...) is not yet supported when all validation rules are enabled, use `--syntax-only` (or the relative Extension Setting in VSCode) to limit validation to syntax errors. Compatibility with populas templating languages is being explored. 
+
+
 ### Diagnostics
 SuperHTML validates not only syntax but also element nesting and attribute values.
 No other language server implements the full HTML spec in its validation code.
