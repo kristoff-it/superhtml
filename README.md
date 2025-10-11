@@ -223,7 +223,7 @@ One common example is `<li>`, which enables this usage pattern:
 ```html
 <ul>
   <li> First point
-	<li> Second point
+  <li> Second point
 </ul>	
 ```
 
