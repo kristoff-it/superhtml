@@ -1,5 +1,5 @@
 # SuperHTML
-HTML Linter, Formatter, LSP, and Templating Language Library
+HTML Validator, Formatter, LSP, and Templating Language Library
 
 ## SuperHTML CLI Tool
 The SuperHTML CLI Tool offers **validation** and **autoformatting** features for HTML files.
