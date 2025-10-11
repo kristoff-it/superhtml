@@ -184,10 +184,10 @@ In particular, given this HTML code:
 <!doctype html>
 <html> 
   <head></head>
-	<body>
-    <div/>
-		<p></p>
-	</body>
+  <body>
+  <div/>
+    <p></p>
+  </body>
 </html>
 ```
 
