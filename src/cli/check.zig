@@ -14,7 +14,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkHtml(gpa, null, in_bytes, cmd.syntax_only);
+            try checkHtml(gpa, null, in_bytes, cmd.syntax_only, true);
         },
         .stdin_super => {
             var fr = std.fs.File.stdin().reader(&.{});
@@ -22,7 +22,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkSuper(gpa, null, in_bytes, cmd.syntax_only);
+            try checkSuper(gpa, null, in_bytes, cmd.syntax_only, true);
         },
         .paths => |paths| {
             // checkFile will reset the arena at the end of each call
@@ -143,12 +143,14 @@ fn checkFile(
             full_path,
             in_bytes,
             syntax_only,
+            false,
         ),
         .super => try checkSuper(
             arena,
             full_path,
             in_bytes,
             syntax_only,
+            false,
         ),
     }
 }
@@ -158,10 +160,19 @@ pub fn checkHtml(
     path: ?[]const u8,
     code: [:0]const u8,
     syntax_only: bool,
+    use_stdout: bool,
 ) !void {
     const ast = try super.html.Ast.init(arena, code, .html, syntax_only);
     if (ast.errors.len > 0) {
-        var stderr = std.fs.File.stderr().writer(&.{});
+
+		var stderr: std.fs.File.Writer = undefined;
+
+        if (use_stdout) {
+           stderr = std.fs.File.stdout().writer(&.{});
+        } else {
+           stderr = std.fs.File.stderr().writer(&.{});
+        }
+
         try ast.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }
@@ -172,17 +183,34 @@ fn checkSuper(
     path: ?[]const u8,
     code: [:0]const u8,
     syntax_only: bool,
+    use_stdout: bool,
 ) !void {
     const html = try super.html.Ast.init(arena, code, .superhtml, syntax_only);
     if (html.errors.len > 0) {
-        var stderr = std.fs.File.stderr().writer(&.{});
+
+        var stderr: std.fs.File.Writer = undefined;
+
+        if (use_stdout) {
+           stderr = std.fs.File.stdout().writer(&.{});
+        } else {
+           stderr = std.fs.File.stderr().writer(&.{});
+        }
+
         try html.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }
 
     const s = try super.Ast.init(arena, html, code);
     if (s.errors.len > 0) {
-        var stderr = std.fs.File.stderr().writer(&.{});
+
+        var stderr: std.fs.File.Writer = undefined;
+
+        if (use_stdout) {
+           stderr = std.fs.File.stdout().writer(&.{});
+        } else {
+           stderr = std.fs.File.stderr().writer(&.{});
+        }
+
         try s.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }
