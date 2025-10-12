@@ -264,6 +264,7 @@ pub const Rule = union(enum) {
             .lang => {
                 const value = attr.value orelse return;
                 const value_slice = value.span.slice(src);
+                if (value_slice.len == 0) return;
                 if (language_tag.validate(value_slice)) |rejection| return errors.append(gpa, .{
                     .tag = .{
                         .invalid_attr_value = .{ .reason = rejection.reason },
