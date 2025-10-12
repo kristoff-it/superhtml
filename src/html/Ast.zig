@@ -601,39 +601,40 @@ pub fn init(
                                             .after => nodes.items[current_idx].parent_idx,
                                         };
 
-                                    const e = elements.get(kind);
-                                    const model = if (syntax_only or language != .html)
-                                        undefined
-                                    else
-                                        try e.validateAttrs(
-                                            gpa,
-                                            language,
-                                            &errors,
-                                            &seen_attrs,
-                                            &seen_ids_stack.items[seen_ids_stack.items.len - 1],
-                                            nodes.items,
-                                            parent_idx,
-                                            src,
-                                            tag.span,
-                                            @intCast(nodes.items.len),
-                                        );
+                                        const e = elements.get(kind);
+                                        const model = if (syntax_only or language != .html)
+                                            undefined
+                                        else
+                                            try e.validateAttrs(
+                                                gpa,
+                                                language,
+                                                &errors,
+                                                &seen_attrs,
+                                                &seen_ids_stack.items[seen_ids_stack.items.len - 1],
+                                                nodes.items,
+                                                parent_idx,
+                                                src,
+                                                tag.span,
+                                                @intCast(nodes.items.len),
+                                            );
 
-                                    if (kind == .template) {
-                                        try seen_ids_stack.append(gpa, .empty);
+                                        if (kind == .template) {
+                                            try seen_ids_stack.append(gpa, .empty);
+                                        }
+
+                                        break :node .{
+                                            .open = tag.span,
+                                            .kind = kind,
+                                            .model = model,
+                                            .self_closing = self_closing,
+                                        };
+                                    } else if (std.mem.indexOfScalar(u8, name, '-') == null and !syntax_only) {
+                                        try errors.append(gpa, .{
+                                            .tag = .invalid_html_tag_name,
+                                            .main_location = tag.name,
+                                            .node_idx = @intCast(nodes.items.len),
+                                        });
                                     }
-
-                                    break :node .{
-                                        .open = tag.span,
-                                        .kind = kind,
-                                        .model = model,
-                                        .self_closing = self_closing,
-                                    };
-                                } else if (std.mem.indexOfScalar(u8, name, '-') == null and !syntax_only) {
-                                    try errors.append(gpa, .{
-                                        .tag = .invalid_html_tag_name,
-                                        .main_location = tag.name,
-                                        .node_idx = @intCast(nodes.items.len),
-                                    });
                                 }
 
                                 break :node .{
@@ -752,7 +753,11 @@ pub fn init(
                     }
 
                     const name = tag.name.slice(src);
-                    const end_kind = switch (language) {
+                    const end_kind = if (svg_lvl == 1 and std.ascii.eqlIgnoreCase(name, "svg"))
+                        .svg
+                    else if (math_lvl == 1 and std.ascii.eqlIgnoreCase(name, "math"))
+                        .math
+                    else if (svg_lvl != 0 or math_lvl != 0) .___ else switch (language) {
                         .superhtml => if (std.ascii.eqlIgnoreCase("ctx", name))
                             .ctx
                         else if (std.ascii.eqlIgnoreCase("super", name))
