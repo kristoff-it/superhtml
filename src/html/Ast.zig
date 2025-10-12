@@ -445,7 +445,7 @@ fn printSourceLine(src: []const u8, span: Span, w: *Writer) !void {
     const line = src[line_start + spaces_left .. last_non_space + 1];
     try w.print("   {s}\n", .{line});
     try w.splatByteAll(' ', span.start - (line_start + spaces_left) + 3);
-    try w.splatByteAll('^', span.end - span.start);
+    try w.splatByteAll('^', @max(1, span.end - span.start));
     try w.print("\n", .{});
 }
 
@@ -594,11 +594,12 @@ pub fn init(
                                 };
                             },
                             .html => {
-                                if (kinds.get(name)) |kind| {
-                                    const parent_idx = switch (current.direction()) {
-                                        .in => current_idx,
-                                        .after => nodes.items[current_idx].parent_idx,
-                                    };
+                                if (svg_lvl == 0 and math_lvl == 0) {
+                                    if (kinds.get(name)) |kind| {
+                                        const parent_idx = switch (current.direction()) {
+                                            .in => current_idx,
+                                            .after => nodes.items[current_idx].parent_idx,
+                                        };
 
                                     const e = elements.get(kind);
                                     const model = if (syntax_only or language != .html)
