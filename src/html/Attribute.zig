@@ -251,10 +251,10 @@ pub const Rule = union(enum) {
             .manual => unreachable,
             .any => {},
             .bool => {
-                if (attr.value) |value| {
+                if (attr.value != null) {
                     try errors.append(gpa, .{
                         .tag = .boolean_attr,
-                        .main_location = value.span,
+                        .main_location = attr.name,
                         .node_idx = node_idx,
                     });
                 }
