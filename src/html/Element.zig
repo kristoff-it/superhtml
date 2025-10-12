@@ -362,6 +362,7 @@ pub inline fn validateContent(
                     else => {},
                     .doctype => continue,
                     .comment => continue,
+                    .___ => continue,
                     .text => {
                         if (!parent.model.content.flow and
                             !parent.model.content.phrasing and
