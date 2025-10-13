@@ -84,6 +84,10 @@ pub const Rule = union(enum) {
         max: usize = std.math.maxInt(usize),
     },
 
+    /// Floating-point number
+    /// See: https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#valid-floating-point-number
+    float,
+
     /// E.g. "#foo"
     hash_name_ref,
 
@@ -396,6 +400,68 @@ pub const Rule = union(enum) {
                     .main_location = value.span,
                     .node_idx = node_idx,
                 });
+            },
+            .float => {
+                const value = attr.value orelse return errors.append(gpa, .{
+                    .tag = .missing_attr_value,
+                    .main_location = attr.name,
+                    .node_idx = node_idx,
+                });
+
+                const value_slice = value.span.slice(src);
+                const digits = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
+                var idx: usize = 0;
+
+                if (digits.len == 0) return errors.append(gpa, .{
+                    .tag = .missing_attr_value,
+                    .main_location = attr.name,
+                    .node_idx = node_idx,
+                });
+                const float_error: Ast.Error = .{
+                    .tag = .{ .invalid_attr_value = .{ .reason = "invalid float" } },
+                    .main_location = value.span,
+                    .node_idx = node_idx,
+                };
+
+                // A string is a valid floating-point number if it consists of:
+                // 1. Optionally, a U+002D HYPHEN-MINUS character (-).
+                if (digits[idx] == '-') idx += 1;
+                if (idx == digits.len) return errors.append(gpa, float_error);
+                // 2. One or both of the following, in the given order:
+                // 2.1. A series of one or more ASCII digits.
+                const has_integer = std.ascii.isDigit(digits[idx]);
+                for (digits[idx..]) |char| {
+                    if (!std.ascii.isDigit(char)) break;
+                    idx += 1;
+                } else return if (has_integer) {} else errors.append(gpa, float_error);
+                // 2.2. Both of the following, in the given order:
+                // 2.2.1. A single U+002E FULL STOP character (.).
+                // 2.2.2. A series of one or more ASCII digits.
+                if (digits[idx] != '.' and !has_integer) return errors.append(gpa, float_error);
+                if (digits[idx] == '.') {
+                    idx += 1;
+                    if (idx == digits.len or !std.ascii.isDigit(digits[idx])) return errors.append(gpa, float_error);
+                    for (digits[idx..]) |char| {
+                        if (!std.ascii.isDigit(char)) break;
+                        idx += 1;
+                    } else return;
+                }
+                // 3. Optionally:
+                // 3.1. Either a U+0065 LATIN SMALL LETTER E character (e) or a U+0045 LATIN CAPITAL LETTER E character (E).
+                // 3.2. Optionally, a U+002D HYPHEN-MINUS character (-) or U+002B PLUS SIGN character (+).
+                // 3.3. A series of one or more ASCII digits.
+                if (digits[idx] == 'e' or digits[idx] == 'E') {
+                    idx += 1;
+                    if (idx == digits.len) return errors.append(gpa, float_error);
+                    if (digits[idx] == '-' or digits[idx] == '+') idx += 1;
+                    if (idx == digits.len) return errors.append(gpa, float_error);
+                    if (!std.ascii.isDigit(digits[idx])) return errors.append(gpa, float_error);
+                    for (digits[idx..]) |char| {
+                        if (!std.ascii.isDigit(char)) break;
+                        idx += 1;
+                    } else return;
+                }
+                return errors.append(gpa, float_error);
             },
             .hash_name_ref => {
                 const value = attr.value orelse return errors.append(gpa, .{
