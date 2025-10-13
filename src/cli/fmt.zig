@@ -166,7 +166,6 @@ fn formatFile(
         try stdout.print("{s}\n", .{full_path});
     } else if (check) {
         syntax_errors = true;
-        // if (true) @panic("hit");
         try stdout.print("{s}\n", .{full_path});
         return;
     }
