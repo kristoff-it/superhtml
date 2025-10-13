@@ -2,6 +2,12 @@
 
 All notable changes to the "super" extension will be documented in this file.
 
+## [v0.6.2]
+- The "boolean attributes cannot have a value" error now puts squigglies under the attribute name instead of the value.
+- Improved validation for `<link>` `[crossorigin]`, it previously used its own implementation of CORS validation, while now it uses one central implementation shared by all other similar attributes.
+- `[lang]` (and similar attributes) now accept the empty string as value, used to signify that the language is unknown.
+- Fixed a condition that would cause the language server to attempt to detect html elements inside of svg elements.
+
 ## [v0.6.1]
 Fixes two bugs:
 

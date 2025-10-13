@@ -4,7 +4,7 @@
   "description": "Language Server for HTML and SuperHTML Templates.",
   "repository": "https://github.com/kristoff-it/superhtml/",
   "publisher": "LorisCro",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "engines": {
     "vscode": "^1.92.0"
   },

@@ -1,6 +1,6 @@
 .{
     .name = .superhtml,
-    .version = "0.6.1",
+    .version = "0.6.2",
     .fingerprint = 0xc5e9aede3c1db363,
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
