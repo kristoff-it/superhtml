@@ -290,7 +290,7 @@ const Command = struct {
             \\
             \\Options:
             \\
-            \\   --stdin          Format bytes from stdin and output to stdout.
+            \\   --stdin          Validate a HTML document coming from stdin.
             \\                    Mutually exclusive with other input arguments.
             \\   --stdin-super    Same as --stdin but for SuperHTML files.
             \\   --syntax-only    Disable HTML element and attribute validation.
