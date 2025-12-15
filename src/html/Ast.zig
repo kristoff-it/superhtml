@@ -14,6 +14,7 @@ const Element = @import("Element.zig");
 const elements = Element.all;
 const kinds = Element.elements;
 const Attribute = @import("Attribute.zig");
+const JsTokenizer = @import("../js/Tokenizer.zig");
 
 const log = std.log.scoped(.@"html/ast");
 const fmtlog = std.log.scoped(.@"html/ast/fmt");
@@ -31,9 +32,9 @@ pub const Kind = enum {
 
     // superhtml
     extend, super, ctx,
-    
+
     ___, // invalid or web component (or superhtml if not in shtml mode)
-    
+
     // Begin of html tags
     a, abbr, address, area, article, aside, audio, b, base, bdi, bdo,
     blockquote, body, br, button, canvas, caption, cite, code, col, colgroup,
@@ -1166,7 +1167,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                             first = false;
                         }
                     },
-                    .style, .script => {
+                    .style => {
                         var css_indent = indentation;
                         var it = std.mem.splitScalar(u8, txt, '\n');
                         var first = true;
@@ -1195,6 +1196,59 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                             } else {
                                 if (!first) for (0..css_indent) |_| try w.print("\t", .{});
                                 try w.print("{s}", .{line});
+                            }
+
+                            if (it.peek() != null) try w.print("\n", .{});
+
+                            first = false;
+                        }
+                    },
+                    .script => {
+                        // Use JS tokenizer for proper brace/bracket/paren tracking
+                        // that correctly ignores braces in strings, comments, and regex.
+                        // Indent changes are clamped to ±1 per line to match common
+                        // formatting styles where multiple braces on one line don't
+                        // cause excessive indentation.
+                        var js_indent = indentation;
+                        var it = std.mem.splitScalar(u8, txt, '\n');
+                        var first = true;
+                        var empty_line = false;
+                        while (it.next()) |raw_line| {
+                            const line = std.mem.trim(
+                                u8,
+                                raw_line,
+                                &std.ascii.whitespace,
+                            );
+                            if (line.len == 0) {
+                                if (empty_line) continue;
+                                empty_line = true;
+                                if (!first) for (0..js_indent) |_| try w.print("\t", .{});
+                                try w.print("\n", .{});
+                                continue;
+                            } else empty_line = false;
+
+                            const info = JsTokenizer.lineIndentInfo(line);
+
+                            // If line starts with closing bracket, outdent this line
+                            if (info.starts_with_close) {
+                                js_indent -|= 1;
+                            }
+
+                            if (!first) for (0..js_indent) |_| try w.print("\t", .{});
+                            try w.print("{s}", .{line});
+
+                            // Apply indent change for next line, clamped to ±1.
+                            // We need to account for the outdent we already applied
+                            // if the line started with a close bracket.
+                            const effective_delta = if (info.starts_with_close)
+                                info.delta + 1
+                            else
+                                info.delta;
+
+                            if (effective_delta > 0) {
+                                js_indent += 1;
+                            } else if (effective_delta < 0) {
+                                js_indent -|= 1;
                             }
 
                             if (it.peek() != null) try w.print("\n", .{});
@@ -2192,4 +2246,146 @@ test "fuzz" {
         .arena = &arena,
         .out = &out.interface,
     }, Context.testOne, .{});
+}
+
+test "script formatting - basic" {
+    const case =
+        \\<script>
+        \\function hello() {
+        \\console.log("world");
+        \\}
+        \\</script>
+    ;
+    const expected = comptime std.fmt.comptimePrint(
+        \\<script>
+        \\{0c}function hello() {{
+        \\{0c}{0c}console.log("world");
+        \\{0c}}}
+        \\</script>
+        \\
+    , .{'\t'});
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "script formatting - braces in strings" {
+    const case =
+        \\<script>
+        \\const x = "{ not a brace }";
+        \\const y = '{ also not }';
+        \\</script>
+    ;
+    const expected = comptime std.fmt.comptimePrint(
+        \\<script>
+        \\{0c}const x = "{{ not a brace }}";
+        \\{0c}const y = '{{ also not }}';
+        \\</script>
+        \\
+    , .{'\t'});
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "script formatting - braces in comments" {
+    const case =
+        \\<script>
+        \\// { comment brace }
+        \\/* { block } */
+        \\const x = 1;
+        \\</script>
+    ;
+    const expected = comptime std.fmt.comptimePrint(
+        \\<script>
+        \\{0c}// {{ comment brace }}
+        \\{0c}/* {{ block }} */
+        \\{0c}const x = 1;
+        \\</script>
+        \\
+    , .{'\t'});
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "script formatting - braces in regex" {
+    const case =
+        \\<script>
+        \\const re = /{.*}/g;
+        \\const x = 1;
+        \\</script>
+    ;
+    const expected = comptime std.fmt.comptimePrint(
+        \\<script>
+        \\{0c}const re = /{{.*}}/g;
+        \\{0c}const x = 1;
+        \\</script>
+        \\
+    , .{'\t'});
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "script formatting - nested structures" {
+    const case =
+        \\<script>
+        \\const obj = {
+        \\users: [
+        \\{name: "Alice"},
+        \\{name: "Bob"}
+        \\]
+        \\};
+        \\</script>
+    ;
+    const expected = comptime std.fmt.comptimePrint(
+        \\<script>
+        \\{0c}const obj = {{
+        \\{0c}{0c}users: [
+        \\{0c}{0c}{0c}{{name: "Alice"}},
+        \\{0c}{0c}{0c}{{name: "Bob"}}
+        \\{0c}{0c}]
+        \\{0c}}};
+        \\</script>
+        \\
+    , .{'\t'});
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
+}
+
+test "script formatting - else if chain" {
+    const case =
+        \\<script>
+        \\if (a) {
+        \\doA();
+        \\} else if (b) {
+        \\doB();
+        \\} else {
+        \\doC();
+        \\}
+        \\</script>
+    ;
+    const expected = comptime std.fmt.comptimePrint(
+        \\<script>
+        \\{0c}if (a) {{
+        \\{0c}{0c}doA();
+        \\{0c}}} else if (b) {{
+        \\{0c}{0c}doB();
+        \\{0c}}} else {{
+        \\{0c}{0c}doC();
+        \\{0c}}}
+        \\</script>
+        \\
+    , .{'\t'});
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(case)});
 }
