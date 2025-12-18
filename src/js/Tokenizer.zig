@@ -26,6 +26,19 @@ pub const Token = union(enum) {
     semicolon: u32,
     comma: u32,
     colon: u32,
+    // Keywords that affect case statement indentation
+    kw_case: Span,
+    kw_default: Span,
+    kw_break: Span,
+    kw_continue: Span,
+    kw_return: Span,
+    kw_throw: Span,
+    // Control flow keywords that can have single-line bodies
+    kw_if: Span,
+    kw_else: Span,
+    kw_for: Span,
+    kw_while: Span,
+    kw_do: Span,
     other: Span,
 
     pub fn span(self: Token) Span {
@@ -35,6 +48,17 @@ pub const Token = union(enum) {
             .line_comment,
             .block_comment,
             .regex,
+            .kw_case,
+            .kw_default,
+            .kw_break,
+            .kw_continue,
+            .kw_return,
+            .kw_throw,
+            .kw_if,
+            .kw_else,
+            .kw_for,
+            .kw_while,
+            .kw_do,
             .other,
             => |s| s,
             .open_brace,
@@ -424,23 +448,71 @@ fn identifier(self: *Tokenizer, src: []const u8) Token {
     }
 
     const ident = src[start..self.idx];
+    const ident_span: Span = .{ .start = start, .end = self.idx };
 
-    // Keywords that are followed by regex context
+    // Check for case-related keywords first (these also set regex context)
+    if (std.mem.eql(u8, ident, "case")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_case = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "default")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_default = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "break")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_break = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "continue")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_continue = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "return")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_return = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "throw")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_throw = ident_span };
+    }
+
+    // Control flow keywords
+    if (std.mem.eql(u8, ident, "if")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_if = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "else")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_else = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "for")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_for = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "while")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_while = ident_span };
+    }
+    if (std.mem.eql(u8, ident, "do")) {
+        self.last_was_operator_context = true;
+        return .{ .kw_do = ident_span };
+    }
+
+    // Other keywords that are followed by regex context
     const regex_context_keywords = [_][]const u8{
-        "return", "throw", "case", "delete",     "typeof",
-        "void",   "new",   "in",   "instanceof", "yield",
-        "await",  "else",  "do",
+        "delete", "typeof", "void", "new", "in", "instanceof", "yield",
+        "await",
     };
 
     for (regex_context_keywords) |kw| {
         if (std.mem.eql(u8, ident, kw)) {
             self.last_was_operator_context = true;
-            return .{ .other = .{ .start = start, .end = self.idx } };
+            return .{ .other = ident_span };
         }
     }
 
     self.last_was_operator_context = false;
-    return .{ .other = .{ .start = start, .end = self.idx } };
+    return .{ .other = ident_span };
 }
 
 fn number(self: *Tokenizer, src: []const u8) Token {
@@ -537,33 +609,144 @@ fn number(self: *Tokenizer, src: []const u8) Token {
     return .{ .other = .{ .start = start, .end = self.idx } };
 }
 
+pub const LineIndentInfo = struct {
+    delta: i32,
+    starts_with_close: bool,
+    ends_with_open: bool,
+    /// Line starts with `case X:` or `default:` (should outdent the label, then indent body)
+    is_case_label: bool,
+    /// Line contains break/continue/return/throw (ends the case block)
+    ends_case_block: bool,
+    /// Line ends with a control flow construct expecting a body (e.g., `if (x)`, `else`, `for (...)`, `while (...)`, `do`)
+    /// This means the next line should be indented even without an opening brace
+    expects_body: bool,
+    /// Line starts with `else`
+    starts_with_else: bool,
+};
+
 /// Compute the net indentation change for a line of JavaScript code.
 /// Returns the delta to apply (positive = increase indent, negative = decrease).
 /// Also returns whether the line starts with a closing bracket (for outdenting).
-pub fn lineIndentInfo(src: []const u8) struct { delta: i32, starts_with_close: bool, ends_with_open: bool } {
+pub fn lineIndentInfo(src: []const u8) LineIndentInfo {
     var tokenizer = Tokenizer{};
     var delta: i32 = 0;
     var first_significant: ?Token = null;
     var last_significant: ?Token = null;
 
+    // Track case label detection: need case/default followed by colon
+    // We track whether we saw case/default at the START of the line (first token)
+    var saw_case_or_default_first = false;
+    var is_case_label = false;
+    var ends_case_block = false;
+
+    // Track control flow for single-line body detection
+    // We need to detect patterns like:
+    //   if (x)      -> kw_if followed by balanced parens ending line
+    //   else        -> kw_else at end of line (not followed by if)
+    //   else if (x) -> kw_else, kw_if, balanced parens
+    //   for (...)   -> kw_for followed by balanced parens
+    //   while (x)   -> kw_while followed by balanced parens
+    //   do          -> kw_do at end of line
+    var last_control_flow: ?Token = null;
+    var paren_depth_at_control: i32 = 0;
+    var paren_depth: i32 = 0;
+    // Track if we've seen anything after the control flow's condition closed
+    var control_flow_condition_closed = false;
+
     while (tokenizer.next(src)) |token| {
         switch (token) {
-            .open_brace, .open_bracket, .open_paren => {
+            .open_brace, .open_bracket => {
                 delta += 1;
                 if (first_significant == null) first_significant = token;
                 last_significant = token;
+                // Opening brace cancels control flow expectation
+                last_control_flow = null;
             },
-            .close_brace, .close_bracket, .close_paren => {
+            .open_paren => {
+                delta += 1;
+                paren_depth += 1;
+                if (first_significant == null) first_significant = token;
+                last_significant = token;
+                // If we've already closed the control flow condition and see another (,
+                // there's a body on this line
+                if (control_flow_condition_closed) {
+                    last_control_flow = null;
+                }
+            },
+            .close_brace, .close_bracket => {
                 delta -= 1;
                 if (first_significant == null) first_significant = token;
                 last_significant = token;
+                last_control_flow = null;
+            },
+            .close_paren => {
+                delta -= 1;
+                paren_depth -= 1;
+                if (first_significant == null) first_significant = token;
+                last_significant = token;
+                // Check if this closes the control flow's condition
+                if (last_control_flow) |cf| {
+                    switch (cf) {
+                        .kw_if, .kw_for, .kw_while => {
+                            if (paren_depth == paren_depth_at_control) {
+                                control_flow_condition_closed = true;
+                            }
+                        },
+                        else => {},
+                    }
+                }
+            },
+            .kw_case, .kw_default => {
+                if (first_significant == null) {
+                    first_significant = token;
+                    saw_case_or_default_first = true;
+                }
+                last_significant = token;
+                last_control_flow = null;
+            },
+            .colon => {
+                if (saw_case_or_default_first) {
+                    is_case_label = true;
+                }
+                if (first_significant == null) first_significant = token;
+                last_significant = token;
+            },
+            .kw_break, .kw_continue, .kw_return, .kw_throw => {
+                ends_case_block = true;
+                if (first_significant == null) first_significant = token;
+                last_significant = token;
+                last_control_flow = null;
+            },
+            .kw_if, .kw_for, .kw_while => {
+                if (first_significant == null) first_significant = token;
+                last_significant = token;
+                last_control_flow = token;
+                paren_depth_at_control = paren_depth;
+                control_flow_condition_closed = false;
+            },
+            .kw_else, .kw_do => {
+                if (first_significant == null) first_significant = token;
+                last_significant = token;
+                last_control_flow = token;
+                paren_depth_at_control = paren_depth;
+                control_flow_condition_closed = false;
             },
             .line_comment, .block_comment => {
                 // Comments don't affect first/last significant token
             },
+            .semicolon => {
+                if (first_significant == null) first_significant = token;
+                last_significant = token;
+                // Semicolon ends any control flow expectation
+                last_control_flow = null;
+            },
             else => {
                 if (first_significant == null) first_significant = token;
                 last_significant = token;
+                // Any other token after the condition closed means body is on this line
+                if (control_flow_condition_closed) {
+                    last_control_flow = null;
+                }
             },
         }
     }
@@ -578,10 +761,44 @@ pub fn lineIndentInfo(src: []const u8) struct { delta: i32, starts_with_close: b
     else
         false;
 
+    // Determine if line expects a body on the next line
+    // This happens when:
+    // 1. Line ends with else or do (not followed by anything else significant)
+    // 2. Line has if/for/while and the condition closed but no body followed
+    // NOTE: If the body is on the same line (e.g., `if (x) doSomething();`),
+    // last_control_flow will have been set to null.
+    const expects_body = if (last_control_flow) |cf| blk: {
+        switch (cf) {
+            .kw_else, .kw_do => {
+                // else/do expect body if they're the last significant token
+                // (but not if followed by { which would be caught by ends_with_open)
+                if (last_significant) |ls| {
+                    break :blk (ls == .kw_else or ls == .kw_do);
+                }
+                break :blk false;
+            },
+            .kw_if, .kw_for, .kw_while => {
+                // if/for/while expect body if condition closed and nothing followed
+                break :blk control_flow_condition_closed;
+            },
+            else => break :blk false,
+        }
+    } else false;
+
+    // Check if line starts with else
+    const starts_with_else = if (first_significant) |fs|
+        fs == .kw_else
+    else
+        false;
+
     return .{
         .delta = delta,
         .starts_with_close = starts_with_close,
         .ends_with_open = ends_with_open,
+        .is_case_label = is_case_label,
+        .ends_case_block = ends_case_block,
+        .expects_body = expects_body,
+        .starts_with_else = starts_with_else,
     };
 }
 
@@ -697,4 +914,138 @@ test "braces in regex don't count" {
 test "template literal with expression" {
     const info = lineIndentInfo("const x = `hello ${name}`;");
     try std.testing.expectEqual(@as(i32, 0), info.delta);
+}
+
+test "case label detection" {
+    {
+        const info = lineIndentInfo("case 1:");
+        try std.testing.expectEqual(true, info.is_case_label);
+        try std.testing.expectEqual(false, info.ends_case_block);
+    }
+    {
+        const info = lineIndentInfo("case 'foo':");
+        try std.testing.expectEqual(true, info.is_case_label);
+    }
+    {
+        const info = lineIndentInfo("default:");
+        try std.testing.expectEqual(true, info.is_case_label);
+        try std.testing.expectEqual(false, info.ends_case_block);
+    }
+    {
+        // case without colon is not a label
+        const info = lineIndentInfo("case");
+        try std.testing.expectEqual(false, info.is_case_label);
+    }
+    {
+        // colon without case is not a label
+        const info = lineIndentInfo("foo:");
+        try std.testing.expectEqual(false, info.is_case_label);
+    }
+}
+
+test "case-ending statements" {
+    {
+        const info = lineIndentInfo("break");
+        try std.testing.expectEqual(true, info.ends_case_block);
+        try std.testing.expectEqual(false, info.is_case_label);
+    }
+    {
+        const info = lineIndentInfo("break;");
+        try std.testing.expectEqual(true, info.ends_case_block);
+    }
+    {
+        const info = lineIndentInfo("continue");
+        try std.testing.expectEqual(true, info.ends_case_block);
+    }
+    {
+        const info = lineIndentInfo("return x");
+        try std.testing.expectEqual(true, info.ends_case_block);
+    }
+    {
+        const info = lineIndentInfo("throw new Error()");
+        try std.testing.expectEqual(true, info.ends_case_block);
+    }
+}
+
+test "case keywords in strings are not detected" {
+    {
+        const info = lineIndentInfo("const x = 'case 1:';");
+        try std.testing.expectEqual(false, info.is_case_label);
+    }
+    {
+        const info = lineIndentInfo("const x = 'break';");
+        try std.testing.expectEqual(false, info.ends_case_block);
+    }
+}
+
+test "control flow expects body" {
+    // if (x) expects body
+    {
+        const info = lineIndentInfo("if (foo)");
+        try std.testing.expectEqual(true, info.expects_body);
+        try std.testing.expectEqual(false, info.starts_with_else);
+    }
+    // if (x) { does NOT expect body (has brace)
+    {
+        const info = lineIndentInfo("if (foo) {");
+        try std.testing.expectEqual(false, info.expects_body);
+    }
+    // else expects body
+    {
+        const info = lineIndentInfo("else");
+        try std.testing.expectEqual(true, info.expects_body);
+        try std.testing.expectEqual(true, info.starts_with_else);
+    }
+    // else { does NOT expect body
+    {
+        const info = lineIndentInfo("else {");
+        try std.testing.expectEqual(false, info.expects_body);
+        try std.testing.expectEqual(true, info.starts_with_else);
+    }
+    // else if (x) expects body
+    {
+        const info = lineIndentInfo("else if (bar)");
+        try std.testing.expectEqual(true, info.expects_body);
+        try std.testing.expectEqual(true, info.starts_with_else);
+    }
+    // for loop expects body
+    {
+        const info = lineIndentInfo("for (const e of elements)");
+        try std.testing.expectEqual(true, info.expects_body);
+    }
+    // while loop expects body
+    {
+        const info = lineIndentInfo("while (true)");
+        try std.testing.expectEqual(true, info.expects_body);
+    }
+    // do expects body
+    {
+        const info = lineIndentInfo("do");
+        try std.testing.expectEqual(true, info.expects_body);
+    }
+    // Complete statement does NOT expect body
+    {
+        const info = lineIndentInfo("if (foo) doSomething();");
+        try std.testing.expectEqual(false, info.expects_body);
+    }
+    // while with body on same line
+    {
+        const info = lineIndentInfo("while (true) doSomething()");
+        try std.testing.expectEqual(false, info.expects_body);
+    }
+    // for with body on same line
+    {
+        const info = lineIndentInfo("for (const x of arr) process(x)");
+        try std.testing.expectEqual(false, info.expects_body);
+    }
+    // else with body on same line
+    {
+        const info = lineIndentInfo("else doSomething()");
+        try std.testing.expectEqual(false, info.expects_body);
+    }
+    // Nested parens - should not be fooled
+    {
+        const info = lineIndentInfo("if (foo(bar))");
+        try std.testing.expectEqual(true, info.expects_body);
+    }
 }
