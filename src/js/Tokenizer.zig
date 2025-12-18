@@ -654,151 +654,87 @@ pub fn lineIndentInfo(src: []const u8) LineIndentInfo {
     var control_flow_condition_closed = false;
 
     while (tokenizer.next(src)) |token| {
+        // Comments don't affect significant tokens or control flow
+        if (token == .line_comment or token == .block_comment) continue;
+
+        // Track first/last significant token
+        const is_first = first_significant == null;
+        if (is_first) first_significant = token;
+        last_significant = token;
+
+        // Handle token-specific logic
         switch (token) {
             .open_brace, .open_bracket => {
                 delta += 1;
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
-                // Opening brace cancels control flow expectation
                 last_control_flow = null;
             },
             .open_paren => {
                 delta += 1;
                 paren_depth += 1;
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
-                // If we've already closed the control flow condition and see another (,
-                // there's a body on this line
-                if (control_flow_condition_closed) {
-                    last_control_flow = null;
-                }
+                // Body on same line if we see ( after condition closed
+                if (control_flow_condition_closed) last_control_flow = null;
             },
             .close_brace, .close_bracket => {
                 delta -= 1;
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
                 last_control_flow = null;
             },
             .close_paren => {
                 delta -= 1;
                 paren_depth -= 1;
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
                 // Check if this closes the control flow's condition
                 if (last_control_flow) |cf| {
-                    switch (cf) {
-                        .kw_if, .kw_for, .kw_while => {
-                            if (paren_depth == paren_depth_at_control) {
-                                control_flow_condition_closed = true;
-                            }
-                        },
-                        else => {},
+                    if ((cf == .kw_if or cf == .kw_for or cf == .kw_while) and
+                        paren_depth == paren_depth_at_control)
+                    {
+                        control_flow_condition_closed = true;
                     }
                 }
             },
             .kw_case, .kw_default => {
-                if (first_significant == null) {
-                    first_significant = token;
-                    saw_case_or_default_first = true;
-                }
-                last_significant = token;
+                if (is_first) saw_case_or_default_first = true;
                 last_control_flow = null;
             },
             .colon => {
-                if (saw_case_or_default_first) {
-                    is_case_label = true;
-                }
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
+                if (saw_case_or_default_first) is_case_label = true;
             },
             .kw_break, .kw_continue, .kw_return, .kw_throw => {
                 ends_case_block = true;
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
                 last_control_flow = null;
             },
-            .kw_if, .kw_for, .kw_while => {
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
+            .kw_if, .kw_for, .kw_while, .kw_else, .kw_do => {
                 last_control_flow = token;
                 paren_depth_at_control = paren_depth;
                 control_flow_condition_closed = false;
-            },
-            .kw_else, .kw_do => {
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
-                last_control_flow = token;
-                paren_depth_at_control = paren_depth;
-                control_flow_condition_closed = false;
-            },
-            .line_comment, .block_comment => {
-                // Comments don't affect first/last significant token
             },
             .semicolon => {
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
-                // Semicolon ends any control flow expectation
                 last_control_flow = null;
             },
+            .line_comment, .block_comment => unreachable, // handled above
             else => {
-                if (first_significant == null) first_significant = token;
-                last_significant = token;
-                // Any other token after the condition closed means body is on this line
-                if (control_flow_condition_closed) {
-                    last_control_flow = null;
-                }
+                // Body on same line if we see tokens after condition closed
+                if (control_flow_condition_closed) last_control_flow = null;
             },
         }
     }
 
-    const starts_with_close = if (first_significant) |t|
-        t.closesBlock()
-    else
-        false;
-
-    const ends_with_open = if (last_significant) |t|
-        t.opensBlock()
-    else
-        false;
-
     // Determine if line expects a body on the next line
-    // This happens when:
-    // 1. Line ends with else or do (not followed by anything else significant)
-    // 2. Line has if/for/while and the condition closed but no body followed
-    // NOTE: If the body is on the same line (e.g., `if (x) doSomething();`),
-    // last_control_flow will have been set to null.
-    const expects_body = if (last_control_flow) |cf| blk: {
-        switch (cf) {
-            .kw_else, .kw_do => {
-                // else/do expect body if they're the last significant token
-                // (but not if followed by { which would be caught by ends_with_open)
-                if (last_significant) |ls| {
-                    break :blk (ls == .kw_else or ls == .kw_do);
-                }
-                break :blk false;
-            },
-            .kw_if, .kw_for, .kw_while => {
-                // if/for/while expect body if condition closed and nothing followed
-                break :blk control_flow_condition_closed;
-            },
-            else => break :blk false,
-        }
+    const expects_body = if (last_control_flow) |cf| switch (cf) {
+        // else/do expect body if they're the last significant token
+        .kw_else => if (last_significant) |ls| ls == .kw_else else false,
+        .kw_do => if (last_significant) |ls| ls == .kw_do else false,
+        // if/for/while expect body if condition closed and nothing followed
+        .kw_if, .kw_for, .kw_while => control_flow_condition_closed,
+        else => false,
     } else false;
-
-    // Check if line starts with else
-    const starts_with_else = if (first_significant) |fs|
-        fs == .kw_else
-    else
-        false;
 
     return .{
         .delta = delta,
-        .starts_with_close = starts_with_close,
-        .ends_with_open = ends_with_open,
+        .starts_with_close = if (first_significant) |t| t.closesBlock() else false,
+        .ends_with_open = if (last_significant) |t| t.opensBlock() else false,
         .is_case_label = is_case_label,
         .ends_case_block = ends_case_block,
         .expects_body = expects_body,
-        .starts_with_else = starts_with_else,
+        .starts_with_else = if (first_significant) |fs| fs == .kw_else else false,
     };
 }
 

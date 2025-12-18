@@ -1226,7 +1226,6 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                             if (line.len == 0) {
                                 if (empty_line) continue;
                                 empty_line = true;
-                                if (!first) for (0..js_indent) |_| try w.print("\t", .{});
                                 try w.print("\n", .{});
                                 continue;
                             } else empty_line = false;
