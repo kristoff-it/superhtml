@@ -1,4 +1,5 @@
 const std = @import("std");
+const html = @import("html/Tokenizer.zig");
 
 const c = @cImport({
     @cInclude("tree_sitter/api.h");
@@ -323,24 +324,33 @@ pub const Tag = struct {
                 }
             };
 
+            /// Unescapes HTML character references in an attribute value.
+            ///
+            /// Implements character reference decoding per WHATWG HTML spec:
+            /// - § 13.2.5.73 Character reference state
+            /// - § 13.2.5.74 Named character reference state
+            /// - § 13.2.5.76 Numeric character reference state
             pub fn unescape(
                 self: Value,
                 allocator: std.mem.Allocator,
-                html: []const u8,
+                html_src: []const u8,
             ) !Managed {
                 const str = blk: {
                     if (std.mem.eql(u8, self.node.nodeType(), "quoted_attribute_value")) {
                         const content = self.node.childAt(0) orelse break :blk "";
-                        break :blk content.string(html);
+                        break :blk content.string(html_src);
                     } else {
-                        break :blk self.node.string(html);
+                        break :blk self.node.string(html_src);
                     }
                 };
 
-                // TODO: html entities
-                _ = allocator;
-
-                return .{ .must_free = false, .str = str };
+                // Use the Tokenizer's unescape implementation
+                const tokenizer_value = html.Attr.Value{
+                    .quote = .none,
+                    .span = .{ .start = 0, .end = @intCast(str.len) },
+                };
+                const result = try tokenizer_value.unescape(allocator, str);
+                return .{ .must_free = result.must_free, .str = result.slice };
             }
 
             pub fn unquote(
