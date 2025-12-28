@@ -15,7 +15,7 @@ pub const embed: Element = .{
         .categories = .{
             .flow = true,
             .phrasing = true,
-            // .embedded = true,
+            .embedded = true,
             .interactive = true,
         },
         .content = .none,
@@ -24,7 +24,7 @@ pub const embed: Element = .{
         .categories_superset = .{
             .flow = true,
             .phrasing = true,
-            // .embedded = true,
+            .embedded = true,
             .interactive = true,
         },
     },

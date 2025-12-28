@@ -16,7 +16,7 @@ pub const picture: Element = .{
         .categories = .{
             .flow = true,
             .phrasing = true,
-            // .embedded = true,
+            .embedded = true,
             // .palpable = true,
         },
         .content = .none,

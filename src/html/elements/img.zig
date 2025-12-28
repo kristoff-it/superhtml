@@ -15,7 +15,7 @@ pub const img: Element = .{
         .categories = .{
             .flow = true,
             .phrasing = true,
-            // .embedded = true,
+            .embedded = true,
         },
         .content = .none, // void
     },
@@ -23,7 +23,7 @@ pub const img: Element = .{
         .categories_superset = .{
             .flow = true,
             .phrasing = true,
-            // .embedded = true,
+            .embedded = true,
             .interactive = true,
         },
     },
