@@ -100,6 +100,7 @@ pub fn validateContent(
     const parent_span = parent.span(src);
 
     var summary_span: ?Span = null;
+    var seen_flow_element = false;
 
     var child_idx = parent.first_child_idx;
     while (child_idx != 0) {
@@ -119,7 +120,7 @@ pub fn validateContent(
                 });
             } else {
                 summary_span = child.span(src);
-                if (child_idx != parent.first_child_idx) {
+                if (seen_flow_element) {
                     try errors.append(gpa, .{
                         .tag = .{ .wrong_position = .first },
                         .main_location = summary_span.?,
@@ -133,6 +134,8 @@ pub fn validateContent(
                 .main_location = child.span(src),
                 .node_idx = child_idx,
             });
+        } else {
+            seen_flow_element = true;
         }
     }
 
@@ -172,4 +175,64 @@ fn completionsContent(
         .none,
         .{},
     );
+}
+
+fn expectError(errors: []const Ast.Error, comptime tag: std.meta.FieldEnum(@TypeOf(errors[0].tag))) bool {
+    for (errors) |err| {
+        if (err.tag == tag) return true;
+    }
+    return false;
+}
+
+test "details: valid - summary as first element child" {
+    const case = "<details><summary>Title</summary><p>Content</p></details>";
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expectEqual(0, ast.errors.len);
+}
+
+test "details: valid - summary with whitespace before" {
+    const case =
+        \\<details>
+        \\  <summary>Title</summary>
+        \\</details>
+    ;
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expectEqual(0, ast.errors.len);
+}
+
+test "details: valid - summary with comment before" {
+    const case = "<details><!-- comment --><summary>Title</summary></details>";
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expectEqual(0, ast.errors.len);
+}
+
+test "details: error - missing summary" {
+    const case = "<details><p>Content</p></details>";
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expect(expectError(ast.errors, .missing_child));
+}
+
+test "details: error - summary not first (flow element before)" {
+    const case = "<details><p>Content</p><summary>Title</summary></details>";
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expect(expectError(ast.errors, .wrong_position));
+}
+
+test "details: error - duplicate summary" {
+    const case = "<details><summary>A</summary><summary>B</summary></details>";
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expect(expectError(ast.errors, .duplicate_child));
+}
+
+test "details: error - invalid child (non-flow content)" {
+    const case = "<details><summary>Title</summary><col></details>";
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expect(expectError(ast.errors, .invalid_nesting));
 }
