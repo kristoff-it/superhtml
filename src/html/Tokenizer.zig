@@ -9,6 +9,7 @@
 ///! to catch common mistakes.
 const Tokenizer = @This();
 const named_character_references = @import("named_character_references.zig");
+const named_character_references_data = @import("named_character_references_data.zig");
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -135,14 +136,267 @@ pub const Attr = struct {
             }
         };
 
+        /// Unescapes HTML character references in an attribute value.
+        ///
+        /// Implements character reference decoding per WHATWG HTML spec:
+        /// - § 13.2.5.73 Character reference state
+        /// - § 13.2.5.74 Named character reference state
+        /// - § 13.2.5.76 Numeric character reference state
+        ///
+        /// Supports:
+        /// - Named references: `&amp;` → `&`, `&nbsp;` → U+00A0
+        /// - Decimal numeric: `&#160;` → U+00A0
+        /// - Hexadecimal numeric: `&#xA0;` → U+00A0
+        ///
+        /// Invalid or unknown references are left as literal text.
         pub fn unescape(
             value: Value,
             gpa: std.mem.Allocator,
             src: []const u8,
         ) !UnescapedSlice {
-            _ = gpa;
-            // TODO: ask squeek to please implement this for real
-            return .{ .slice = value.span.slice(src) };
+            const raw = value.span.slice(src);
+
+            // Fast path: no '&' means nothing to unescape
+            if (std.mem.indexOfScalar(u8, raw, '&') == null) {
+                return .{ .slice = raw };
+            }
+
+            var buf = try gpa.alloc(u8, raw.len);
+            errdefer gpa.free(buf);
+            var out_idx: usize = 0;
+            var i: usize = 0;
+
+            while (i < raw.len) {
+                const c = raw[i];
+                if (c != '&') {
+                    buf[out_idx] = c;
+                    out_idx += 1;
+                    i += 1;
+                    continue;
+                }
+
+                // Try to decode character reference starting at '&'
+                const ref_start = i;
+                i += 1; // skip '&'
+
+                if (i >= raw.len) {
+                    // Lone '&' at end - copy literally
+                    buf[out_idx] = '&';
+                    out_idx += 1;
+                    continue;
+                }
+
+                if (raw[i] == '#') {
+                    // Numeric reference: &#... or &#x...
+                    if (decodeNumericReference(raw, &i, buf, &out_idx)) {
+                        continue;
+                    }
+                    // Not a valid numeric reference; copy '&' literally
+                    i = ref_start + 1;
+                    buf[out_idx] = '&';
+                    out_idx += 1;
+                } else {
+                    // Named reference: &name;
+                    if (decodeNamedReference(raw, &i, buf, &out_idx)) {
+                        continue;
+                    }
+                    // Not a valid named reference; copy '&' literally
+                    i = ref_start + 1;
+                    buf[out_idx] = '&';
+                    out_idx += 1;
+                }
+            }
+
+            // Shrink buffer to actual size needed
+            const result = gpa.realloc(buf, out_idx) catch buf;
+            return .{
+                .must_free = true,
+                .slice = result[0..out_idx],
+            };
+        }
+
+        /// Decodes a numeric character reference (&#digits; or &#xhexdigits;).
+        /// Returns true if successfully decoded, false if not a valid reference.
+        /// Per § 13.2.5.76 Numeric character reference state.
+        fn decodeNumericReference(
+            raw: []const u8,
+            i: *usize,
+            buf: []u8,
+            out_idx: *usize,
+        ) bool {
+            var idx = i.*;
+            idx += 1; // skip '#'
+
+            if (idx >= raw.len) return false;
+
+            const is_hex = raw[idx] == 'x' or raw[idx] == 'X';
+            if (is_hex) {
+                idx += 1;
+                if (idx >= raw.len) return false;
+            }
+
+            // Collect digits
+            const digit_start = idx;
+            while (idx < raw.len) {
+                const c = raw[idx];
+                if (is_hex) {
+                    if (!std.ascii.isHex(c)) break;
+                } else {
+                    if (!std.ascii.isDigit(c)) break;
+                }
+                idx += 1;
+            }
+
+            const digit_count = idx - digit_start;
+            if (digit_count == 0) return false;
+
+            // Consume optional semicolon
+            if (idx < raw.len and raw[idx] == ';') {
+                idx += 1;
+            }
+
+            // Parse the number
+            const digits = raw[digit_start .. digit_start + digit_count];
+            const base: u8 = if (is_hex) 16 else 10;
+            const codepoint = std.fmt.parseInt(u21, digits, base) catch {
+                // Overflow - use replacement character
+                writeCodepoint(buf, out_idx, 0xFFFD);
+                i.* = idx;
+                return true;
+            };
+
+            // Apply spec rules for special codepoints
+            const final_cp = mapNumericCodepoint(codepoint);
+            writeCodepoint(buf, out_idx, final_cp);
+            i.* = idx;
+            return true;
+        }
+
+        /// Maps numeric codepoints according to WHATWG spec rules.
+        /// § 13.2.5.76 Numeric character reference state
+        fn mapNumericCodepoint(cp: u21) u21 {
+            // Null character → replacement
+            if (cp == 0) return 0xFFFD;
+
+            // Surrogate codepoints → replacement
+            if (cp >= 0xD800 and cp <= 0xDFFF) return 0xFFFD;
+
+            // Out of Unicode range → replacement
+            if (cp > 0x10FFFF) return 0xFFFD;
+
+            // C1 control character range (0x80-0x9F) - map via Windows-1252
+            if (cp >= 0x80 and cp <= 0x9F) {
+                return windows1252Map(cp);
+            }
+
+            return cp;
+        }
+
+        /// Windows-1252 mapping for C1 control characters per WHATWG spec.
+        fn windows1252Map(cp: u21) u21 {
+            return switch (cp) {
+                0x80 => 0x20AC, // Euro sign
+                0x82 => 0x201A, // Single low-9 quotation mark
+                0x83 => 0x0192, // Latin small letter f with hook
+                0x84 => 0x201E, // Double low-9 quotation mark
+                0x85 => 0x2026, // Horizontal ellipsis
+                0x86 => 0x2020, // Dagger
+                0x87 => 0x2021, // Double dagger
+                0x88 => 0x02C6, // Modifier letter circumflex accent
+                0x89 => 0x2030, // Per mille sign
+                0x8A => 0x0160, // Latin capital letter S with caron
+                0x8B => 0x2039, // Single left-pointing angle quotation mark
+                0x8C => 0x0152, // Latin capital ligature OE
+                0x8E => 0x017D, // Latin capital letter Z with caron
+                0x91 => 0x2018, // Left single quotation mark
+                0x92 => 0x2019, // Right single quotation mark
+                0x93 => 0x201C, // Left double quotation mark
+                0x94 => 0x201D, // Right double quotation mark
+                0x95 => 0x2022, // Bullet
+                0x96 => 0x2013, // En dash
+                0x97 => 0x2014, // Em dash
+                0x98 => 0x02DC, // Small tilde
+                0x99 => 0x2122, // Trade mark sign
+                0x9A => 0x0161, // Latin small letter s with caron
+                0x9B => 0x203A, // Single right-pointing angle quotation mark
+                0x9C => 0x0153, // Latin small ligature oe
+                0x9E => 0x017E, // Latin small letter z with caron
+                0x9F => 0x0178, // Latin capital letter Y with diaeresis
+                else => cp,
+            };
+        }
+
+        /// Decodes a named character reference (&name;).
+        /// Returns true if successfully decoded, false if not a valid reference.
+        /// Per § 13.2.5.74 Named character reference state.
+        fn decodeNamedReference(
+            raw: []const u8,
+            i: *usize,
+            buf: []u8,
+            out_idx: *usize,
+        ) bool {
+            var idx = i.*;
+
+            // Find the end of the potential entity name
+            const name_start = idx;
+            var last_valid_end: ?usize = null;
+            var last_valid_codepoints: ?named_character_references_data.Codepoints = null;
+
+            while (idx < raw.len) {
+                const c = raw[idx];
+                // Entity names are alphanumeric
+                if (!std.ascii.isAlphanumeric(c) and c != ';') break;
+
+                idx += 1;
+
+                // Check if current substring is a valid entity
+                const name = raw[name_start..idx];
+                if (named_character_references_data.lookup.get(name)) |cps| {
+                    last_valid_end = idx;
+                    last_valid_codepoints = cps;
+                }
+
+                if (c == ';') break;
+            }
+
+            // No valid entity found
+            if (last_valid_codepoints == null) return false;
+
+            const cps = last_valid_codepoints.?;
+
+            // Write the codepoint(s)
+            writeCodepoint(buf, out_idx, cps.cp1);
+            if (cps.hasTwoCodepoints()) {
+                writeCodepoint(buf, out_idx, cps.cp2);
+            }
+
+            // Consume up to and including semicolon if present
+            i.* = last_valid_end.?;
+            if (i.* < raw.len and raw[i.*] == ';') {
+                i.* += 1;
+            }
+
+            return true;
+        }
+
+        /// Writes a Unicode codepoint as UTF-8 to the buffer.
+        fn writeCodepoint(buf: []u8, out_idx: *usize, cp: u21) void {
+            const len = std.unicode.utf8CodepointSequenceLength(cp) catch {
+                // Invalid codepoint - write replacement character
+                buf[out_idx.*] = 0xEF;
+                buf[out_idx.* + 1] = 0xBF;
+                buf[out_idx.* + 2] = 0xBD;
+                out_idx.* += 3;
+                return;
+            };
+            _ = std.unicode.utf8Encode(cp, buf[out_idx.*..]) catch {
+                buf[out_idx.*] = 0xEF;
+                buf[out_idx.* + 1] = 0xBF;
+                buf[out_idx.* + 2] = 0xBD;
+                out_idx.* += 3;
+                return;
+            };
+            out_idx.* += len;
         }
     };
 };
@@ -5522,6 +5776,110 @@ fn testTokenizeWithState(tokenizer: *Tokenizer, src: []const u8, expected_tokens
 fn testTokenize(src: []const u8, expected_tokens: []const Token) !void {
     var tokenizer: Tokenizer = .{ .language = .html };
     return testTokenizeWithState(&tokenizer, src, expected_tokens);
+}
+
+/// Test helper for unescape functionality.
+/// Verifies that unescaping an attribute value produces the expected result.
+fn testUnescape(input: []const u8, expected: []const u8) !void {
+    const allocator = std.testing.allocator;
+    const value = Attr.Value{
+        .quote = .double,
+        .span = .{ .start = 0, .end = @intCast(input.len) },
+    };
+    const result = try value.unescape(allocator, input);
+    defer result.deinit(allocator);
+    std.testing.expectEqualStrings(expected, result.slice) catch |e| {
+        std.debug.print("unescape failed:\n  input: \"{s}\"\n  expected: \"{s}\"\n  actual: \"{s}\"\n", .{ input, expected, result.slice });
+        return e;
+    };
+}
+
+// Tests for Value.unescape() per WHATWG HTML spec:
+// - § 13.2.5.73 Character reference state
+// - § 13.2.5.74 Named character reference state
+// - § 13.2.5.76 Numeric character reference state
+test "unescape named character references" {
+    // Common named entities
+    try testUnescape("&amp;", "&");
+    try testUnescape("&lt;", "<");
+    try testUnescape("&gt;", ">");
+    try testUnescape("&quot;", "\"");
+    try testUnescape("&apos;", "'");
+    try testUnescape("&nbsp;", "\xC2\xA0"); // U+00A0 non-breaking space
+
+    // Mixed content with entities
+    try testUnescape("foo &amp; bar", "foo & bar");
+    try testUnescape("AT&amp;T", "AT&T");
+    try testUnescape("&lt;div&gt;", "<div>");
+
+    // Multiple consecutive entities
+    try testUnescape("&amp;&amp;", "&&");
+    try testUnescape("&lt;&gt;", "<>");
+
+    // Entity at start, middle, and end
+    try testUnescape("&amp;foo", "&foo");
+    try testUnescape("foo&amp;", "foo&");
+    try testUnescape("foo&amp;bar", "foo&bar");
+}
+
+test "unescape numeric character references (decimal)" {
+    // Basic decimal numeric references per § 13.2.5.76
+    try testUnescape("&#160;", "\xC2\xA0"); // U+00A0 non-breaking space
+    try testUnescape("&#38;", "&"); // U+0026 ampersand
+    try testUnescape("&#60;", "<"); // U+003C less-than
+    try testUnescape("&#62;", ">"); // U+003E greater-than
+
+    // Higher codepoints
+    try testUnescape("&#8212;", "\xE2\x80\x94"); // U+2014 em dash
+    try testUnescape("&#128512;", "\xF0\x9F\x98\x80"); // U+1F600 grinning face emoji
+}
+
+test "unescape numeric character references (hexadecimal)" {
+    // Hexadecimal numeric references per § 13.2.5.76
+    try testUnescape("&#xA0;", "\xC2\xA0"); // U+00A0 non-breaking space
+    try testUnescape("&#xa0;", "\xC2\xA0"); // lowercase hex
+    try testUnescape("&#x26;", "&"); // U+0026 ampersand
+    try testUnescape("&#x3C;", "<"); // U+003C less-than
+    try testUnescape("&#x3E;", ">"); // U+003E greater-than
+
+    // Higher codepoints
+    try testUnescape("&#x2014;", "\xE2\x80\x94"); // U+2014 em dash
+    try testUnescape("&#x1F600;", "\xF0\x9F\x98\x80"); // U+1F600 grinning face emoji
+}
+
+test "unescape special numeric character reference cases" {
+    // Null character reference → U+FFFD per spec
+    try testUnescape("&#0;", "\xEF\xBF\xBD"); // U+FFFD replacement character
+
+    // Surrogate code points → U+FFFD per spec
+    try testUnescape("&#xD800;", "\xEF\xBF\xBD");
+    try testUnescape("&#xDFFF;", "\xEF\xBF\xBD");
+
+    // Out of Unicode range → U+FFFD per spec
+    try testUnescape("&#x110000;", "\xEF\xBF\xBD");
+    try testUnescape("&#1114112;", "\xEF\xBF\xBD"); // decimal 0x110000
+}
+
+test "unescape no entities (fast path)" {
+    // No ampersand - should return original slice without allocation
+    try testUnescape("hello world", "hello world");
+    try testUnescape("", "");
+    try testUnescape("no entities here", "no entities here");
+}
+
+test "unescape malformed references (left literal)" {
+    // Lone ampersand
+    try testUnescape("&", "&");
+    try testUnescape("foo & bar", "foo & bar");
+
+    // Unknown named entity - left as literal
+    try testUnescape("&unknown;", "&unknown;");
+    try testUnescape("&foo;", "&foo;");
+
+    // Incomplete numeric references - left as literal
+    try testUnescape("&#;", "&#;");
+    try testUnescape("&#x;", "&#x;");
+    try testUnescape("&#xZZ;", "&#xZZ;");
 }
 
 test "fuzz" {
