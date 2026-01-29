@@ -1289,8 +1289,8 @@ pub fn isData(name: []const u8) bool {
     if (name.len < "data-*".len) return false;
     const data = std.ascii.eqlIgnoreCase("data-", name[0.."data-".len]);
     // TODO: remove this hack once aria attributes are implemented
-    const aria = std.ascii.eqlIgnoreCase("aria-", name[0.."aria-".len]);
-    return data or aria;
+    //const aria = std.ascii.eqlIgnoreCase("aria-", name[0.."aria-".len]);
+    return data;
 }
 
 pub const global: AttributeSet = .init(&.{
@@ -1332,6 +1332,449 @@ pub const global: AttributeSet = .init(&.{
             \\- [MDN](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/accesskey)
             \\- [HTML Spec](https://html.spec.whatwg.org/multipage/interaction.html#the-accesskey-attribute)
             ,
+        },
+    },
+
+    .{
+        .name = "aria-activedescendant",
+        .model = .{
+            .rule = .id,
+            .desc = "Identifies the currently active element when DOM focus is on a composite widget, combobox, textbox, group, or application.",
+        },
+    },
+
+    .{
+        .name = "aria-atomic",
+        .model = .{
+            .rule = .bool,
+            .desc = "Indicates whether assistive technologies will present all, or only parts of, the changed region based on the change notifications defined by the aria-relevant attribute.",
+        },
+    },
+
+    .{
+        .name = "aria-autocomplete",
+        .model = .{
+            .rule = .{
+                .list = .init(.missing_or_empty, .one, &.{
+                    .{
+                        .label = "none",
+                        .desc = "(default) When a user is providing input, no automatic suggestion is displayed.",
+                    },
+                    .{
+                        .label = "inline",
+                        .desc = "Text suggesting one way to complete the provided input may be dynamically inserted after the caret.",
+                    },
+                    .{
+                        .label = "list",
+                        .desc = "When a user is providing input, an element containing a collection of values that could complete the provided input may be displayed.",
+                    },
+                    .{
+                        .label = "both",
+                        .desc = "An input to offer both models at the same time. When a user is providing input, an element containing a collection of values that could complete the provided input may be displayed. If displayed, one value in the collection is automatically selected, and the text needed to complete the automatically selected value appears after the caret in the input.",
+                    },
+                }),
+            },
+            .desc = "Indicates whether inputting text could trigger display of one or more predictions of the user's intended value for a combobox, searchbox, or textbox and specifies how predictions would be presented if they were made.",
+        },
+    },
+
+    .{
+        .name = "aria-braillelabel",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines a string value that labels the current element, which is intended to be converted into Braille. See related aria-label.",
+        },
+    },
+
+    .{
+        .name = "aria-brailleroledescription",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines a human-readable, author-localized abbreviated description for the role of an element, which is intended to be converted into Braille. See related aria-roledescription.",
+        },
+    },
+
+    .{
+        .name = "aria-busy",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates an element is being modified and that assistive technologies could wait until the modifications are complete before exposing them to the user.",
+        },
+    },
+
+    .{
+        .name = "aria-checked",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates the current 'checked' state of checkboxes, radio buttons, and other widgets. See related aria-pressed and aria-selected.",
+        },
+    },
+
+    .{
+        .name = "aria-colcount",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the total number of columns in a table, grid, or treegrid. See related aria-colindex.",
+        },
+    },
+
+    .{
+        .name = "aria-colindex",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines an element's column index or position with respect to the total number of columns within a table, grid, or treegrid. See related aria-colindextext, aria-colcount, and aria-colspan.",
+        },
+    },
+
+    .{
+        .name = "aria-colindextext",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines a human readable text alternative of aria-colindex. See related aria-rowindextext.",
+        },
+    },
+
+    .{
+        .name = "aria-colspan",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the number of columns spanned by a cell or gridcell within a table, grid, or treegrid. See related aria-colindex and aria-rowspan.",
+        },
+    },
+
+    .{
+        .name = "aria-controls",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Identifies the element (or elements) whose contents or presence are controlled by the current element. See related aria-owns.",
+        },
+    },
+
+    .{
+        .name = "aria-current",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates the element that represents the current item within a container or set of related elements.",
+        },
+    },
+
+    .{
+        .name = "aria-describedby",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Identifies the element (or elements) that describes the object. See related aria-labelledby and aria-description.",
+        },
+    },
+
+    .{
+        .name = "aria-description",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines a string value that describes or annotates the current element. See related aria-describedby.",
+        },
+    },
+
+    .{
+        .name = "aria-details",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Identifies the element (or elements) that provide additional information related to the object. See related aria-describedby.",
+        },
+    },
+
+    .{
+        .name = "aria-disabled",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates that the element is perceivable but disabled, so it is not editable or otherwise operable. See related aria-hidden and aria-readonly.",
+        },
+    },
+
+    .{
+        .name = "aria-dropeffect",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "[Deprecated in ARIA 1.1] Indicates what functions can be performed when a dragged object is released on the drop target.",
+        },
+    },
+
+    .{
+        .name = "aria-errormessage",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Identifies the element (or elements) that provides an error message for an object. See related aria-invalid and aria-describedby.",
+        },
+    },
+
+    .{
+        .name = "aria-expanded",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates whether a grouping element that is the accessibility child of or is controlled by this element is expanded or collapsed.",
+        },
+    },
+
+    .{
+        .name = "aria-flowto",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Identifies the next element (or elements) in an alternate reading order of content which, at the user's discretion, allows assistive technology to override the general default of reading in document source order.",
+        },
+    },
+
+    .{
+        .name = "aria-grabbed",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "[Deprecated in ARIA 1.1] Indicates an element's 'grabbed' state in a drag-and-drop operation.",
+        },
+    },
+
+    .{
+        .name = "aria-haspopup",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates the availability and type of interactive popup element, such as menu or dialog, that can be triggered by an element.",
+        },
+    },
+
+    .{
+        .name = "aria-hidden",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates whether the element is exposed to an accessibility API. See related aria-disabled.",
+        },
+    },
+
+    .{
+        .name = "aria-invalid",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates the entered value does not conform to the format expected by the application. See related aria-errormessage.",
+        },
+    },
+
+    .{
+        .name = "aria-keyshortcuts",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines keyboard shortcuts that an author has implemented to activate or give focus to an element.",
+        },
+    },
+
+    .{
+        .name = "aria-label",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines a string value that labels the current element. See related aria-labelledby.",
+        },
+    },
+
+    .{
+        .name = "aria-labelledby",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Identifies the element (or elements) that labels the current element. See related aria-label and aria-describedby.",
+        },
+    },
+
+    .{
+        .name = "aria-level",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the hierarchical level of an element within a structure.",
+        },
+    },
+
+    .{
+        .name = "aria-live",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates that an element will be updated, and describes the types of updates the user agents, assistive technologies, and user can expect from the live region.",
+        },
+    },
+
+    .{
+        .name = "aria-modal",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates whether an element is modal when displayed.",
+        },
+    },
+
+    .{
+        .name = "aria-multiline",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates whether a text box accepts multiple lines of input or only a single line.",
+        },
+    },
+
+    .{
+        .name = "aria-multiselectable",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates that the user can select more than one item from the current selectable descendants.",
+        },
+    },
+
+    .{
+        .name = "aria-orientation",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates whether the element's orientation is horizontal, vertical, or unknown/ambiguous.",
+        },
+    },
+
+    .{
+        .name = "aria-owns",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Identifies an element (or elements) in order to define a visual, functional, or contextual parent/child relationship between DOM elements where the DOM hierarchy cannot be used to represent the relationship. See related aria-controls.",
+        },
+    },
+
+    .{
+        .name = "aria-placeholder",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines a short hint (a word or short phrase) intended to aid the user with data entry when the control has no value. A hint could be a sample value or a brief description of the expected format.",
+        },
+    },
+
+    .{
+        .name = "aria-posinset",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines an element's number or position in the current set of listitems or treeitems. Not required if all elements in the set are present in the DOM. See related aria-setsize.",
+        },
+    },
+
+    .{
+        .name = "aria-pressed",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates the current 'pressed' state of toggle buttons. See related aria-checked and aria-selected.",
+        },
+    },
+
+    .{
+        .name = "aria-readonly",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates that the element is not editable, but is otherwise operable. See related aria-disabled.",
+        },
+    },
+
+    .{
+        .name = "aria-relevant",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates what notifications the user agent will trigger when the accessibility tree within a live region is modified. See related aria-atomic.",
+        },
+    },
+
+    .{
+        .name = "aria-required",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates that user input is required on the element before a form can be submitted.",
+        },
+    },
+
+    .{
+        .name = "aria-roledescription",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines a human-readable, author-localized description for the role of an element.",
+        },
+    },
+
+    .{
+        .name = "aria-rowcount",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the total number of rows in a table, grid, or treegrid. See related aria-rowindex.",
+        },
+    },
+
+    .{
+        .name = "aria-rowindex",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines an element's row index or position with respect to the total number of rows within a table, grid, or treegrid. See related aria-rowindextext, aria-rowcount, and aria-rowspan.",
+        },
+    },
+
+    .{
+        .name = "aria-rowindextext",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines a human readable text alternative of aria-rowindex. See related aria-colindextext.",
+        },
+    },
+
+    .{
+        .name = "aria-rowspan",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the number of rows spanned by a cell or gridcell within a table, grid, or treegrid. See related aria-rowindex and aria-colspan.",
+        },
+    },
+
+    .{
+        .name = "aria-selected",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates the current 'selected' state of various widgets. See related aria-checked and aria-pressed.",
+        },
+    },
+
+    .{
+        .name = "aria-setsize",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the number of items in the current set of listitems or treeitems. Not required if all elements in the set are present in the DOM. See related aria-posinset.",
+        },
+    },
+
+    .{
+        .name = "aria-sort",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Indicates if items in a table or grid are sorted in ascending or descending order.",
+        },
+    },
+
+    .{
+        .name = "aria-valuemax",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the maximum allowed value for a range widget.",
+        },
+    },
+
+    .{
+        .name = "aria-valuemin",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the minimum allowed value for a range widget.",
+        },
+    },
+
+    .{
+        .name = "aria-valuenow",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the current value for a range widget. See related aria-valuetext.",
+        },
+    },
+
+    .{
+        .name = "aria-valuetext",
+        .model = .{
+            .rule = .not_empty,
+            .desc = "Defines the human readable text alternative of aria-valuenow for a range widget. ",
         },
     },
 
