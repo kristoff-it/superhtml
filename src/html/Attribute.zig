@@ -1346,7 +1346,18 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-atomic",
         .model = .{
-            .rule = .bool,
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{
+                        .label = "true",
+                        .desc = "(default) present only the changed node or nodes.",
+                    },
+                    .{
+                        .label = "false",
+                        .desc = "present the entire changed region as a whole, including the author-defined label if one exists.",
+                    },
+                }),
+            },
             .desc = "Indicates whether assistive technologies will present all, or only parts of, the changed region based on the change notifications defined by the aria-relevant attribute.",
         },
     },
@@ -1355,7 +1366,7 @@ pub const global: AttributeSet = .init(&.{
         .name = "aria-autocomplete",
         .model = .{
             .rule = .{
-                .list = .init(.missing_or_empty, .one, &.{
+                .list = .init(.none, .one, &.{
                     .{
                         .label = "none",
                         .desc = "(default) When a user is providing input, no automatic suggestion is displayed.",
@@ -1382,7 +1393,7 @@ pub const global: AttributeSet = .init(&.{
         .name = "aria-braillelabel",
         .model = .{
             .rule = .not_empty,
-            .desc = "Defines a string value that labels the current element, which is intended to be converted into Braille. See related aria-label.",
+            .desc = "The global aria-braillelabel property defines a string value that labels the current element, which is intended to be converted into Braille.",
         },
     },
 
@@ -1390,30 +1401,57 @@ pub const global: AttributeSet = .init(&.{
         .name = "aria-brailleroledescription",
         .model = .{
             .rule = .not_empty,
-            .desc = "Defines a human-readable, author-localized abbreviated description for the role of an element, which is intended to be converted into Braille. See related aria-roledescription.",
+            .desc = "The global aria-brailleroledescription attribute defines a human-readable, author-localized abbreviated description for the role of an element intended to be converted into Braille.",
         },
     },
 
     .{
         .name = "aria-busy",
         .model = .{
-            .rule = .not_empty,
-            .desc = "Indicates an element is being modified and that assistive technologies could wait until the modifications are complete before exposing them to the user.",
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{
+                        .label = "true",
+                        .desc = "(default) present only the changed node or nodes.",
+                    },
+                    .{
+                        .label = "false",
+                        .desc = "present the entire changed region as a whole, including the author-defined label if one exists.",
+                    },
+                }),
+            },
+            .desc = "The aria-busy attribute is a global ARIA state that indicates whether an element is currently being modified. It helps assistive technologies understand that changes to the content are not yet complete, and that they may want to wait before informing users of the update.",
         },
     },
 
     .{
         .name = "aria-checked",
         .model = .{
-            .rule = .not_empty,
-            .desc = "Indicates the current 'checked' state of checkboxes, radio buttons, and other widgets. See related aria-pressed and aria-selected.",
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{ .label = "undefined foo", .desc = "(default) The element does not support being checked.", .value = "undefined" },
+                    .{
+                        .label = "true",
+                        .desc = "The element is checked.",
+                    },
+                    .{
+                        .label = "false",
+                        .desc = "The element supports being checked but is not currently checked.",
+                    },
+                    .{
+                        .label = "mixed",
+                        .desc = "for checkbox and menuitemcheckbox only, equivalent to indeterminate, indicating a mixed mode value of neither checked nor unchecked.",
+                    },
+                }),
+            },
+            .desc = "Indicates the current 'checked' state of checkboxes, radio buttons, and other widgets.",
         },
     },
 
     .{
         .name = "aria-colcount",
         .model = .{
-            .rule = .not_empty,
+            .rule = .{ .non_neg_int = .{} },
             .desc = "Defines the total number of columns in a table, grid, or treegrid. See related aria-colindex.",
         },
     },
@@ -1421,7 +1459,7 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-colindex",
         .model = .{
-            .rule = .not_empty,
+            .rule = .{ .non_neg_int = .{} },
             .desc = "Defines an element's column index or position with respect to the total number of columns within a table, grid, or treegrid. See related aria-colindextext, aria-colcount, and aria-colspan.",
         },
     },
@@ -1437,7 +1475,7 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-colspan",
         .model = .{
-            .rule = .not_empty,
+            .rule = .{ .non_neg_int = .{} },
             .desc = "Defines the number of columns spanned by a cell or gridcell within a table, grid, or treegrid. See related aria-colindex and aria-rowspan.",
         },
     },
@@ -1445,15 +1483,48 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-controls",
         .model = .{
-            .rule = .not_empty,
-            .desc = "Identifies the element (or elements) whose contents or presence are controlled by the current element. See related aria-owns.",
+            .rule = .{
+                .custom = id_reference_list,
+            },
+            .desc = "Identifies the element (or elements) whose contents or presence are controlled by the current element. See related aria-owns. Attribute value must be a space-separated list of ID references.",
         },
     },
 
     .{
         .name = "aria-current",
         .model = .{
-            .rule = .not_empty,
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{
+                        .label = "page",
+                        .desc = "Represents the current page within a set of pages such as the link to the current document in a breadcrumb.",
+                    },
+                    .{
+                        .label = "step",
+                        .desc = "Represents the current step within a process such as the current step in an enumerated multi step checkout flow.",
+                    },
+                    .{
+                        .label = "location",
+                        .desc = "Represents the current location within an environment or context such as the image that is visually highlighted as the current component of a flow chart.",
+                    },
+                    .{
+                        .label = "date",
+                        .desc = "Represents the current date within a collection of dates such as the current date within a calendar.",
+                    },
+                    .{
+                        .label = "time",
+                        .desc = "Represents the current time within a set of times such as the current time within a timetable.",
+                    },
+                    .{
+                        .label = "true",
+                        .desc = "Represents the current item within a set.",
+                    },
+                    .{
+                        .label = "false (default)",
+                        .desc = "Does not represent the current item within a set.",
+                    },
+                }),
+            },
             .desc = "Indicates the element that represents the current item within a container or set of related elements.",
         },
     },
@@ -1461,8 +1532,10 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-describedby",
         .model = .{
-            .rule = .not_empty,
-            .desc = "Identifies the element (or elements) that describes the object. See related aria-labelledby and aria-description.",
+            .rule = .{
+                .custom = id_reference_list,
+            },
+            .desc = "Identifies the element (or elements) that describes the object. See related aria-labelledby and aria-description. Attribute value must be a space-separated list of ID references.",
         },
     },
 
@@ -1477,19 +1550,33 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-details",
         .model = .{
-            .rule = .not_empty,
-            .desc = "Identifies the element (or elements) that provide additional information related to the object. See related aria-describedby.",
+            .rule = .{
+                .custom = id_reference_list,
+            },
+            .desc = "Identifies the element (or elements) that provide additional information related to the object. See related aria-describedby. Attribute value must be a space-separated list of ID references.",
         },
     },
 
     .{
         .name = "aria-disabled",
         .model = .{
-            .rule = .not_empty,
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{
+                        .label = "true",
+                        .desc = "The element is disabled",
+                    },
+                    .{
+                        .label = "false",
+                        .desc = "The element is not disabled",
+                    },
+                }),
+            },
             .desc = "Indicates that the element is perceivable but disabled, so it is not editable or otherwise operable. See related aria-hidden and aria-readonly.",
         },
     },
 
+    // TODO: how do we handle deprecation
     .{
         .name = "aria-dropeffect",
         .model = .{
@@ -1501,8 +1588,8 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-errormessage",
         .model = .{
-            .rule = .not_empty,
-            .desc = "Identifies the element (or elements) that provides an error message for an object. See related aria-invalid and aria-describedby.",
+            .rule = .{ .custom = id_reference_list },
+            .desc = "Identifies the element (or elements) that provides an error message for an object. See related aria-invalid and aria-describedby. Attribute value must be a space-separated list of ID references.",
         },
     },
 
@@ -1517,7 +1604,22 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-flowto",
         .model = .{
-            .rule = .not_empty,
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{
+                        .label = "false",
+                        .desc = "The grouping element this element owns or controls is collapsed.",
+                    },
+                    .{
+                        .label = "true",
+                        .desc = "The grouping element this element owns or controls is expanded.",
+                    },
+                    .{
+                        .label = "undefined (default)",
+                        .desc = "The element does not own or control a grouping element that is expandable.",
+                    },
+                }),
+            },
             .desc = "Identifies the next element (or elements) in an alternate reading order of content which, at the user's discretion, allows assistive technology to override the general default of reading in document source order.",
         },
     },
@@ -2811,6 +2913,55 @@ pub fn accesskey(
             continue;
         }
         gop.value_ptr.* = span;
+    }
+}
+
+pub fn id_reference_list(
+    gpa: Allocator,
+    errors: *std.ArrayListUnmanaged(Ast.Error),
+    src: []const u8,
+    node_idx: u32,
+    attr: Tokenizer.Attr,
+) error{OutOfMemory}!void {
+    const value = attr.value orelse {
+        return errors.append(gpa, .{
+            .tag = .missing_attr_value,
+            .main_location = attr.name,
+            .node_idx = node_idx,
+        });
+    };
+    var seen_items: VoidSet = .{};
+    defer seen_items.deinit(gpa);
+    const value_slice = value.span.slice(src);
+    if (value_slice.len == 0) {
+        try errors.append(gpa, .{
+            .tag = .{
+                .invalid_attr_value = .{
+                    .reason = "ID list can't be empty",
+                },
+            },
+            .main_location = .{
+                .start = @intCast(value.span.start),
+                .end = @intCast(value.span.end),
+            },
+            .node_idx = node_idx,
+        });
+    }
+    var it = std.mem.tokenizeAny(u8, value_slice, &std.ascii.whitespace);
+    while (it.next()) |item| {
+        const gop = try seen_items.getOrPut(gpa, item);
+        if (gop.found_existing) try errors.append(gpa, .{
+            .tag = .{
+                .invalid_attr_value = .{
+                    .reason = "IDs in list must be unique",
+                },
+            },
+            .main_location = .{
+                .start = @intCast(value.span.start + it.index - item.len),
+                .end = @intCast(value.span.start + it.index),
+            },
+            .node_idx = node_idx,
+        });
     }
 }
 
