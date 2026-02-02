@@ -1702,7 +1702,452 @@ pub const global: AttributeSet = .init(&.{
         .name = "role",
         .model = .{
             .desc = "The `role` property of the Element interface returns the explicitly set WAI-ARIA role for the element.",
-            .rule = .not_empty, // TODO: make it a list attribute
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{
+                        .label = "alert",
+                        .desc = "The alert role is for important, and usually time-sensitive, information. The alert is a type of status processed as an atomic live region.",
+                    },
+                    .{
+                        .label = "alertdialog",
+                        .desc = "The alertdialog role is to be used on modal alert dialogs that interrupt a user's workflow to communicate an important message and require a response.",
+                    },
+                    .{
+                        .label = "application",
+                        .desc = "The application role indicates to assistive technologies that an element and all of its children should be treated similar to a desktop application, and no traditional HTML interpretation techniques should be used. This role should only be used to define very dynamic and desktop-like web applications. Most mobile and desktop web apps are not considered applications for this purpose.",
+                    },
+                    .{
+                        .label = "article",
+                        .desc = "The article role indicates a section of a page that could easily stand on its own on a page, in a document, or on a website. It is usually set on related content items such as comments, forum posts, newspaper articles or other items grouped together on one page.",
+                    },
+                    .{
+                        .label = "banner",
+                        .desc = "The banner role is for defining a global site header, which usually includes a logo, company name, search feature, and possibly the global navigation or a slogan. It is generally located at the top of the page.",
+                    },
+                    .{
+                        .label = "button",
+                        .desc = "The button role is for clickable elements that trigger a response when activated by the user. Adding role='button' tells the screen reader the element is a button, but provides no button functionality. Use button or input with type='button' instead.",
+                    },
+                    .{
+                        .label = "cell",
+                        .desc = "The cell value of the ARIA role attribute identifies an element as being a cell in a tabular container that does not contain column or row header information. To be supported, the cell must be nested in an element with the role of row.",
+                    },
+                    .{
+                        .label = "checkbox",
+                        .desc = "The checkbox role is for checkable interactive controls. Elements containing role='checkbox' must also include the aria-checked attribute to expose the checkbox's state to assistive technology.",
+                    },
+                    .{
+                        .label = "columnheader",
+                        .desc = "The columnheader value of the ARIA role attribute identifies an element as being a cell in a row contains header information for a column, similar to the native th element with column scope.",
+                    },
+                    .{
+                        .label = "combobox",
+                        .desc = "The combobox role identifies an element as either an input or a button that controls another element, such as a listbox or grid, that can dynamically pop up to help the user set the value. A combobox can be either editable (allowing text input) or select-only (only allowing selection from the popup).",
+                    },
+                    .{
+                        .label = "command",
+                        .desc = "The command role defines a widget that performs an action but does not receive input data.",
+                    },
+                    .{
+                        .label = "comment",
+                        .desc = "The comment role semantically denotes a comment/reaction to some content on the page, or to a previous comment.",
+                    },
+                    .{
+                        .label = "complementary",
+                        .desc = "The complementary landmark role is used to designate a supporting section that relates to the main content, yet can stand alone when separated. These sections are frequently presented as sidebars or call-out boxes. If possible, use the HTML <aside> element instead.",
+                    },
+                    .{
+                        .label = "composite",
+                        .desc = "The composite abstract role indicates a widget that may contain navigable descendants or owned children.",
+                    },
+                    .{
+                        .label = "contentinfo",
+                        .desc = "The contentinfo role defines a footer, containing identifying information such as copyright information, navigation links, and privacy statements, found on every document within a site. This section is commonly called a footer.",
+                    },
+                    .{
+                        .label = "definition",
+                        .desc = "The definition ARIA role indicates the element is a definition of a term or concept.",
+                    },
+                    .{
+                        .label = "dialog",
+                        .desc = "The dialog role is used to mark up an HTML based application dialog or window that separates content or UI from the rest of the web application or page. Dialogs are generally placed on top of the rest of the page content using an overlay. Dialogs can be either non-modal (it's still possible to interact with content outside of the dialog) or modal (only the content in the dialog can be interacted with).",
+                    },
+                    .{
+                        .label = "directory",
+                        .desc = "The directory role was for a list of references to members of a group, such as a static table of contents.",
+                    },
+                    .{
+                        .label = "document",
+                        .desc = "The document role is for focusable content within complex composite widgets or applications for which assistive technologies can switch reading context back to a reading mode.",
+                    },
+                    // ARIA: document structural roles
+                    //     ARIA document-structure roles are used to provide a structural description for a section of content.
+                    //     Warning: These structural roles all have semantic HTML equivalents.
+                    //     They are included here for completeness of documentation.
+                    //     Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.
+                    .{
+                        .label = "associationlist",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Contains only associationlistitemkey children and their sibling associationlistitemvalue.",
+                    },
+                    .{
+                        .label = "associationlistitemkey",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Must be contained in an associationlist.",
+                    },
+                    .{
+                        .label = "associationlistitemvalue",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Always a sibling following an associationlistitemkey.",
+                    },
+                    .{
+                        .label = "blockquote",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] A section of content that is quoted from another source.",
+                    },
+                    .{
+                        .label = "caption",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Visible content that names, and may also describe, a figure, table, grid, or treegrid. Only found in those 4 roles. A caption's id is generally referenced by a figure, grid, table, or treegrid's aria-labelledby attribute. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "code",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] A section representing a fragment of computer code. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "deletion",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Content that is marked as removed or suggested for removal. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "emphasis",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Used to stress or emphasize content, but not to suggest importance. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "figure",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Container for a graphical document, images, code snippets, or example text.",
+                    },
+                    .{
+                        .label = "heading",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] A heading for a section of the page. The aria-level attribute is required to indicate the nesting level. See the heading role for more information. for a graphical document, images, code snippets, or example text.",
+                    },
+                    .{
+                        .label = "image",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Container for a collection of elements that form an image. Synonym for img role.",
+                    },
+                    .{
+                        .label = "img",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Container for a collection of elements that form an image. Accessible name is required. See the img role for more information.",
+                    },
+                    .{
+                        .label = "insertion",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Content that is marked as added or content that is being suggested for addition. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "list",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] A section containing listitem elements. See list role for more information",
+                    },
+                    .{
+                        .label = "listitem",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] A single item in a list or directory. Must be contained in a list (like <li>). See listitem role for more information.",
+                    },
+                    .{
+                        .label = "mark",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Marked or highlighted for reference or notation purposes. See mark role for more information.",
+                    },
+                    .{
+                        .label = "meter",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] A scalar measurement within a known range, or a fractional value. Accessible name required. aria-valuenow required. See meter role for more information.",
+                    },
+                    .{
+                        .label = "paragraph",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] A paragraph of content. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "strong",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Important, serious, or urgent content. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "subscript",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] One or more subscripted characters. Only use if absence of role would change the content's meaning. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "superscript",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] One or more superscripted characters. Only use if absence of role would change the content's meaning. Prohibited attributes: aria-label and aria-labelledby.",
+                    },
+                    .{
+                        .label = "term",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Word or phrase with an optional corresponding definition. Prohibited attributes: aria-label and aria-labelledby. See term role for more information.",
+                    },
+                    .{
+                        .label = "time",
+                        .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Word or phrase with an optional corresponding definition. Prohibited attributes: aria-label and aria-labelledby. See term role for more information.",
+                    },
+                    //
+                    .{
+                        .label = "feed",
+                        .desc = "A feed is a dynamic scrollable list of articles in which articles are added to or removed from either end of the list as the user scrolls. A feed enables screen readers to use the browse mode reading cursor to both read and scroll through a stream of rich content that may continue scrolling infinitely by loading more content as the user reads.",
+                    },
+                    .{
+                        .label = "figure",
+                        .desc = "The ARIA figure role can be used to identify a figure inside page content where appropriate semantics do not already exist. A figure is generally considered to be one or more images, code snippets, or other content that puts across information in a different way to a regular flow of text.",
+                    },
+                    .{
+                        .label = "form",
+                        .desc = "The form role can be used to identify a group of elements on a page that provide equivalent functionality to an HTML form. The form is not exposed as a landmark region unless it has an accessible name.",
+                    },
+                    .{
+                        .label = "generic",
+                        .desc = "The generic role creates a nameless container element which has no semantic meaning on its own.",
+                    },
+                    .{
+                        .label = "grid",
+                        .desc = "The grid role is for a widget that contains one or more rows of cells. The position of each cell is significant and can be focused using keyboard input.",
+                    },
+                    .{
+                        .label = "gridcell",
+                        .desc = "The gridcell role is used to make a cell in a grid or treegrid. It is intended to mimic the functionality of the HTML td element for table-style grouping of information.",
+                    },
+                    .{
+                        .label = "group",
+                        .desc = "The group role identifies a set of user interface objects that is not intended to be included in a page summary or table of contents by assistive technologies.",
+                    },
+                    .{
+                        .label = "heading",
+                        .desc = "The heading role defines this element as a heading to a page or section, with the aria-level attribute providing for more structure.",
+                    },
+                    .{
+                        .label = "img",
+                        .desc = "The ARIA img role can be used to identify multiple elements inside page content that should be considered as a single image. These elements could be images, code snippets, text, emojis, or other content that can be combined to deliver information in a visual manner.",
+                    },
+                    .{
+                        .label = "input",
+                        .desc = "The input abstract role is a generic type of widget that allows user input.",
+                    },
+                    .{
+                        .label = "landmark",
+                        .desc = "A landmark is an important subsection of a page. The landmark role is an abstract superclass for the aria role values for sections of content that are important enough that users will likely want to be able to navigate directly to them.",
+                    },
+                    .{
+                        .label = "link",
+                        .desc = "A link widget provides an interactive reference to a resource. The target resource can be either external or local; i.e., either outside or within the current page or application.",
+                    },
+                    .{
+                        .label = "list",
+                        .desc = "The ARIA list role can be used to identify a list of items. It is normally used in conjunction with the listitem role, which is used to identify a list item contained inside the list.",
+                    },
+                    .{
+                        .label = "listbox",
+                        .desc = "The listbox role is used for lists from which a user may select one or more items which are static and, unlike HTML select elements, may contain images.",
+                    },
+                    .{
+                        .label = "listitem",
+                        .desc = "The ARIA listitem role can be used to identify an item inside a list of items. It is normally used in conjunction with the list role, which is used to identify a list container.",
+                    },
+                    .{
+                        .label = "log",
+                        .desc = "The log role is used to identify an element that creates a live region where new information is added in a meaningful order and old information may disappear.",
+                    },
+                    .{
+                        .label = "main",
+                        .desc = "The main landmark role is used to indicate the primary content of a document. The main content area consists of content that is directly related to or expands upon the central topic of a document, or the main function of an application.",
+                    },
+                    .{
+                        .label = "mark",
+                        .desc = "The mark role denotes content which is marked or highlighted for reference or notation purposes, due to the content's relevance in the enclosing context.",
+                    },
+                    .{
+                        .label = "marquee",
+                        .desc = "A marquee is a type of live region containing non-essential information which changes frequently.",
+                    },
+                    .{
+                        .label = "math",
+                        .desc = "The math role indicates that the content represents a mathematical expression.",
+                    },
+                    .{
+                        .label = "menu",
+                        .desc = "The menu role is a type of composite widget that offers a list of choices to the user.",
+                    },
+                    .{
+                        .label = "menubar",
+                        .desc = "A menubar is a presentation of menu that usually remains visible and is usually presented horizontally.",
+                    },
+                    .{
+                        .label = "menuitem",
+                        .desc = "The menuitem role indicates the element is an option in a set of choices contained by a menu or menubar.",
+                    },
+                    .{
+                        .label = "menuitemcheckbox",
+                        .desc = "A menuitemcheckbox is a menuitem with a checkable state whose possible values are true, false, or mixed.",
+                    },
+                    .{
+                        .label = "menuitemradio",
+                        .desc = "A menuitemradio is checkable menuitem in a set of elements with the same role, only one of which can be checked at a time.",
+                    },
+                    .{
+                        .label = "meter",
+                        .desc = "The meter role is used to identify an element being used as a meter.",
+                    },
+                    .{
+                        .label = "navigation",
+                        .desc = "The navigation role is used to identify major groups of links used for navigating through a website or page content.",
+                    },
+                    .{
+                        .label = "none",
+                        .desc = "The none role is a synonym for the presentation role; they both remove an element's implicit ARIA semantics from being exposed to the accessibility tree.",
+                    },
+                    .{
+                        .label = "note",
+                        .desc = "A note role suggests a section whose content is parenthetic or ancillary to the main content.",
+                    },
+                    .{
+                        .label = "option",
+                        .desc = "The option role is used for selectable items in a listbox.",
+                    },
+                    .{
+                        .label = "presentation",
+                        .desc = "The presentation role and its synonym none remove an element's implicit ARIA semantics from being exposed to the accessibility tree.",
+                    },
+                    .{
+                        .label = "progressbar",
+                        .desc = "The progressbar role defines an element that displays the progress status for tasks that take a long time.",
+                    },
+                    .{
+                        .label = "radio",
+                        .desc = "The radio role is one of a group of checkable radio buttons, in a radiogroup, where no more than a single radio button can be checked at a time.",
+                    },
+                    .{
+                        .label = "radiogroup",
+                        .desc = "The radiogroup role is a group of radio buttons.",
+                    },
+                    .{
+                        .label = "range",
+                        .desc = "The range abstract role is a generic type of structure role representing a range of values.",
+                    },
+                    .{
+                        .label = "region",
+                        .desc = "The region role is used to identify document areas the author deems significant. It is a generic landmark available to aid in navigation when none of the other landmark roles are appropriate.",
+                    },
+                    .{
+                        .label = "roletype",
+                        .desc = "The roletype role, an abstract role, is the base role from which all other ARIA roles inherit.",
+                    },
+                    .{
+                        .label = "row",
+                        .desc = "An element with role='row' is a row of cells within a tabular structure. A row contains one or more cells, grid cells or column headers, and possibly a row header, within a grid, table or treegrid, and optionally within a rowgroup.",
+                    },
+                    .{
+                        .label = "rowgroup",
+                        .desc = "An element with role='rowgroup' is a group of rows within a tabular structure. A rowgroup contains one or more rows of cells, grid cells, column headers, or row headers within a grid, table or treegrid.",
+                    },
+                    .{
+                        .label = "rowheader",
+                        .desc = "An element with role='rowheader' is a cell containing header information for a row within a tabular structure of a grid, table or treegrid.",
+                    },
+                    .{
+                        .label = "scrollbar",
+                        .desc = "A scrollbar is a graphical object that controls the scrolling of content within a viewing area.",
+                    },
+                    .{
+                        .label = "search",
+                        .desc = "The search role is used to identify the search functionality; the section of the page used to search the page, site, or collection of sites.",
+                    },
+                    .{
+                        .label = "searchbox",
+                        .desc = "The searchbox role indicates an element is a type of textbox intended for specifying search criteria.",
+                    },
+                    .{
+                        .label = "section",
+                        .desc = "The section role, an abstract role, is a superclass role for renderable structural containment components.",
+                    },
+                    .{
+                        .label = "sectionhead",
+                        .desc = "The sectionhead role, an abstract role, is superclass role for labels or summaries of the topic of its related section.",
+                    },
+                    .{
+                        .label = "select",
+                        .desc = "The select role, an abstract role, is superclass role for form widgets that allows the user to make selections from a set of choices.",
+                    },
+                    .{
+                        .label = "separator",
+                        .desc = "The separator role indicates the element is a divider that separates and distinguishes sections of content or groups of menuitems. The implicit ARIA role of the native thematic break hr element is separator.",
+                    },
+                    .{
+                        .label = "slider",
+                        .desc = "The slider role defines an input where the user selects a value from within a given range.",
+                    },
+                    .{
+                        .label = "spinbutton",
+                        .desc = "The spinbutton role defines a type of range that expects the user to select a value from among discrete choices.",
+                    },
+                    .{
+                        .label = "status",
+                        .desc = "The status role defines a live region containing advisory information for the user that is not important enough to be an alert.",
+                    },
+                    .{
+                        .label = "structure",
+                        .desc = "The structure role is for document structural elements.",
+                    },
+                    .{
+                        .label = "suggestion",
+                        .desc = "The suggestion role semantically denotes a single proposed change to an editable document. This should be used on an element that wraps an element with an insertion role, and one with a deletion role.",
+                    },
+                    .{
+                        .label = "switch",
+                        .desc = "The ARIA switch role is functionally identical to the checkbox role, except that instead of representing 'checked' and 'unchecked' states, which are fairly generic in meaning, the switch role represents the states 'on' and 'off.'",
+                    },
+                    .{
+                        .label = "tab",
+                        .desc = "The ARIA tab role indicates an interactive element inside a tablist that, when activated, displays its associated tabpanel.",
+                    },
+                    .{
+                        .label = "table",
+                        .desc = "The table value of the ARIA role attribute identifies the element containing the role as having a non-interactive table structure containing data arranged in rows and columns, similar to the native table HTML element.",
+                    },
+                    .{
+                        .label = "tablist",
+                        .desc = "The tablist role identifies the element that serves as the container for a set of tabs. The tab content are referred to as tabpanel elements.",
+                    },
+                    .{
+                        .label = "tabpanel",
+                        .desc = "The ARIA tabpanel is a container for the resources of layered content associated with a tab.",
+                    },
+                    .{
+                        .label = "term",
+                        .desc = "The term role can be used for a word or phrase with an optional corresponding definition.",
+                    },
+                    .{
+                        .label = "textbox",
+                        .desc = "The textbox role is used to identify an element that allows the input of free-form text. Whenever possible, rather than using this role, use an input element with type='text', for single-line input, or a textarea element for multi-line input.",
+                    },
+                    .{
+                        .label = "timer",
+                        .desc = "The timer role indicates to assistive technologies that an element is a numerical counter listing the amount of elapsed time from a starting point or the remaining time until an end point. Assistive technologies will not announce updates to a timer as it has an implicit aria-live value of off.",
+                    },
+                    .{
+                        .label = "toolbar",
+                        .desc = "The toolbar role defines the containing element as a collection of commonly used function buttons or controls represented in a compact visual form.",
+                    },
+                    .{
+                        .label = "tooltip",
+                        .desc = "A tooltip is a contextual text bubble that displays a description for an element that appears on pointer hover or keyboard focus.",
+                    },
+                    .{
+                        .label = "tree",
+                        .desc = "A tree is a widget that allows the user to select one or more items from a hierarchically organized collection.",
+                    },
+                    .{
+                        .label = "treegrid",
+                        .desc = "The treegrid role identifies an element as being grid whose rows can be expanded and collapsed in the same manner as for a tree.",
+                    },
+                    .{
+                        .label = "treeitem",
+                        .desc = "A treeitem is an item in a tree.",
+                    },
+                    .{
+                        .label = "widget",
+                        .desc = "The widget role, an abstract role, is an interactive component of a graphical user interface (GUI).",
+                    },
+                    .{
+                        .label = "window",
+                        .desc = "The window role defines a browser or app window.",
+                    },
+                }),
+            },
         },
     },
     .{
