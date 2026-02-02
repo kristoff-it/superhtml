@@ -2988,11 +2988,37 @@ pub const global: AttributeSet = .init(&.{
         },
     },
 
-    // TODO: how do we handle deprecation
     .{
         .name = "aria-dropeffect",
         .model = .{
-            .rule = .not_empty,
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{
+                        .label = "copy",
+                        .desc = "A duplicate of the source object will be dropped into the target.",
+                    },
+                    .{
+                        .label = "execute",
+                        .desc = "A function supported by the drop target is executed, using the drag source as an input.",
+                    },
+                    .{
+                        .label = "link",
+                        .desc = "A reference or shortcut to the dragged object will be created in the target object.",
+                    },
+                    .{
+                        .label = "move",
+                        .desc = "The source object will be removed from its current location and dropped into the target.",
+                    },
+                    .{
+                        .label = "none",
+                        .desc = "(default) No operation can be performed; effectively cancels the drag operation if an attempt is made to drop on this object. Ignored if combined with any other token value; for example, 'none copy' is equivalent to a 'copy' value.",
+                    },
+                    .{
+                        .label = "popup",
+                        .desc = "There is a popup menu or dialog that allows the user to choose one of the drag operations (copy, move, link, execute) and any other drag functionality, such as cancel.",
+                    },
+                }),
+            },
             .desc = "[Deprecated in ARIA 1.1] Indicates what functions can be performed when a dragged object is released on the drop target.",
         },
     },
@@ -3027,7 +3053,22 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-grabbed",
         .model = .{
-            .rule = .not_empty,
+            .rule = .{
+                .list = .init(.none, .one, &.{
+                    .{
+                        .label = "true",
+                        .desc = "The element has been selected for dragging.",
+                    },
+                    .{
+                        .label = "false",
+                        .desc = "The element is not currently selected for dragging, but can be made available for dragging by setting the property to true.",
+                    },
+                    .{
+                        .label = "undefined",
+                        .desc = "(default) The element does not support being dragged",
+                    },
+                }),
+            },
             .desc = "[Deprecated in ARIA 1.1] Indicates an element's 'grabbed' state in a drag-and-drop operation.",
         },
     },
