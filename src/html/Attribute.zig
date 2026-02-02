@@ -1287,10 +1287,7 @@ pub const element_attrs: std.EnumArray(Ast.Kind, *const AttributeSet) = .init(.{
 
 pub fn isData(name: []const u8) bool {
     if (name.len < "data-*".len) return false;
-    const data = std.ascii.eqlIgnoreCase("data-", name[0.."data-".len]);
-    // TODO: remove this hack once aria attributes are implemented
-    //const aria = std.ascii.eqlIgnoreCase("aria-", name[0.."aria-".len]);
-    return data;
+    return std.ascii.eqlIgnoreCase("data-", name[0.."data-".len]);
 }
 
 pub const global: AttributeSet = .init(&.{
