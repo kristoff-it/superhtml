@@ -24,12 +24,14 @@ const TokenError = enum {
 };
 
 const Token = union(enum) {
-    character: u8,
+    character: u32,
 
     group_open: struct {
         kind: enum { regular, non_capturing },
         span: Span,
     },
+
+    group_close: u32,
 
     parse_error: struct {
         tag: TokenError,
@@ -55,9 +57,9 @@ fn consume(self: *RegExpTokenizer, src: []const u8) bool {
 
 fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
     while (true) {
+        std.debug.print("token {d}: {c}\n", .{ self.idx, self.current });
         switch (self.state) {
             .data => {
-                std.debug.print("token {d}: {c}\n", .{ self.idx, self.current });
                 if (!self.consume(src)) {
                     self.state = .eof;
                 } else switch (self.current) {
@@ -66,20 +68,14 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                             .parens_open = self.idx - 1,
                         };
                     },
-                    'x' => {
+                    ')' => {
                         return .{
-                            .parse_error = .{
-                                .tag = .generic_error,
-                                .span = .{
-                                    .start = self.idx - 1,
-                                    .end = self.idx,
-                                },
-                            },
+                            .group_close = self.idx - 1,
                         };
                     },
                     else => {
                         return .{
-                            .character = self.current,
+                            .character = self.idx - 1,
                         };
                     },
                 }
@@ -152,7 +148,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
 test "regexp-scan" {
     var tokenizer: RegExpTokenizer = .{};
 
-    const src = "(?foo)dxedoo";
+    const src = "(?foo)dxedo(";
 
     var tokens: std.ArrayList(Token) = .{};
     defer tokens.deinit(testing.allocator);
@@ -175,24 +171,24 @@ test "regexp-scan" {
                 },
             },
         },
-        .{ .character = 'f' },
-        .{ .character = 'o' },
-        .{ .character = 'o' },
-        .{ .character = ')' },
-        .{ .character = 'd' },
+        .{ .character = 2 },
+        .{ .character = 3 },
+        .{ .character = 4 },
+        .{ .group_close = 5 },
+        .{ .character = 6 },
+        .{ .character = 7 },
+        .{ .character = 8 },
+        .{ .character = 9 },
+        .{ .character = 10 },
         .{
             .parse_error = .{
-                .tag = .generic_error,
+                .tag = .unclosed_capture_group,
                 .span = .{
-                    .start = 7,
-                    .end = 8,
+                    .start = 11,
+                    .end = 12,
                 },
             },
         },
-        .{ .character = 'e' },
-        .{ .character = 'd' },
-        .{ .character = 'o' },
-        .{ .character = 'o' },
     };
 
     try std.testing.expectEqualSlices(Token, expected, tokens.items);
