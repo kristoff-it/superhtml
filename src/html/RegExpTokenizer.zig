@@ -36,6 +36,11 @@ const State = union(enum) {
     eof,
 };
 
+// errors to handle one layer up:
+// - repeating quantifiers (double, triple, n-ple quantifiers)
+// - quantifier at start of line
+// - ranged quantifier where low > high
+
 const TokenError = enum {
     generic_error,
 
@@ -48,10 +53,7 @@ const TokenError = enum {
 
     // quantifiers
     non_terminated_quantifier,
-    invalid_quantifier_placement,
     empty_quantifier,
-    quantifier_out_of_order,
-    unclosed_quantifier,
     invalid_quantifier_syntax,
 };
 
@@ -214,26 +216,20 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         };
                     },
                     '\\' => {
-                        self.state = .{ .escape_sequence = self.idx - 1 };
+                        self.state = .{
+                            .escape_sequence = self.idx - 1,
+                        };
                     },
-                    '+', '*', '?', '{' => |q| {
-                        if (self.idx == 1) {
-                            return .{
-                                .parse_error = .{
-                                    .tag = .invalid_quantifier_placement,
-                                    .span = .{
-                                        .start = 0,
-                                        .end = self.idx,
-                                    },
-                                },
-                            };
-                        } else {
-                            if (q == '{') {
-                                self.state = .{ .quantifier_start_curly = self.idx - 1 };
-                            } else {
-                                self.state = .{ .quantifier_start = self.idx - 1 };
-                            }
-                        }
+
+                    '{' => {
+                        self.state = .{
+                            .quantifier_start_curly = self.idx - 1,
+                        };
+                    },
+                    '+', '*', '?' => {
+                        self.state = .{
+                            .quantifier_start = self.idx - 1,
+                        };
                     },
                     else => {
                         return .{
@@ -343,14 +339,16 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                 }
             },
             .quantifier_start => |start| {
-                const kind: Token.QuantifierKind = switch (self.current) {
+                const more_tokens = self.consume(src);
+
+                const kind: Token.QuantifierKind = switch (src[start]) {
                     '+' => .one_or_more,
                     '*' => .zero_or_more,
                     '?' => .zero_or_one,
                     else => unreachable,
                 };
 
-                if (!self.consume(src)) {
+                if (!more_tokens) {
                     self.state = .eof;
                     return .{
                         .quantifier = .{
@@ -360,8 +358,17 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         },
                     };
                 } else {
-                    self.state = .data;
-                    if (self.current == '?') {
+                    const is_lazy = self.current == '?';
+                    const is_quantifier_token = switch (self.current) {
+                        //  while ++, *+, +*, and ** are instances of repeating
+                        //  a quantifier, ?? is legal
+                        '?' => false,
+                        '+', '*' => true,
+                        else => false,
+                    };
+
+                    if (is_lazy and !is_quantifier_token) {
+                        self.state = .data;
                         return .{
                             .quantifier = .{
                                 .kind = kind,
@@ -369,7 +376,9 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                                 .span = .{ .start = start, .end = self.idx },
                             },
                         };
-                    } else {
+                    }
+                    if (!is_quantifier_token and !is_lazy) {
+                        self.state = .data;
                         self.idx -= 1;
                         return .{
                             .quantifier = .{
@@ -381,7 +390,6 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     }
                 }
             },
-
             .quantifier_start_curly => |start| {
                 if (!self.consume(src)) {
                     self.state = .eof;
@@ -395,7 +403,18 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         },
                     };
                 } else {
-                    if (!std.ascii.isDigit(self.current)) {
+                    if (self.current == '}') {
+                        self.state = .data;
+                        return .{
+                            .parse_error = .{
+                                .tag = .empty_quantifier,
+                                .span = .{
+                                    .start = start,
+                                    .end = self.idx,
+                                },
+                            },
+                        };
+                    } else if (!std.ascii.isDigit(self.current)) {
                         self.state = .data;
                         return .{
                             .parse_error = .{
@@ -1039,34 +1058,6 @@ test "regexp-quantifier-double-digit-numbers" {
     };
     try testing.expectEqualDeep(&expected, actual.items);
 }
-test "regexp-quantifier-error-invalid-placement" {
-    // Quantifier at start (nothing to quantify)
-    var tokenizer1: RegExpTokenizer = .{};
-    const src1 = "*abc";
-    var actual1: std.ArrayList(Token) = .{};
-    defer actual1.deinit(testing.allocator);
-    while (tokenizer1.next(src1)) |got| {
-        try actual1.append(testing.allocator, got);
-    }
-    try testing.expectEqual(@as(usize, 1), actual1.items.len);
-    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual1.items[0]));
-    try testing.expectEqual(TokenError.invalid_quantifier_placement, actual1.items[0].parse_error.tag);
-}
-test "regexp-quantifier-error-double-quantifier" {
-    // Two quantifiers in a row
-    var tokenizer: RegExpTokenizer = .{};
-    const src = "a**";
-    var actual: std.ArrayList(Token) = .{};
-    defer actual.deinit(testing.allocator);
-    while (tokenizer.next(src)) |got| {
-        try actual.append(testing.allocator, got);
-    }
-    try testing.expectEqual(@as(usize, 3), actual.items.len);
-    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
-    try testing.expectEqual(Token.quantifier, @as(std.meta.Tag(Token), actual.items[1]));
-    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[2]));
-    try testing.expectEqual(TokenError.invalid_quantifier_placement, actual.items[2].parse_error.tag);
-}
 test "regexp-quantifier-error-empty-braces" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "a{}";
@@ -1075,25 +1066,13 @@ test "regexp-quantifier-error-empty-braces" {
     while (tokenizer.next(src)) |got| {
         try actual.append(testing.allocator, got);
     }
-    try testing.expectEqual(@as(usize, 2), actual.items.len);
-    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
-    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[1]));
-    try testing.expectEqual(TokenError.empty_quantifier, actual.items[1].parse_error.tag);
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .parse_error = .{ .tag = .empty_quantifier, .span = .{ .start = 1, .end = 3 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regexp-quantifier-error-out-of-order" {
-    var tokenizer: RegExpTokenizer = .{};
-    const src = "a{5,2}";
-    var actual: std.ArrayList(Token) = .{};
-    defer actual.deinit(testing.allocator);
-    while (tokenizer.next(src)) |got| {
-        try actual.append(testing.allocator, got);
-    }
-    try testing.expectEqual(@as(usize, 2), actual.items.len);
-    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
-    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[1]));
-    try testing.expectEqual(TokenError.quantifier_out_of_order, actual.items[1].parse_error.tag);
-}
 test "regexp-quantifier-error-unclosed-braces" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "a{3,5";
@@ -1102,10 +1081,11 @@ test "regexp-quantifier-error-unclosed-braces" {
     while (tokenizer.next(src)) |got| {
         try actual.append(testing.allocator, got);
     }
-    try testing.expectEqual(@as(usize, 2), actual.items.len);
-    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
-    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[1]));
-    try testing.expectEqual(TokenError.unclosed_quantifier, actual.items[1].parse_error.tag);
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .parse_error = .{ .tag = .non_terminated_quantifier, .span = .{ .start = 1, .end = 5 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 test "regexp-quantifier-error-invalid-characters" {
     var tokenizer: RegExpTokenizer = .{};
@@ -1115,10 +1095,13 @@ test "regexp-quantifier-error-invalid-characters" {
     while (tokenizer.next(src)) |got| {
         try actual.append(testing.allocator, got);
     }
-    try testing.expectEqual(@as(usize, 2), actual.items.len);
-    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
-    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[1]));
-    try testing.expectEqual(TokenError.invalid_quantifier_syntax, actual.items[1].parse_error.tag);
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .parse_error = .{ .tag = .invalid_quantifier_syntax, .span = .{ .start = 1, .end = 4 } } },
+        .{ .character = 4 }, // '5'
+        .{ .character = 5 }, // '}'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 test "regexp-quantifier-escaped-special-chars" {
     // Escaped quantifier chars should be literals, not quantifiers
