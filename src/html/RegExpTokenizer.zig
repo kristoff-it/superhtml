@@ -207,9 +207,9 @@ fn consume(self: *RegExpTokenizer, src: []const u8) bool {
 
 fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
     while (true) {
-        // std.debug.print("token {d}: {c}\n", .{ self.idx, self.current });
         switch (self.state) {
             .data => {
+                // std.debug.print("state: {s}, token {d}: {c}\n", .{ @tagName(self.state), self.idx, self.current });
                 if (!self.consume(src)) {
                     self.state = .eof;
                 } else switch (self.current) {
@@ -661,19 +661,19 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     },
                 };
 
-                if (!self.consume(src)) self.state = .eof;
+                self.state = .data;
 
                 return anchor;
             },
             .dot => |pos| {
-                if (!self.consume(src)) self.state = .eof;
+                self.state = .data;
 
                 return .{
                     .dot = pos,
                 };
             },
             .alternation => |pos| {
-                if (!self.consume(src)) self.state = .eof;
+                self.state = .data;
 
                 return .{
                     .alternation = pos,
@@ -800,7 +800,7 @@ test "regexp-escape-in-context" {
     const expected = [_]Token{
         .{ .character = 0 }, // 'a'
         .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 1, .end = 3 } } }, // \d
-        .{ .quantifier = .{ .kind = .one_or_more, .span = .{ .start = 3, .end = 4 } } }, // +
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 3, .end = 4 } } }, // +
         .{ .character = 4 }, // 'b'
         .{ .escape_sequence = .{ .kind = .word, .span = .{ .start = 5, .end = 7 } } }, // \w
         .{ .character = 7 }, // 'c'
@@ -824,7 +824,7 @@ test "regexp-escape-inside-groups" {
     const expected = [_]Token{
         .{ .group_open = .{ .kind = .regular, .span = .{ .start = 0, .end = 1 } } },
         .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 1, .end = 3 } } },
-        .{ .quantifier = .{ .kind = .one_or_more, .span = .{ .start = 3, .end = 4 } } },
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 3, .end = 4 } } },
         .{ .group_close = 4 },
     };
 
@@ -1244,7 +1244,7 @@ test "regex-anchor-start" {
         try actual.append(testing.allocator, got);
     }
     const expected = [_]Token{
-        .{ .anchor = .{ .kind = .start, .span = .{ .start = 0, .end = 1 } } },
+        .{ .anchor = .{ .kind = .start, .pos = 0 } },
         .{ .character = 1 }, // 'a'
         .{ .character = 2 }, // 'b'
         .{ .character = 3 }, // 'c'
@@ -1264,7 +1264,7 @@ test "regex-anchor-end" {
         .{ .character = 0 }, // 'a'
         .{ .character = 1 }, // 'b'
         .{ .character = 2 }, // 'c'
-        .{ .anchor = .{ .kind = .end, .span = .{ .start = 3, .end = 4 } } },
+        .{ .anchor = .{ .kind = .end, .pos = 3 } },
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
@@ -1278,11 +1278,11 @@ test "regex-anchor-both" {
         try actual.append(testing.allocator, got);
     }
     const expected = [_]Token{
-        .{ .anchor = .{ .kind = .start, .span = .{ .start = 0, .end = 1 } } },
+        .{ .anchor = .{ .kind = .start, .pos = 0 } },
         .{ .character = 1 }, // 'a'
         .{ .character = 2 }, // 'b'
         .{ .character = 3 }, // 'c'
-        .{ .anchor = .{ .kind = .end, .span = .{ .start = 4, .end = 5 } } },
+        .{ .anchor = .{ .kind = .end, .pos = 4 } },
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
@@ -1352,13 +1352,13 @@ test "regex-complex-pattern-with-anchors-and-dot" {
         try actual.append(testing.allocator, got);
     }
     const expected = [_]Token{
-        .{ .anchor = .{ .kind = .start, .span = .{ .start = 0, .end = 1 } } },
+        .{ .anchor = .{ .kind = .start, .pos = 0 } },
         .{ .dot = 1 },
         .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 2, .end = 3 } } },
         .{ .character = 3 }, // 'f'
         .{ .character = 4 }, // 'o'
         .{ .character = 5 }, // 'o'
-        .{ .anchor = .{ .kind = .end, .span = .{ .start = 6, .end = 7 } } },
+        .{ .anchor = .{ .kind = .end, .pos = 6 } },
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
@@ -1504,7 +1504,7 @@ test "regex-alternation-complex-pattern" {
         try actual.append(testing.allocator, got);
     }
     const expected = [_]Token{
-        .{ .anchor = .{ .kind = .start, .span = .{ .start = 0, .end = 1 } } },
+        .{ .anchor = .{ .kind = .start, .pos = 0 } },
         .{ .group_open = .{ .kind = .regular, .span = .{ .start = 1, .end = 2 } } },
         .{ .character = 2 }, // 'f'
         .{ .character = 3 }, // 'o'
@@ -1518,7 +1518,7 @@ test "regex-alternation-complex-pattern" {
         .{ .character = 11 }, // 'a'
         .{ .character = 12 }, // 'z'
         .{ .group_close = 13 },
-        .{ .anchor = .{ .kind = .end, .span = .{ .start = 14, .end = 15 } } },
+        .{ .anchor = .{ .kind = .end, .pos = 14 } },
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
