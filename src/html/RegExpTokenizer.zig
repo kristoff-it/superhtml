@@ -35,6 +35,7 @@ const State = union(enum) {
 
     anchor: u32,
     dot: u32,
+    alternation: u32,
 
     eof,
 };
@@ -245,6 +246,11 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     '.' => {
                         self.state = .{
                             .dot = self.idx - 1,
+                        };
+                    },
+                    '|' => {
+                        self.state = .{
+                            .alternation = self.idx - 1,
                         };
                     },
                     else => {
@@ -664,6 +670,13 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
 
                 return .{
                     .dot = pos,
+                };
+            },
+            .alternation => |pos| {
+                if (!self.consume(src)) self.state = .eof;
+
+                return .{
+                    .alternation = pos,
                 };
             },
             .eof => return null,
@@ -1346,6 +1359,182 @@ test "regex-complex-pattern-with-anchors-and-dot" {
         .{ .character = 4 }, // 'o'
         .{ .character = 5 }, // 'o'
         .{ .anchor = .{ .kind = .end, .span = .{ .start = 6, .end = 7 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-simple" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a|b";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .alternation = 1 }, // '|'
+        .{ .character = 2 }, // 'b'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-multiple" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "cat|dog|bird";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'c'
+        .{ .character = 1 }, // 'a'
+        .{ .character = 2 }, // 't'
+        .{ .alternation = 3 }, // '|'
+        .{ .character = 4 }, // 'd'
+        .{ .character = 5 }, // 'o'
+        .{ .character = 6 }, // 'g'
+        .{ .alternation = 7 }, // '|'
+        .{ .character = 8 }, // 'b'
+        .{ .character = 9 }, // 'i'
+        .{ .character = 10 }, // 'r'
+        .{ .character = 11 }, // 'd'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-with-groups" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "(foo|bar)";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .group_open = .{ .kind = .regular, .span = .{ .start = 0, .end = 1 } } },
+        .{ .character = 1 }, // 'f'
+        .{ .character = 2 }, // 'o'
+        .{ .character = 3 }, // 'o'
+        .{ .alternation = 4 }, // '|'
+        .{ .character = 5 }, // 'b'
+        .{ .character = 6 }, // 'a'
+        .{ .character = 7 }, // 'r'
+        .{ .group_close = 8 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-with-quantifiers" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a+|b*";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 1, .end = 2 } } },
+        .{ .alternation = 2 }, // '|'
+        .{ .character = 3 }, // 'b'
+        .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 4, .end = 5 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-with-escapes" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\d|\\w";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 0, .end = 2 } } },
+        .{ .alternation = 2 }, // '|'
+        .{ .escape_sequence = .{ .kind = .word, .span = .{ .start = 3, .end = 5 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-escaped" {
+    // Escaped pipe should be a literal, not alternation
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a\\|b";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .escape_sequence = .{ .kind = .literal_pipe, .span = .{ .start = 1, .end = 3 } } },
+        .{ .character = 3 }, // 'b'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-empty-alternatives" {
+    // Empty alternatives are valid in JavaScript regex
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "|a|";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .alternation = 0 }, // '|' at start (empty left alternative)
+        .{ .character = 1 }, // 'a'
+        .{ .alternation = 2 }, // '|' (empty right alternative)
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-complex-pattern" {
+    // Pattern: ^(foo|bar|baz)$
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "^(foo|bar|baz)$";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .anchor = .{ .kind = .start, .span = .{ .start = 0, .end = 1 } } },
+        .{ .group_open = .{ .kind = .regular, .span = .{ .start = 1, .end = 2 } } },
+        .{ .character = 2 }, // 'f'
+        .{ .character = 3 }, // 'o'
+        .{ .character = 4 }, // 'o'
+        .{ .alternation = 5 }, // '|'
+        .{ .character = 6 }, // 'b'
+        .{ .character = 7 }, // 'a'
+        .{ .character = 8 }, // 'r'
+        .{ .alternation = 9 }, // '|'
+        .{ .character = 10 }, // 'b'
+        .{ .character = 11 }, // 'a'
+        .{ .character = 12 }, // 'z'
+        .{ .group_close = 13 },
+        .{ .anchor = .{ .kind = .end, .span = .{ .start = 14, .end = 15 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-alternation-with-dot" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = ".|a";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .dot = 0 },
+        .{ .alternation = 1 }, // '|'
+        .{ .character = 2 }, // 'a'
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
