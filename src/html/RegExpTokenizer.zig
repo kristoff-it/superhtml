@@ -17,15 +17,42 @@ const State = union(enum) {
 
     escape_sequence: u32,
 
+    quantifier_start: u32,
+
+    quantifier_start_curly: u32,
+    quantifier_curly_min: struct {
+        start: u32,
+        range: struct { min: Span, max: ?Span },
+    },
+    quantifier_curly_max: struct {
+        start: u32,
+        range: struct { min: Span, max: ?Span },
+    },
+    quantifier_end_curly: struct {
+        start: u32,
+        range: struct { min: Span, max: ?Span, exact: bool = false },
+    },
+
     eof,
 };
 
 const TokenError = enum {
     generic_error,
 
-    //
+    // groups
     unclosed_capture_group,
-    invalid_escape_char,
+
+    // escape
+    invalid_escape_sequence,
+    dangling_backslash,
+
+    // quantifiers
+    non_terminated_quantifier,
+    invalid_quantifier_placement,
+    empty_quantifier,
+    quantifier_out_of_order,
+    unclosed_quantifier,
+    invalid_quantifier_syntax,
 };
 
 const Token = union(enum) {
@@ -42,7 +69,7 @@ const Token = union(enum) {
     char_class_range: u32, // - inside []
 
     // Quantifiers
-    // quantifier: struct { kind: QuantifierKind, span: Span },
+    quantifier: struct { kind: QuantifierKind, lazy: bool, span: Span },
 
     // Anchors & Special
     // anchor: struct { kind: AnchorKind, span: Span },
@@ -56,7 +83,7 @@ const Token = union(enum) {
 
     pub const GroupKind = enum { regular, non_capturing };
     pub const EscapeKind = enum {
-        // Character classes
+        // character classes
         digit, //                        \d
         non_digit, //                    \D
         word, //                         \w
@@ -64,18 +91,18 @@ const Token = union(enum) {
         whitespace, //                   \s
         non_whitespace, //               \S
 
-        // Control characters
+        // control characters
         newline, //                      \n
         carriage_return, //              \r
         tab, //                          \t
         vertical_tab, //                 \v
         form_feed, //                    \f
 
-        // Boundaries (zero-width)
+        // boundaries (zero-width)
         word_boundary, //                \b
         non_word_boundary, //            \B
 
-        // Literal escapes (escaped special chars)
+        // literal escapes (escaped special chars)
         literal_dot, //                  \.
         literal_asterisk, //             \*
         literal_plus, //                 \+
@@ -138,9 +165,19 @@ const Token = union(enum) {
             };
         }
     };
-    // pub const QuantifierKind = enum {};
+    pub const QuantifierKind = union(enum) {
+        zero_or_more, //                  *
+        one_or_more, //                   +
+        zero_or_one, //                   ?
+        exact_count: Span, //              {n}
+        min_count: Span, //                {n,}
+        range_count: struct { Span, Span }, //    {n,m}
+
+    };
     // pub const AnchorKind = enum {};
 };
+
+// tokenizer state
 
 idx: u32 = 0,
 current: u8 = undefined,
@@ -179,6 +216,25 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     '\\' => {
                         self.state = .{ .escape_sequence = self.idx - 1 };
                     },
+                    '+', '*', '?', '{' => |q| {
+                        if (self.idx == 1) {
+                            return .{
+                                .parse_error = .{
+                                    .tag = .invalid_quantifier_placement,
+                                    .span = .{
+                                        .start = 0,
+                                        .end = self.idx,
+                                    },
+                                },
+                            };
+                        } else {
+                            if (q == '{') {
+                                self.state = .{ .quantifier_start_curly = self.idx - 1 };
+                            } else {
+                                self.state = .{ .quantifier_start = self.idx - 1 };
+                            }
+                        }
+                    },
                     else => {
                         return .{
                             .character = self.idx - 1,
@@ -205,7 +261,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         };
                     },
                     else => {
-                        self.current -= 1;
+                        self.idx -= 1;
                         self.state = .data;
                         return .{
                             .group_open = .{
@@ -254,7 +310,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     self.state = .eof;
                     return .{
                         .parse_error = .{
-                            .tag = .generic_error,
+                            .tag = .dangling_backslash,
                             .span = .{
                                 .start = start,
                                 .end = self.idx,
@@ -263,6 +319,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     };
                 } else {
                     if (Token.EscapeKind.from_char(self.current)) |kind| {
+                        self.state = .data;
                         return .{
                             .escape_sequence = .{
                                 .kind = kind,
@@ -275,7 +332,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     } else {
                         return .{
                             .parse_error = .{
-                                .tag = .invalid_escape_char,
+                                .tag = .invalid_escape_sequence,
                                 .span = .{
                                     .start = start,
                                     .end = self.idx,
@@ -284,6 +341,272 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         };
                     }
                 }
+            },
+            .quantifier_start => |start| {
+                const kind: Token.QuantifierKind = switch (self.current) {
+                    '+' => .one_or_more,
+                    '*' => .zero_or_more,
+                    '?' => .zero_or_one,
+                    else => unreachable,
+                };
+
+                if (!self.consume(src)) {
+                    self.state = .eof;
+                    return .{
+                        .quantifier = .{
+                            .kind = kind,
+                            .lazy = false,
+                            .span = .{ .start = start, .end = self.idx },
+                        },
+                    };
+                } else {
+                    self.state = .data;
+                    if (self.current == '?') {
+                        return .{
+                            .quantifier = .{
+                                .kind = kind,
+                                .lazy = true,
+                                .span = .{ .start = start, .end = self.idx },
+                            },
+                        };
+                    } else {
+                        self.idx -= 1;
+                        return .{
+                            .quantifier = .{
+                                .kind = kind,
+                                .lazy = false,
+                                .span = .{ .start = start, .end = self.idx },
+                            },
+                        };
+                    }
+                }
+            },
+
+            .quantifier_start_curly => |start| {
+                if (!self.consume(src)) {
+                    self.state = .eof;
+                    return .{
+                        .parse_error = .{
+                            .tag = .non_terminated_quantifier,
+                            .span = .{
+                                .start = start,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                } else {
+                    if (!std.ascii.isDigit(self.current)) {
+                        self.state = .data;
+                        return .{
+                            .parse_error = .{
+                                .tag = .invalid_quantifier_syntax,
+                                .span = .{
+                                    .start = start,
+                                    .end = self.idx,
+                                },
+                            },
+                        };
+                    }
+                    self.state = .{
+                        .quantifier_curly_min = .{
+                            .start = start,
+                            .range = .{
+                                .min = .{
+                                    .start = self.idx - 1,
+                                    .end = self.idx,
+                                },
+                                .max = null,
+                            },
+                        },
+                    };
+                }
+            },
+            .quantifier_curly_min => |state| {
+                if (!self.consume(src)) {
+                    self.state = .eof;
+                    return .{
+                        .parse_error = .{
+                            .tag = .non_terminated_quantifier,
+                            .span = .{
+                                .start = state.start,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                } else {
+                    if (self.current == ',') {
+                        self.state = .{
+                            .quantifier_curly_max = .{
+                                .start = state.start,
+                                .range = .{
+                                    .min = state.range.min,
+                                    .max = null,
+                                },
+                            },
+                        };
+                    } else if (self.current == '}') {
+                        self.state = .{
+                            .quantifier_end_curly = .{
+                                .start = state.start,
+                                .range = .{
+                                    .exact = true,
+                                    .min = .{
+                                        .start = state.range.min.start,
+                                        .end = self.idx - 1,
+                                    },
+                                    .max = null,
+                                },
+                            },
+                        };
+                    } else {
+                        if (!std.ascii.isDigit(self.current)) {
+                            self.state = .data;
+                            return .{
+                                .parse_error = .{
+                                    .tag = .invalid_quantifier_syntax,
+                                    .span = .{
+                                        .start = state.start,
+                                        .end = self.idx,
+                                    },
+                                },
+                            };
+                        }
+                        var new_state = state;
+                        new_state.range.min.end = self.idx;
+                        self.state = .{ .quantifier_curly_min = new_state };
+                    }
+                }
+            },
+            .quantifier_curly_max => |state| {
+                if (!self.consume(src)) {
+                    self.state = .eof;
+                    return .{
+                        .parse_error = .{
+                            .tag = .non_terminated_quantifier,
+                            .span = .{
+                                .start = state.start,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                } else {
+                    const is_first_transition = state.range.max == null;
+                    const current_is_curly = self.current == '}';
+
+                    if (is_first_transition and current_is_curly) {
+                        const new_state: State = .{
+                            .quantifier_end_curly = .{
+                                .start = state.start,
+                                .range = .{
+                                    .min = state.range.min,
+                                    .max = null,
+                                    .exact = false,
+                                },
+                            },
+                        };
+                        self.state = new_state;
+                    } else if (is_first_transition) {
+                        const new_state: State = .{
+                            .quantifier_curly_max = .{
+                                .start = state.start,
+                                .range = .{
+                                    .min = state.range.min,
+                                    .max = .{
+                                        .start = self.idx - 1,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                        self.state = new_state;
+                    } else if (current_is_curly) {
+                        const new_state: State = .{
+                            .quantifier_end_curly = .{
+                                .start = state.start,
+                                .range = .{
+                                    .min = state.range.min,
+                                    .max = .{
+                                        .start = state.range.max.?.start,
+                                        .end = self.idx - 1,
+                                    },
+                                    .exact = false,
+                                },
+                            },
+                        };
+                        self.state = new_state;
+                    } else {
+                        if (!std.ascii.isDigit(self.current)) {
+                            self.state = .data;
+                            return .{
+                                .parse_error = .{
+                                    .tag = .invalid_quantifier_syntax,
+                                    .span = .{
+                                        .start = state.start,
+                                        .end = self.idx,
+                                    },
+                                },
+                            };
+                        }
+                        const new_state: State = .{
+                            .quantifier_curly_max = .{
+                                .start = state.start,
+                                .range = .{
+                                    .min = state.range.min,
+                                    .max = .{
+                                        .start = state.range.max.?.start,
+                                        .end = self.idx,
+                                    },
+                                },
+                            },
+                        };
+                        self.state = new_state;
+                    }
+                }
+            },
+            .quantifier_end_curly => |state| {
+                const more_tokens = self.consume(src);
+
+                const is_lazy = self.current == '?';
+
+                if (!is_lazy and more_tokens) self.idx -= 1;
+
+                const quantifier: Token = if (state.range.max) |max| blk: {
+                    // upper and lower bounds
+
+                    break :blk .{
+                        .quantifier = .{
+                            .kind = .{ .range_count = .{ state.range.min, max } },
+                            .lazy = is_lazy,
+                            .span = .{ .start = state.start, .end = self.idx },
+                        },
+                    };
+                } else if (state.range.exact) blk: {
+                    // exact
+                    break :blk .{
+                        .quantifier = .{
+                            .kind = .{ .exact_count = state.range.min },
+                            .lazy = is_lazy,
+                            .span = .{ .start = state.start, .end = self.idx },
+                        },
+                    };
+                } else blk: {
+                    // lower bound only
+                    break :blk .{
+                        .quantifier = .{
+                            .kind = .{ .min_count = state.range.min },
+                            .lazy = is_lazy,
+                            .span = .{ .start = state.start, .end = self.idx },
+                        },
+                    };
+                };
+
+                if (!more_tokens) {
+                    self.state = .eof;
+                } else {
+                    self.state = .data;
+                }
+
+                return quantifier;
             },
             .eof => return null,
         }
@@ -389,4 +712,430 @@ test "regexp-escapes" {
         try testing.expectEqual(@as(u32, 0), token.escape_sequence.span.start);
         try testing.expectEqual(@as(u32, 2), token.escape_sequence.span.end);
     }
+}
+
+test "regexp-escape-in-context" {
+    // Test escapes mixed with regular characters and groups
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a\\d+b\\wc";
+
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 1, .end = 3 } } }, // \d
+        .{ .quantifier = .{ .kind = .one_or_more, .span = .{ .start = 3, .end = 4 } } }, // +
+        .{ .character = 4 }, // 'b'
+        .{ .escape_sequence = .{ .kind = .word, .span = .{ .start = 5, .end = 7 } } }, // \w
+        .{ .character = 7 }, // 'c'
+    };
+
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-inside-groups" {
+    // Test escapes inside capturing groups
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "(\\d+)";
+
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+
+    const expected = [_]Token{
+        .{ .group_open = .{ .kind = .regular, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 1, .end = 3 } } },
+        .{ .quantifier = .{ .kind = .one_or_more, .span = .{ .start = 3, .end = 4 } } },
+        .{ .group_close = 4 },
+    };
+
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+test "regexp-escape-invalid-sequences" {
+    // Test that invalid escape sequences produce errors
+    const test_cases = [_]struct {
+        src: []const u8,
+        error_tag: TokenError,
+    }{
+        .{ .src = "\\", .error_tag = .dangling_backslash }, // Backslash at end
+        .{ .src = "\\x", .error_tag = .invalid_escape_sequence }, // Invalid escape (if not implementing hex)
+        .{ .src = "\\q", .error_tag = .invalid_escape_sequence }, // Unknown escape
+    };
+    for (test_cases) |tc| {
+        var tokenizer: RegExpTokenizer = .{};
+        const token = tokenizer.next(tc.src).?;
+
+        try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), token));
+        try testing.expectEqual(tc.error_tag, token.parse_error.tag);
+    }
+}
+test "regexp-escape-case-sensitivity" {
+    // Verify that case matters for escapes
+    var tokenizer1: RegExpTokenizer = .{};
+    var tokenizer2: RegExpTokenizer = .{};
+
+    const token_d = tokenizer1.next("\\d").?; // digit
+    const token_D = tokenizer2.next("\\D").?; // non-digit
+
+    try testing.expectEqual(Token.EscapeKind.digit, token_d.escape_sequence.kind);
+    try testing.expectEqual(Token.EscapeKind.non_digit, token_D.escape_sequence.kind);
+}
+test "regexp-escape-multiple-in-sequence" {
+    // Test multiple escapes in a row
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\d\\w\\s";
+
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+
+    const expected = [_]Token{
+        .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 0, .end = 2 } } },
+        .{ .escape_sequence = .{ .kind = .word, .span = .{ .start = 2, .end = 4 } } },
+        .{ .escape_sequence = .{ .kind = .whitespace, .span = .{ .start = 4, .end = 6 } } },
+    };
+
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-quantifier-simple-greedy" {
+    const test_cases = [_]struct {
+        src: []const u8,
+        kind: Token.QuantifierKind,
+    }{
+        .{ .src = "a*", .kind = .zero_or_more },
+        .{ .src = "b+", .kind = .one_or_more },
+        .{ .src = "c?", .kind = .zero_or_one },
+    };
+    for (test_cases) |tc| {
+        var tokenizer: RegExpTokenizer = .{};
+
+        var actual: std.ArrayList(Token) = .{};
+        defer actual.deinit(testing.allocator);
+        while (tokenizer.next(tc.src)) |got| {
+            try actual.append(testing.allocator, got);
+        }
+        try testing.expectEqual(@as(usize, 2), actual.items.len);
+        try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
+        try testing.expectEqual(Token.quantifier, @as(std.meta.Tag(Token), actual.items[1]));
+        try testing.expectEqual(tc.kind, actual.items[1].quantifier.kind);
+        try testing.expectEqual(false, actual.items[1].quantifier.lazy);
+    }
+}
+test "regexp-quantifier-simple-lazy" {
+    const test_cases = [_]struct {
+        src: []const u8,
+        kind: Token.QuantifierKind,
+    }{
+        .{ .src = "a*?", .kind = .zero_or_more },
+        .{ .src = "b+?", .kind = .one_or_more },
+        .{ .src = "c??", .kind = .zero_or_one },
+    };
+    for (test_cases) |tc| {
+        var tokenizer: RegExpTokenizer = .{};
+
+        var actual: std.ArrayList(Token) = .{};
+        defer actual.deinit(testing.allocator);
+        while (tokenizer.next(tc.src)) |got| {
+            try actual.append(testing.allocator, got);
+        }
+        try testing.expectEqual(@as(usize, 2), actual.items.len);
+        try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
+        try testing.expectEqual(Token.quantifier, @as(std.meta.Tag(Token), actual.items[1]));
+        try testing.expectEqual(tc.kind, actual.items[1].quantifier.kind);
+        try testing.expectEqual(true, actual.items[1].quantifier.lazy);
+    }
+}
+test "regexp-quantifier-exact-count" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a{5}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{
+            .quantifier = .{
+                .kind = .{ .exact_count = .{ .start = 2, .end = 3 } }, // "5" is at position 2-3
+                .lazy = false,
+                .span = .{ .start = 1, .end = 4 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+test "regexp-quantifier-at-least" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "b{3,}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'b'
+        .{
+            .quantifier = .{
+                .kind = .{ .min_count = .{ .start = 2, .end = 3 } }, // "3" is at position 2-3
+                .lazy = false,
+                .span = .{ .start = 1, .end = 5 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+test "regexp-quantifier-range" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "c{2,7}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'c'
+        .{
+            .quantifier = .{
+                .kind = .{
+                    .range_count = .{
+                        .{ .start = 2, .end = 3 }, // "2" is at position 2-3
+                        .{ .start = 4, .end = 5 }, // "7" is at position 4-5
+                    },
+                },
+                .lazy = false,
+                .span = .{ .start = 1, .end = 6 },
+            },
+        },
+    };
+    try testing.expectEqualDeep(&expected, actual.items);
+}
+test "regexp-quantifier-curly-lazy" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "d{2,5}?";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'd'
+        .{
+            .quantifier = .{
+                .kind = .{
+                    .range_count = .{
+                        .{ .start = 2, .end = 3 }, // "2" at position 2-3
+                        .{ .start = 4, .end = 5 }, // "5" at position 4-5
+                    },
+                },
+                .lazy = true,
+                .span = .{ .start = 1, .end = 7 }, // whole "{2,5}?" from 1-7
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+test "regexp-quantifier-with-escapes" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\d+\\w*\\s?";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 0, .end = 2 } } },
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 2, .end = 3 } } },
+        .{ .escape_sequence = .{ .kind = .word, .span = .{ .start = 3, .end = 5 } } },
+        .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 5, .end = 6 } } },
+        .{ .escape_sequence = .{ .kind = .whitespace, .span = .{ .start = 6, .end = 8 } } },
+        .{ .quantifier = .{ .kind = .zero_or_one, .lazy = false, .span = .{ .start = 8, .end = 9 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+test "regexp-quantifier-in-groups" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "(abc)+";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .group_open = .{ .kind = .regular, .span = .{ .start = 0, .end = 1 } } },
+        .{ .character = 1 }, // 'a'
+        .{ .character = 2 }, // 'b'
+        .{ .character = 3 }, // 'c'
+        .{ .group_close = 4 },
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 5, .end = 6 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+test "regexp-quantifier-complex-pattern" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a{2,4}b*c+d?";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{
+            .quantifier = .{
+                .kind = .{
+                    .range_count = .{
+                        .{ .start = 2, .end = 3 }, // "2"
+                        .{ .start = 4, .end = 5 }, // "4"
+                    },
+                },
+                .lazy = false,
+                .span = .{ .start = 1, .end = 6 },
+            },
+        },
+        .{ .character = 6 }, // 'b'
+        .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 7, .end = 8 } } },
+        .{ .character = 8 }, // 'c'
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 9, .end = 10 } } },
+        .{ .character = 10 }, // 'd'
+        .{ .quantifier = .{ .kind = .zero_or_one, .lazy = false, .span = .{ .start = 11, .end = 12 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+test "regexp-quantifier-double-digit-numbers" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "x{12,345}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'x'
+        .{
+            .quantifier = .{
+                .kind = .{
+                    .range_count = .{
+                        .{ .start = 2, .end = 4 }, // "12" at positions 2-4
+                        .{ .start = 5, .end = 8 }, // "345" at positions 5-8
+                    },
+                },
+                .lazy = false,
+                .span = .{ .start = 1, .end = 9 },
+            },
+        },
+    };
+    try testing.expectEqualDeep(&expected, actual.items);
+}
+test "regexp-quantifier-error-invalid-placement" {
+    // Quantifier at start (nothing to quantify)
+    var tokenizer1: RegExpTokenizer = .{};
+    const src1 = "*abc";
+    var actual1: std.ArrayList(Token) = .{};
+    defer actual1.deinit(testing.allocator);
+    while (tokenizer1.next(src1)) |got| {
+        try actual1.append(testing.allocator, got);
+    }
+    try testing.expectEqual(@as(usize, 1), actual1.items.len);
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual1.items[0]));
+    try testing.expectEqual(TokenError.invalid_quantifier_placement, actual1.items[0].parse_error.tag);
+}
+test "regexp-quantifier-error-double-quantifier" {
+    // Two quantifiers in a row
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a**";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expectEqual(@as(usize, 3), actual.items.len);
+    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(Token.quantifier, @as(std.meta.Tag(Token), actual.items[1]));
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[2]));
+    try testing.expectEqual(TokenError.invalid_quantifier_placement, actual.items[2].parse_error.tag);
+}
+test "regexp-quantifier-error-empty-braces" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a{}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expectEqual(@as(usize, 2), actual.items.len);
+    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[1]));
+    try testing.expectEqual(TokenError.empty_quantifier, actual.items[1].parse_error.tag);
+}
+
+test "regexp-quantifier-error-out-of-order" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a{5,2}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expectEqual(@as(usize, 2), actual.items.len);
+    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[1]));
+    try testing.expectEqual(TokenError.quantifier_out_of_order, actual.items[1].parse_error.tag);
+}
+test "regexp-quantifier-error-unclosed-braces" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a{3,5";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expectEqual(@as(usize, 2), actual.items.len);
+    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[1]));
+    try testing.expectEqual(TokenError.unclosed_quantifier, actual.items[1].parse_error.tag);
+}
+test "regexp-quantifier-error-invalid-characters" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a{3x5}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expectEqual(@as(usize, 2), actual.items.len);
+    try testing.expectEqual(Token.character, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[1]));
+    try testing.expectEqual(TokenError.invalid_quantifier_syntax, actual.items[1].parse_error.tag);
+}
+test "regexp-quantifier-escaped-special-chars" {
+    // Escaped quantifier chars should be literals, not quantifiers
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a\\*b\\+c\\?";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .escape_sequence = .{ .kind = .literal_asterisk, .span = .{ .start = 1, .end = 3 } } },
+        .{ .character = 3 }, // 'b'
+        .{ .escape_sequence = .{ .kind = .literal_plus, .span = .{ .start = 4, .end = 6 } } },
+        .{ .character = 6 }, // 'c'
+        .{ .escape_sequence = .{ .kind = .literal_question, .span = .{ .start = 7, .end = 9 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
 }
