@@ -136,18 +136,18 @@ const Token = union(enum) {
                 's' => .whitespace,
                 'S' => .non_whitespace,
 
-                // Control characters
+                // control characters
                 'n' => .newline,
                 'r' => .carriage_return,
                 't' => .tab,
                 'v' => .vertical_tab,
                 'f' => .form_feed,
 
-                // Boundaries (zero-width)
+                // boundaries (zero-width)
                 'b' => .word_boundary,
                 'B' => .non_word_boundary,
 
-                // Literal escapes (escaped special chars)
+                // literal escapes (escaped special chars)
                 '.' => .literal_dot,
                 '*' => .literal_asterisk,
                 '+' => .literal_plus,
@@ -168,12 +168,12 @@ const Token = union(enum) {
         }
     };
     pub const QuantifierKind = union(enum) {
-        zero_or_more, //                  *
-        one_or_more, //                   +
-        zero_or_one, //                   ?
-        exact_count: Span, //              {n}
-        min_count: Span, //                {n,}
-        range_count: struct { Span, Span }, //    {n,m}
+        zero_or_more, //                        *
+        one_or_more, //                         +
+        zero_or_one, //                         ?
+        exact_count: Span, //                   {n}
+        min_count: Span, //                     {n,}
+        range_count: struct { Span, Span }, //  {n,m}
 
     };
     // pub const AnchorKind = enum {};
