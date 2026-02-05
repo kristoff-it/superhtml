@@ -33,6 +33,9 @@ const State = union(enum) {
         range: struct { min: Span, max: ?Span, exact: bool = false },
     },
 
+    anchor: u32,
+    dot: u32,
+
     eof,
 };
 
@@ -40,6 +43,7 @@ const State = union(enum) {
 // - repeating quantifiers (double, triple, n-ple quantifiers)
 // - quantifier at start of line
 // - ranged quantifier where low > high
+// - invalid anchor placement
 
 const TokenError = enum {
     generic_error,
@@ -74,7 +78,7 @@ const Token = union(enum) {
     quantifier: struct { kind: QuantifierKind, lazy: bool, span: Span },
 
     // Anchors & Special
-    // anchor: struct { kind: AnchorKind, span: Span },
+    anchor: struct { kind: AnchorKind, pos: u32 },
     alternation: u32, // |
     dot: u32, // .
 
@@ -176,7 +180,10 @@ const Token = union(enum) {
         range_count: struct { Span, Span }, //  {n,m}
 
     };
-    // pub const AnchorKind = enum {};
+    pub const AnchorKind = enum {
+        start,
+        end,
+    };
 };
 
 // tokenizer state
@@ -220,7 +227,6 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                             .escape_sequence = self.idx - 1,
                         };
                     },
-
                     '{' => {
                         self.state = .{
                             .quantifier_start_curly = self.idx - 1,
@@ -229,6 +235,16 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     '+', '*', '?' => {
                         self.state = .{
                             .quantifier_start = self.idx - 1,
+                        };
+                    },
+                    '^', '$' => {
+                        self.state = .{
+                            .anchor = self.idx - 1,
+                        };
+                    },
+                    '.' => {
+                        self.state = .{
+                            .dot = self.idx - 1,
                         };
                     },
                     else => {
@@ -626,6 +642,29 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                 }
 
                 return quantifier;
+            },
+            .anchor => |pos| {
+                const anchor: Token = .{
+                    .anchor = .{
+                        .kind = switch (src[pos]) {
+                            '^' => .start,
+                            '$' => .end,
+                            else => unreachable,
+                        },
+                        .pos = self.idx - 1,
+                    },
+                };
+
+                if (!self.consume(src)) self.state = .eof;
+
+                return anchor;
+            },
+            .dot => |pos| {
+                if (!self.consume(src)) self.state = .eof;
+
+                return .{
+                    .dot = pos,
+                };
             },
             .eof => return null,
         }
@@ -1119,6 +1158,194 @@ test "regexp-quantifier-escaped-special-chars" {
         .{ .escape_sequence = .{ .kind = .literal_plus, .span = .{ .start = 4, .end = 6 } } },
         .{ .character = 6 }, // 'c'
         .{ .escape_sequence = .{ .kind = .literal_question, .span = .{ .start = 7, .end = 9 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-dot-single" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = ".";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .dot = 0 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-dot-in-pattern" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a.b";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .dot = 1 },
+        .{ .character = 2 }, // 'b'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-dot-with-quantifier" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = ".*";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .dot = 0 },
+        .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 1, .end = 2 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-dot-escaped" {
+    // Escaped dot should be a literal, not the dot metacharacter
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\.";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .escape_sequence = .{ .kind = .literal_dot, .span = .{ .start = 0, .end = 2 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-anchor-start" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "^abc";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .anchor = .{ .kind = .start, .span = .{ .start = 0, .end = 1 } } },
+        .{ .character = 1 }, // 'a'
+        .{ .character = 2 }, // 'b'
+        .{ .character = 3 }, // 'c'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-anchor-end" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "abc$";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{ .character = 1 }, // 'b'
+        .{ .character = 2 }, // 'c'
+        .{ .anchor = .{ .kind = .end, .span = .{ .start = 3, .end = 4 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-anchor-both" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "^abc$";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .anchor = .{ .kind = .start, .span = .{ .start = 0, .end = 1 } } },
+        .{ .character = 1 }, // 'a'
+        .{ .character = 2 }, // 'b'
+        .{ .character = 3 }, // 'c'
+        .{ .anchor = .{ .kind = .end, .span = .{ .start = 4, .end = 5 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-anchor-escaped" {
+    // Escaped anchors should be literals
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\^a\\$";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .escape_sequence = .{ .kind = .literal_caret, .span = .{ .start = 0, .end = 2 } } },
+        .{ .character = 2 }, // 'a'
+        .{ .escape_sequence = .{ .kind = .literal_dollar, .span = .{ .start = 3, .end = 5 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-anchor-word-boundary" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\bword\\b";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .escape_sequence = .{ .kind = .word_boundary, .span = .{ .start = 0, .end = 2 } } },
+        .{ .character = 2 }, // 'w'
+        .{ .character = 3 }, // 'o'
+        .{ .character = 4 }, // 'r'
+        .{ .character = 5 }, // 'd'
+        .{ .escape_sequence = .{ .kind = .word_boundary, .span = .{ .start = 6, .end = 8 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-anchor-non-word-boundary" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\Bword\\B";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .escape_sequence = .{ .kind = .non_word_boundary, .span = .{ .start = 0, .end = 2 } } },
+        .{ .character = 2 }, // 'w'
+        .{ .character = 3 }, // 'o'
+        .{ .character = 4 }, // 'r'
+        .{ .character = 5 }, // 'd'
+        .{ .escape_sequence = .{ .kind = .non_word_boundary, .span = .{ .start = 6, .end = 8 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-complex-pattern-with-anchors-and-dot" {
+    // Pattern: ^.*foo$
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "^.*foo$";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .anchor = .{ .kind = .start, .span = .{ .start = 0, .end = 1 } } },
+        .{ .dot = 1 },
+        .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 2, .end = 3 } } },
+        .{ .character = 3 }, // 'f'
+        .{ .character = 4 }, // 'o'
+        .{ .character = 5 }, // 'o'
+        .{ .anchor = .{ .kind = .end, .span = .{ .start = 6, .end = 7 } } },
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
