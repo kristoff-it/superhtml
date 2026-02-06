@@ -14,10 +14,11 @@ const State = union(enum) {
 
     parens_open: u32,
     parens_open_questionmark: u32,
+    parens_close: u32,
 
     escape_sequence: u32,
 
-    quantifier_start: u32,
+    quantifier_start: struct { char: u8, pos: u32 },
 
     quantifier_start_curly: u32,
     quantifier_curly_min: struct {
@@ -33,7 +34,7 @@ const State = union(enum) {
         range: struct { min: Span, max: ?Span, exact: bool = false },
     },
 
-    anchor: u32,
+    anchor: struct { char: u8, pos: u32 },
     dot: u32,
     alternation: u32,
 
@@ -219,8 +220,8 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         };
                     },
                     ')' => {
-                        return .{
-                            .group_close = self.idx - 1,
+                        self.state = .{
+                            .parens_close = self.idx - 1,
                         };
                     },
                     '\\' => {
@@ -233,14 +234,20 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                             .quantifier_start_curly = self.idx - 1,
                         };
                     },
-                    '+', '*', '?' => {
+                    '+', '*', '?' => |c| {
                         self.state = .{
-                            .quantifier_start = self.idx - 1,
+                            .quantifier_start = .{
+                                .char = c,
+                                .pos = self.idx - 1,
+                            },
                         };
                     },
-                    '^', '$' => {
+                    '^', '$' => |c| {
                         self.state = .{
-                            .anchor = self.idx - 1,
+                            .anchor = .{
+                                .char = c,
+                                .pos = self.idx - 1,
+                            },
                         };
                     },
                     '.' => {
@@ -323,6 +330,10 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     },
                 }
             },
+            .parens_close => |pos| {
+                self.state = .data;
+                return .{ .group_close = pos };
+            },
             .escape_sequence => |start| {
                 if (!self.consume(src)) {
                     self.state = .eof;
@@ -360,10 +371,10 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     }
                 }
             },
-            .quantifier_start => |start| {
+            .quantifier_start => |state| {
                 const more_tokens = self.consume(src);
 
-                const kind: Token.QuantifierKind = switch (src[start]) {
+                const kind: Token.QuantifierKind = switch (state.char) {
                     '+' => .one_or_more,
                     '*' => .zero_or_more,
                     '?' => .zero_or_one,
@@ -376,7 +387,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         .quantifier = .{
                             .kind = kind,
                             .lazy = false,
-                            .span = .{ .start = start, .end = self.idx },
+                            .span = .{ .start = state.pos, .end = self.idx },
                         },
                     };
                 } else {
@@ -395,7 +406,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                             .quantifier = .{
                                 .kind = kind,
                                 .lazy = true,
-                                .span = .{ .start = start, .end = self.idx },
+                                .span = .{ .start = state.pos, .end = self.idx },
                             },
                         };
                     }
@@ -406,7 +417,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                             .quantifier = .{
                                 .kind = kind,
                                 .lazy = false,
-                                .span = .{ .start = start, .end = self.idx },
+                                .span = .{ .start = state.pos, .end = self.idx },
                             },
                         };
                     }
@@ -649,10 +660,10 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
 
                 return quantifier;
             },
-            .anchor => |pos| {
+            .anchor => |state| {
                 const anchor: Token = .{
                     .anchor = .{
-                        .kind = switch (src[pos]) {
+                        .kind = switch (state.char) {
                             '^' => .start,
                             '$' => .end,
                             else => unreachable,
