@@ -38,6 +38,9 @@ const State = union(enum) {
     dot: u32,
     alternation: u32,
 
+    character_class_start: u32,
+    character_class_body: struct { is_first_transition: bool, pos: u32 },
+
     eof,
 };
 
@@ -61,6 +64,10 @@ const TokenError = enum {
     non_terminated_quantifier,
     empty_quantifier,
     invalid_quantifier_syntax,
+
+    // character class
+    non_terminated_character_class,
+    invalid_character_class_token,
 };
 
 const Token = union(enum) {
@@ -69,20 +76,20 @@ const Token = union(enum) {
     group_open: struct { kind: GroupKind, span: Span },
     group_close: u32,
 
-    // Character Classes & Escapes
+    // character classes & escapes
     escape_sequence: struct { kind: EscapeKind, span: Span },
-    char_class_open: u32, // [
-    char_class_close: u32, // ]
-    char_class_negated: u32, // ^ inside []
-    char_class_range: u32, // - inside []
 
-    // Quantifiers
+    character_class_open: struct { negated: bool, span: Span },
+    character_class_range: struct { low: u32, high: u32 },
+    character_class_close: u32,
+
+    // quantifiers
     quantifier: struct { kind: QuantifierKind, lazy: bool, span: Span },
 
-    // Anchors & Special
+    // anchors & special
     anchor: struct { kind: AnchorKind, pos: u32 },
-    alternation: u32, // |
-    dot: u32, // .
+    alternation: u32,
+    dot: u32,
 
     parse_error: struct {
         tag: TokenError,
@@ -90,6 +97,7 @@ const Token = union(enum) {
     },
 
     pub const GroupKind = enum { regular, non_capturing };
+
     pub const EscapeKind = enum {
         // character classes
         digit, //                        \d
@@ -126,6 +134,7 @@ const Token = union(enum) {
         literal_pipe, //                 \|
         literal_backslash, //            \\
         literal_slash, //                \/
+        literal_dash, //                 \-
 
         // null_char,          // \0
         // hex_escape,         // \xHH
@@ -169,10 +178,12 @@ const Token = union(enum) {
                 '|' => .literal_pipe,
                 '\\' => .literal_backslash,
                 '/' => .literal_slash,
+                '-' => .literal_dash,
                 else => null,
             };
         }
     };
+
     pub const QuantifierKind = union(enum) {
         zero_or_more, //                        *
         one_or_more, //                         +
@@ -206,8 +217,17 @@ fn consume(self: *RegExpTokenizer, src: []const u8) bool {
     return true;
 }
 
+fn peek(self: *RegExpTokenizer, src: []const u8) ?u8 {
+    if (self.idx == src.len) {
+        return null;
+    }
+
+    return src[self.idx];
+}
+
 fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
     while (true) {
+        // std.debug.print("state: {s}\n", .{@tagName(self.state)});
         switch (self.state) {
             .data => {
                 // std.debug.print("state: {s}, token {d}: {c}\n", .{ @tagName(self.state), self.idx, self.current });
@@ -258,6 +278,11 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     '|' => {
                         self.state = .{
                             .alternation = self.idx - 1,
+                        };
+                    },
+                    '[' => {
+                        self.state = .{
+                            .character_class_start = self.idx - 1,
                         };
                     },
                     else => {
@@ -690,6 +715,171 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     .alternation = pos,
                 };
             },
+            .character_class_start => |pos| {
+                const more_tokens = self.consume(src);
+
+                if (!more_tokens) {
+                    return .{
+                        .parse_error = .{
+                            .tag = .non_terminated_character_class,
+                            .span = .{
+                                .start = pos,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                }
+
+                self.state = .{
+                    .character_class_body = .{
+                        .pos = pos,
+                        .is_first_transition = true,
+                    },
+                };
+
+                // TODO: probably here in both cases peek the next char and
+                // check if it's a [ or a -
+                // or update the state variant to hold a bool do signify if
+                // it's the first transition to it so it can now it's on the
+                // first char in the range
+                if (self.current == '^') {
+                    return .{
+                        .character_class_open = .{
+                            .negated = true,
+                            .span = .{
+                                .start = pos,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                } else {
+                    self.idx -= 1;
+                    return .{
+                        .character_class_open = .{
+                            .negated = false,
+                            .span = .{
+                                .start = pos,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                }
+            },
+            .character_class_body => |state| {
+                const more_tokens = self.consume(src);
+
+                if (state.is_first_transition and more_tokens) switch (self.current) {
+                    ']' => {
+                        const current_idx = self.idx;
+                        const bracket_idx = current_idx - 1;
+                        var return_bracket = false;
+                        while (self.consume(src)) {
+                            if (self.current == ']') {
+                                return_bracket = true;
+                            }
+                        }
+                        self.idx = current_idx;
+                        if (return_bracket) {
+                            return .{ .character = bracket_idx };
+                        }
+                    },
+                    else => {},
+                };
+
+                self.state = .{
+                    .character_class_body = .{
+                        .pos = state.pos,
+                        .is_first_transition = false,
+                    },
+                };
+
+                if (!more_tokens) {
+                    self.state = .data;
+                    return .{
+                        .parse_error = .{
+                            .tag = .non_terminated_character_class,
+                            .span = .{
+                                .start = state.pos,
+                                .end = self.idx,
+                            },
+                        },
+                    };
+                }
+
+                const current_is_backslash = self.current == '\\';
+                const next_is_dash: bool = if (self.peek(src)) |char| blk: {
+                    break :blk char == '-';
+                } else blk: {
+                    break :blk false;
+                };
+
+                if (!current_is_backslash and next_is_dash) {
+                    const range_start = self.idx - 1;
+                    const consumed_dash = self.consume(src);
+                    const consumed_range_high = self.consume(src);
+                    const cosumed_range = consumed_dash and consumed_range_high;
+
+                    if (!cosumed_range) {
+                        return .{
+                            .parse_error = .{
+                                .tag = .non_terminated_character_class,
+                                .span = .{
+                                    .start = state.pos,
+                                    .end = self.idx,
+                                },
+                            },
+                        };
+                    } else if (self.current == ']') {
+                        // hacky, for literal dash
+                        // we undo one consume so that next iteration
+                        // won't peek a '-' and choose this branch
+                        // we return the first char in range as a char
+                        self.idx -= 2;
+                        return .{
+                            .character = range_start,
+                        };
+                    } else {
+                        return .{
+                            .character_class_range = .{
+                                .low = range_start,
+                                .high = self.idx - 1,
+                            },
+                        };
+                    }
+                } else {
+                    if (self.current == ']') {
+                        self.state = .data;
+                        return .{ .character_class_close = self.idx - 1 };
+                    } else if (current_is_backslash) {
+                        const backslash_idx = self.idx - 1;
+                        if (self.consume(src)) {
+                            if (Token.EscapeKind.from_char(self.current)) |kind| {
+                                return .{
+                                    .escape_sequence = .{
+                                        .kind = kind,
+                                        .span = .{
+                                            .start = backslash_idx,
+                                            .end = self.idx,
+                                        },
+                                    },
+                                };
+                            }
+                        }
+
+                        return .{
+                            .parse_error = .{
+                                .tag = .invalid_escape_sequence,
+                                .span = .{
+                                    .start = backslash_idx,
+                                    .end = self.idx,
+                                },
+                            },
+                        };
+                    } else {
+                        return .{ .character = self.idx - 1 };
+                    }
+                }
+            },
             .eof => return null,
         }
     }
@@ -784,6 +974,7 @@ test "regexp-escapes" {
         .{ .src = "\\|", .expected_escape = .literal_pipe },
         .{ .src = "\\\\", .expected_escape = .literal_backslash },
         .{ .src = "\\/", .expected_escape = .literal_slash },
+        .{ .src = "\\-", .expected_escape = .literal_dash },
     };
     for (test_cases) |tc| {
         var tokenizer: RegExpTokenizer = .{};
@@ -1546,6 +1737,404 @@ test "regex-alternation-with-dot" {
         .{ .dot = 0 },
         .{ .alternation = 1 }, // '|'
         .{ .character = 2 }, // 'a'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-simple" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[abc]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // 'a'
+        .{ .character = 2 }, // 'b'
+        .{ .character = 3 }, // 'c'
+        .{ .character_class_close = 4 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-empty" {
+    // Empty character class [] is technically invalid in most regex engines,
+    // but we should handle it gracefully
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character_class_close = 1 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-negated" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[^abc]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .character_class_open = .{
+                .negated = true,
+                .span = .{ .start = 0, .end = 2 },
+            },
+        }, // '[^'
+        .{ .character = 2 }, // 'a'
+        .{ .character = 3 }, // 'b'
+        .{ .character = 4 }, // 'c'
+        .{ .character_class_close = 5 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-negated-empty" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[^]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .character_class_open = .{
+                .negated = true,
+                .span = .{ .start = 0, .end = 2 },
+            },
+        }, // '[^'
+        .{ .character_class_close = 2 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-range-simple" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[a-z]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character_class_range = .{ .low = 1, .high = 3 } }, // 'a-z'
+        .{ .character_class_close = 4 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-range-multiple" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[a-zA-Z0-9]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character_class_range = .{ .low = 1, .high = 3 } }, // 'a-z'
+        .{ .character_class_range = .{ .low = 4, .high = 6 } }, // 'A-Z'
+        .{ .character_class_range = .{ .low = 7, .high = 9 } }, // '0-9'
+        .{ .character_class_close = 10 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-dash-at-start" {
+    // Dash at the start is literal, not a range
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[-abc]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // '-' (literal)
+        .{ .character = 2 }, // 'a'
+        .{ .character = 3 }, // 'b'
+        .{ .character = 4 }, // 'c'
+        .{ .character_class_close = 5 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-dash-at-end" {
+    // Dash at the end is literal, not a range
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[abc-]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // 'a'
+        .{ .character = 2 }, // 'b'
+        .{ .character = 3 }, // 'c'
+        .{ .character = 4 }, // '-' (literal)
+        .{ .character_class_close = 5 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-dash-only" {
+    // Single dash inside brackets is literal
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[-]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // '-' (literal)
+        .{ .character_class_close = 2 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-bracket-close-first" {
+    // First character after '[' or '[^' can be ']' as a literal
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[]]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // ']' (literal, first char)
+        .{ .character_class_close = 2 }, // ']' (closes class)
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-bracket-close-first-negated" {
+    // '[^]' followed by more characters
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[^]a]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .character_class_open = .{
+                .negated = true,
+                .span = .{ .start = 0, .end = 2 },
+            },
+        }, // '[^'
+        .{ .character = 2 }, // ']' (literal, first char after ^)
+        .{ .character = 3 }, // 'a'
+        .{ .character_class_close = 4 }, // ']' (closes class)
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-escaped-bracket" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[a\\]b]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // 'a'
+        .{ .escape_sequence = .{ .kind = .literal_bracket_close, .span = .{ .start = 2, .end = 4 } } },
+        .{ .character = 4 }, // 'b'
+        .{ .character_class_close = 5 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-escaped-dash" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[a\\-b]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // 'a'
+        .{ .escape_sequence = .{ .kind = .literal_dash, .span = .{ .start = 2, .end = 4 } } },
+        .{ .character = 4 }, // 'b'
+        .{ .character_class_close = 5 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-escape-sequences" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\d\\w\\s]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 1, .end = 3 } } },
+        .{ .escape_sequence = .{ .kind = .word, .span = .{ .start = 3, .end = 5 } } },
+        .{ .escape_sequence = .{ .kind = .whitespace, .span = .{ .start = 5, .end = 7 } } },
+        .{ .character_class_close = 7 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-special-chars-literal" {
+    // Inside character class, most special regex chars are literal
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[.()+*?{}|]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // '.'
+        .{ .character = 2 }, // '('
+        .{ .character = 3 }, // ')'
+        .{ .character = 4 }, // '+'
+        .{ .character = 5 }, // '*'
+        .{ .character = 6 }, // '?'
+        .{ .character = 7 }, // '{'
+        .{ .character = 8 }, // '}'
+        .{ .character = 9 }, // '|'
+        .{ .character_class_close = 10 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-caret-not-at-start" {
+    // Caret not at the start is a literal character
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[a^b]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character = 1 }, // 'a'
+        .{ .character = 2 }, // '^' (literal, not negation)
+        .{ .character = 3 }, // 'b'
+        .{ .character_class_close = 4 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-with-quantifier" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[a-z]+";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character_class_range = .{ .low = 1, .high = 3 } }, // 'a-z'
+        .{ .character_class_close = 4 }, // ']'
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 5, .end = 6 } } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-in-context" {
+    // Character class in a full pattern
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "^[a-z]+@[a-z]+\\.[a-z]{2,4}$";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .anchor = .{ .kind = .start, .pos = 0 } },
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 1, .end = 2 } } },
+        .{ .character_class_range = .{ .low = 2, .high = 4 } }, // 'a-z'
+        .{ .character_class_close = 5 },
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 6, .end = 7 } } },
+        .{ .character = 7 }, // '@'
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 8, .end = 9 } } },
+        .{ .character_class_range = .{ .low = 9, .high = 11 } }, // 'a-z'
+        .{ .character_class_close = 12 },
+        .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 13, .end = 14 } } },
+        .{ .escape_sequence = .{ .kind = .literal_dot, .span = .{ .start = 14, .end = 16 } } },
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 16, .end = 17 } } },
+        .{ .character_class_range = .{ .low = 17, .high = 19 } }, // 'a-z'
+        .{ .character_class_close = 20 },
+        .{
+            .quantifier = .{
+                .kind = .{ .range_count = .{
+                    .{ .start = 22, .end = 23 },
+                    .{ .start = 24, .end = 25 },
+                } },
+                .lazy = false,
+                .span = .{ .start = 21, .end = 26 },
+            },
+        },
+        .{ .anchor = .{ .kind = .end, .pos = 26 } },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regex-char-class-unclosed" {
+    // Unclosed character class should produce an error
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[abc";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    // Should get character_class_open, then characters, then an error for unclosed bracket
+    try testing.expect(actual.items.len >= 4);
+    try testing.expectEqual(Token.character_class_open, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[actual.items.len - 1]));
+}
+
+test "regex-char-class-range-mixed-with-literals" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[a-cx-z123]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
+        .{ .character_class_range = .{ .low = 1, .high = 3 } }, // 'a-c'
+        .{ .character_class_range = .{ .low = 4, .high = 6 } }, // 'x-z'
+        .{ .character = 7 }, // '1'
+        .{ .character = 8 }, // '2'
+        .{ .character = 9 }, // '3'
+        .{ .character_class_close = 10 }, // ']'
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
