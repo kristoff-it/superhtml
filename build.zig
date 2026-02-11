@@ -66,6 +66,7 @@ pub fn build(b: *std.Build) !void {
 
     const check = setupCheckStep(b, target, optimize, options, superhtml, folders, lsp);
     setupTestStep(b, superhtml, check);
+    setupTestExeStep(b, superhtml);
     setupCliTool(b, target, optimize, options, superhtml, folders, lsp);
     setupWasmStep(b, optimize, options, superhtml, lsp);
     setupFetchLanguageSubtagRegistryStep(b, target);
@@ -140,6 +141,20 @@ fn setupCheckStep(
 
     check.dependOn(&super_cli_check.step);
     return check;
+}
+fn setupTestExeStep(
+    b: *std.Build,
+    superhtml: *std.Build.Module,
+) void {
+    const test_exe_step = b.step("test-exe", "Build test executable without running it");
+
+    const unit_tests = b.addTest(.{
+        .root_module = superhtml,
+        .filters = b.args orelse &.{},
+    });
+
+    const install_tests = b.addInstallArtifact(unit_tests, .{});
+    test_exe_step.dependOn(&install_tests.step);
 }
 fn setupTestStep(
     b: *std.Build,
