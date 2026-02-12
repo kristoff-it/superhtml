@@ -136,11 +136,14 @@ const Token = union(enum) {
         literal_slash, //                \/
         literal_dash, //                 \-
 
-        // null_char,          // \0
-        // hex_escape,         // \xHH
-        // unicode_escape,     // \uHHHH
-        // unicode_codepoint,  // \u{HHHHH}
-        // backreference,      // \1, \2, etc.
+        // advanced escapes
+        null_char, //                    \0
+        hex_escape, //                   \xHH
+        unicode_escape, //               \uHHHH
+        unicode_codepoint, //            \u{H+}
+        control_char, //                 \cX
+
+        // backreference,      // \1, \2, etc. (TODO)
 
         pub fn from_char(char: u8) ?EscapeKind {
             return switch (char) {
@@ -179,6 +182,7 @@ const Token = union(enum) {
                 '\\' => .literal_backslash,
                 '/' => .literal_slash,
                 '-' => .literal_dash,
+                '0' => .null_char,
                 else => null,
             };
         }
@@ -217,11 +221,8 @@ fn consume(self: *RegExpTokenizer, src: []const u8) bool {
     return true;
 }
 
-fn peek(self: *RegExpTokenizer, src: []const u8) ?u8 {
-    if (self.idx == src.len) {
-        return null;
-    }
-
+// never peek if self.consume has returned false
+fn peek(self: *RegExpTokenizer, src: []const u8) u8 {
     return src[self.idx];
 }
 
@@ -360,7 +361,8 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                 return .{ .group_close = pos };
             },
             .escape_sequence => |start| {
-                if (!self.consume(src)) {
+                const more_tokens = self.consume(src);
+                if (!more_tokens) {
                     self.state = .eof;
                     return .{
                         .parse_error = .{
@@ -372,28 +374,164 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         },
                     };
                 } else {
-                    if (Token.EscapeKind.from_char(self.current)) |kind| {
-                        self.state = .data;
-                        return .{
-                            .escape_sequence = .{
-                                .kind = kind,
-                                .span = .{
-                                    .start = start,
-                                    .end = self.idx,
+                    const parse_error: TokenError = switch_blk: switch (self.current) {
+                        'x' => {
+                            const consumed_first_char = self.consume(src);
+                            const first_char = self.current;
+                            const consumed_second_char = self.consume(src);
+                            if (!consumed_first_char or !consumed_second_char) {
+                                break :switch_blk .invalid_escape_sequence;
+                            }
+                            const isHex = std.ascii.isHex;
+                            if (!isHex(first_char) or !isHex(self.current)) {
+                                break :switch_blk .invalid_escape_sequence;
+                            }
+
+                            self.state = .data;
+                            return .{
+                                .escape_sequence = .{
+                                    .kind = .hex_escape,
+                                    .span = .{
+                                        .start = start,
+                                        .end = self.idx,
+                                    },
                                 },
-                            },
-                        };
-                    } else {
-                        return .{
-                            .parse_error = .{
-                                .tag = .invalid_escape_sequence,
-                                .span = .{
-                                    .start = start,
-                                    .end = self.idx,
+                            };
+                        },
+                        'u' => {
+                            var consumed_chars: ?bool = null;
+                            var chars_are_hex: ?bool = null;
+
+                            const isHex = std.ascii.isHex;
+
+                            const next_is_curly = if (more_tokens) self.peek(src) == '{' else false;
+
+                            var escape_kind: Token.EscapeKind = undefined;
+
+                            if (next_is_curly) {
+                                if (!self.consume(src)) {
+                                    break :switch_blk .dangling_backslash;
+                                } else {
+                                    // handle unicode codepoint, variable 1-6 hex chars + terminating '}'
+                                    var i: u32 = 0;
+                                    escape_kind = .unicode_codepoint;
+
+                                    const err: ?TokenError = while_blk: while (true) : (i += 1) {
+                                        const consumed = self.consume(src);
+                                        if (!consumed) {
+                                            break :while_blk .dangling_backslash;
+                                        }
+
+                                        const current_is_curly = self.current == '}';
+                                        if (current_is_curly) {
+                                            if (consumed_chars == null) {
+                                                consumed_chars = false;
+                                                chars_are_hex = false;
+                                            }
+                                            if (i < 7) {
+                                                break :while_blk null;
+                                            } else {
+                                                break :while_blk .invalid_escape_sequence;
+                                            }
+                                        }
+                                        if (consumed_chars) |b| {
+                                            consumed_chars = b and consumed;
+                                            chars_are_hex = chars_are_hex.? and isHex(self.current);
+                                        } else {
+                                            consumed_chars = consumed;
+                                            chars_are_hex = isHex(self.current);
+                                        }
+                                    };
+
+                                    if (err) |e| {
+                                        break :switch_blk e;
+                                    }
+                                }
+                            } else {
+                                // handle unicode escape, constant 4 hex chars
+                                escape_kind = .unicode_escape;
+                                for (0..4) |_| {
+                                    // std.debug.print("char norn: {c}\n", .{self.current});
+                                    const consumed = self.consume(src);
+                                    if (consumed_chars) |b| {
+                                        consumed_chars = b and consumed;
+                                        chars_are_hex = chars_are_hex.? and isHex(self.current);
+                                    } else {
+                                        consumed_chars = consumed;
+                                        chars_are_hex = isHex(self.current);
+                                    }
+                                }
+                            }
+
+                            if (!consumed_chars.? or !chars_are_hex.?) {
+                                break :switch_blk .invalid_escape_sequence;
+                            }
+
+                            self.state = .data;
+                            return .{
+                                .escape_sequence = .{
+                                    .kind = escape_kind,
+                                    .span = .{
+                                        .start = start,
+                                        .end = self.idx,
+                                    },
                                 },
+                            };
+                        },
+                        'c' => {
+                            const consumed_char = self.consume(src);
+                            if (!consumed_char) {
+                                break :switch_blk .dangling_backslash;
+                            }
+
+                            const valid_control_char = switch (self.current) {
+                                'A', 'J', 'M', 'Z', 'a' => true,
+                                else => false,
+                            };
+
+                            if (!valid_control_char) {
+                                break :switch_blk .invalid_escape_sequence;
+                            }
+
+                            self.state = .data;
+                            return .{
+                                .escape_sequence = .{
+                                    .kind = .control_char,
+                                    .span = .{
+                                        .start = start,
+                                        .end = self.idx,
+                                    },
+                                },
+                            };
+                        },
+                        else => {
+                            if (Token.EscapeKind.from_char(self.current)) |kind| {
+                                self.state = .data;
+                                return .{
+                                    .escape_sequence = .{
+                                        .kind = kind,
+                                        .span = .{
+                                            .start = start,
+                                            .end = self.idx,
+                                        },
+                                    },
+                                };
+                            } else {
+                                break :switch_blk .invalid_escape_sequence;
+                            }
+                        },
+                    };
+
+                    self.state = .data;
+                    return .{
+                        .parse_error = .{
+                            .tag = parse_error,
+                            .span = .{
+                                .start = start,
+                                .end = self.idx,
                             },
-                        };
-                    }
+                        },
+                    };
                 }
             },
             .quantifier_start => |state| {
@@ -807,11 +945,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                 }
 
                 const current_is_backslash = self.current == '\\';
-                const next_is_dash: bool = if (self.peek(src)) |char| blk: {
-                    break :blk char == '-';
-                } else blk: {
-                    break :blk false;
-                };
+                const next_is_dash: bool = if (more_tokens) self.peek(src) == '-' else false;
 
                 if (!current_is_backslash and next_is_dash) {
                     const range_start = self.idx - 1;
@@ -1039,7 +1173,6 @@ test "regexp-escape-invalid-sequences" {
         error_tag: TokenError,
     }{
         .{ .src = "\\", .error_tag = .dangling_backslash }, // Backslash at end
-        .{ .src = "\\x", .error_tag = .invalid_escape_sequence }, // Invalid escape (if not implementing hex)
         .{ .src = "\\q", .error_tag = .invalid_escape_sequence }, // Unknown escape
     };
     for (test_cases) |tc| {
@@ -1079,6 +1212,402 @@ test "regexp-escape-multiple-in-sequence" {
         .{ .escape_sequence = .{ .kind = .whitespace, .span = .{ .start = 4, .end = 6 } } },
     };
 
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-null-char" {
+    // \0 - null character
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\0";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .null_char,
+                .span = .{ .start = 0, .end = 2 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-hex-simple" {
+    // \xHH - 2-digit hex escape
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\x41"; // 'A'
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .hex_escape,
+                .span = .{ .start = 0, .end = 4 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-hex-lowercase" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\xff"; // 255
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .hex_escape,
+                .span = .{ .start = 0, .end = 4 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-hex-mixed-case" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\xAf";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .hex_escape,
+                .span = .{ .start = 0, .end = 4 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-hex-in-pattern" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "a\\x20b"; // 'a b' (space in middle)
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character = 0 }, // 'a'
+        .{
+            .escape_sequence = .{
+                .kind = .hex_escape,
+                .span = .{ .start = 1, .end = 5 },
+            },
+        },
+        .{ .character = 5 }, // 'b'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-hex-error-incomplete" {
+    // \x with only 1 hex digit should be an error
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\x4";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    // Should get an error token
+    try testing.expect(actual.items.len >= 1);
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(TokenError.invalid_escape_sequence, actual.items[0].parse_error.tag);
+}
+
+test "regexp-escape-hex-error-invalid-chars" {
+    // \x with non-hex characters should be an error
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\xGG";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expect(actual.items.len >= 1);
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[0]));
+}
+
+test "regexp-escape-unicode-simple" {
+    // \uHHHH - 4-digit unicode escape
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\u0041"; // 'A'
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .unicode_escape,
+                .span = .{ .start = 0, .end = 6 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-unicode-emoji" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\uD83D"; // High surrogate for emoji
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .unicode_escape,
+                .span = .{ .start = 0, .end = 6 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-unicode-in-pattern" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\u0061bc"; // 'abc'
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .unicode_escape,
+                .span = .{ .start = 0, .end = 6 },
+            },
+        },
+        .{ .character = 6 }, // 'b'
+        .{ .character = 7 }, // 'c'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-unicode-error-incomplete" {
+    // \u with less than 4 hex digits should be an error
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\u041";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expect(actual.items.len >= 1);
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(TokenError.invalid_escape_sequence, actual.items[0].parse_error.tag);
+}
+
+test "regexp-escape-unicode-codepoint-simple" {
+    // \u{H+} - Unicode code point (ES2015+)
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\u{41}"; // 'A'
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .unicode_codepoint,
+                .span = .{ .start = 0, .end = 6 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-unicode-codepoint-emoji" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\u{1F600}"; // 😀
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .unicode_codepoint,
+                .span = .{ .start = 0, .end = 9 },
+            },
+        },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-unicode-codepoint-variable-length" {
+    // Unicode codepoints can be 1-6 hex digits
+    const test_cases = [_]struct {
+        src: []const u8,
+        span_end: u32,
+    }{
+        .{ .src = "\\u{0}", .span_end = 5 }, // 1 digit
+        .{ .src = "\\u{41}", .span_end = 6 }, // 2 digits
+        .{ .src = "\\u{FFF}", .span_end = 7 }, // 3 digits
+        .{ .src = "\\u{FFFF}", .span_end = 8 }, // 4 digits
+        .{ .src = "\\u{10000}", .span_end = 9 }, // 5 digits
+        .{ .src = "\\u{10FFFF}", .span_end = 10 }, // 6 digits (max)
+    };
+    for (test_cases) |tc| {
+        var tokenizer: RegExpTokenizer = .{};
+        var actual: std.ArrayList(Token) = .{};
+        defer actual.deinit(testing.allocator);
+        while (tokenizer.next(tc.src)) |got| {
+            try actual.append(testing.allocator, got);
+        }
+
+        const expected = [_]Token{
+            .{
+                .escape_sequence = .{
+                    .kind = .unicode_codepoint,
+                    .span = .{ .start = 0, .end = tc.span_end },
+                },
+            },
+        };
+
+        try testing.expectEqualSlices(Token, &expected, actual.items);
+    }
+}
+
+test "regexp-escape-unicode-codepoint-error-empty" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\u{}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expect(actual.items.len >= 1);
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[0]));
+}
+
+test "regexp-escape-unicode-codepoint-error-unclosed" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\u{1F600";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expect(actual.items.len >= 1);
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[0]));
+}
+
+test "regexp-escape-unicode-codepoint-error-too-large" {
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\u{1100000}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+
+    const expected = [_]Token{
+        .{
+            .parse_error = .{
+                .tag = .invalid_escape_sequence,
+                .span = .{ .start = 0, .end = 11 },
+            },
+        },
+    };
+
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-escape-control-char" {
+    // \cX - control characters (A-Z, a-z)
+    const test_cases = [_]struct {
+        src: []const u8,
+        control_char: u8,
+    }{
+        .{ .src = "\\cA", .control_char = 'A' }, // Ctrl-A
+        .{ .src = "\\cJ", .control_char = 'J' }, // Ctrl-J (newline)
+        .{ .src = "\\cM", .control_char = 'M' }, // Ctrl-M (carriage return)
+        .{ .src = "\\cZ", .control_char = 'Z' }, // Ctrl-Z
+        .{ .src = "\\ca", .control_char = 'a' }, // lowercase also valid
+    };
+    for (test_cases) |tc| {
+        var tokenizer: RegExpTokenizer = .{};
+        var actual: std.ArrayList(Token) = .{};
+        defer actual.deinit(testing.allocator);
+        while (tokenizer.next(tc.src)) |got| {
+            try actual.append(testing.allocator, got);
+        }
+        const expected = [_]Token{
+            .{
+                .escape_sequence = .{
+                    .kind = .control_char,
+                    .span = .{ .start = 0, .end = 3 },
+                },
+            },
+        };
+        try testing.expectEqualSlices(Token, &expected, actual.items);
+    }
+}
+
+test "regexp-escape-control-char-error-invalid" {
+    // \c must be followed by A-Z or a-z
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\c1";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    try testing.expect(actual.items.len >= 1);
+    try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[0]));
+    try testing.expectEqual(TokenError.invalid_escape_sequence, actual.items[0].parse_error.tag);
+}
+
+test "regexp-escape-mixed-advanced" {
+    // Mix advanced escapes with regular pattern
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "\\x41\\u0042\\u{43}";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{
+            .escape_sequence = .{
+                .kind = .hex_escape,
+                .span = .{ .start = 0, .end = 4 },
+            },
+        },
+        .{
+            .escape_sequence = .{
+                .kind = .unicode_escape,
+                .span = .{ .start = 4, .end = 10 },
+            },
+        },
+        .{
+            .escape_sequence = .{
+                .kind = .unicode_codepoint,
+                .span = .{ .start = 10, .end = 16 },
+            },
+        },
+    };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
