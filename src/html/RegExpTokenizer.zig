@@ -16,7 +16,8 @@ const State = union(enum) {
     parens_open_questionmark: u32,
     parens_close: u32,
 
-    escape_sequence: u32,
+    escape_sequence_simple: struct { start: u32, context: Context },
+    escape_sequence_advanced: struct { start: u32, context: Context },
 
     quantifier_start: struct { char: u8, pos: u32 },
 
@@ -42,6 +43,11 @@ const State = union(enum) {
     character_class_body: struct { is_first_transition: bool, pos: u32 },
 
     eof,
+
+    const Context = union(enum) {
+        escape_in_char_class: @FieldType(State, "character_class_body"),
+        escape_regular,
+    };
 };
 
 // errors to handle one layer up:
@@ -228,7 +234,7 @@ fn peek(self: *RegExpTokenizer, src: []const u8) ?u8 {
     return src[self.idx];
 }
 
-fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
+pub fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
     while (true) {
         // std.debug.print("state: {s}\n", .{@tagName(self.state)});
         switch (self.state) {
@@ -249,7 +255,10 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     },
                     '\\' => {
                         self.state = .{
-                            .escape_sequence = self.idx - 1,
+                            .escape_sequence_simple = .{
+                                .start = self.idx - 1,
+                                .context = .escape_regular,
+                            },
                         };
                     },
                     '{' => {
@@ -362,7 +371,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                 self.state = .data;
                 return .{ .group_close = pos };
             },
-            .escape_sequence => |start| {
+            .escape_sequence_simple => |state| {
                 const more_tokens = self.consume(src);
                 if (!more_tokens) {
                     self.state = .eof;
@@ -370,90 +379,128 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         .parse_error = .{
                             .tag = .dangling_backslash,
                             .span = .{
-                                .start = start,
+                                .start = state.start,
                                 .end = self.idx,
                             },
                         },
                     };
                 } else {
-                    const parse_error: TokenError = switch_blk: switch (self.current) {
-                        'x' => {
-                            const consumed_first_char = self.consume(src);
-                            const first_char = self.current;
-                            const consumed_second_char = self.consume(src);
-                            if (!consumed_first_char or !consumed_second_char) {
-                                break :switch_blk .invalid_escape_sequence;
-                            }
-                            const isHex = std.ascii.isHex;
-                            if (!isHex(first_char) or !isHex(self.current)) {
-                                break :switch_blk .invalid_escape_sequence;
-                            }
-
-                            self.state = .data;
-                            return .{
-                                .escape_sequence = .{
-                                    .kind = .hex_escape,
-                                    .span = .{
-                                        .start = start,
-                                        .end = self.idx,
-                                    },
+                    if (Token.EscapeKind.from_char(self.current)) |kind| {
+                        switch (state.context) {
+                            .escape_in_char_class => |p| {
+                                self.state = .{ .character_class_body = p };
+                            },
+                            else => {
+                                self.state = .data;
+                            },
+                        }
+                        return .{
+                            .escape_sequence = .{
+                                .kind = kind,
+                                .span = .{
+                                    .start = state.start,
+                                    .end = self.idx,
                                 },
-                            };
-                        },
-                        'u' => {
-                            var consumed_chars: ?bool = null;
-                            var chars_are_hex: ?bool = null;
+                            },
+                        };
+                    } else {
+                        self.state = .{
+                            .escape_sequence_advanced = .{
+                                .start = state.start,
+                                .context = state.context,
+                            },
+                        };
+                    }
+                }
+            },
+            .escape_sequence_advanced => |state| {
+                const parse_error: ?TokenError = switch_blk: switch (self.current) {
+                    ']' => {
+                        switch (state.context) {
+                            .escape_in_char_class => |p| {
+                                self.idx -= 1;
+                                self.state = .{ .character_class_body = p };
+                                break :switch_blk null;
+                            },
+                            else => {
+                                self.state = .data;
+                                break :switch_blk .invalid_escape_sequence;
+                            },
+                        }
+                    },
+                    'x' => {
+                        switch (state.context) {
+                            .escape_in_char_class => |p| {
+                                self.state = .{ .character_class_body = p };
+                            },
+                            else => {
+                                self.state = .data;
+                            },
+                        }
 
-                            const isHex = std.ascii.isHex;
+                        const consumed_first_char = self.consume(src);
+                        const first_char = self.current;
+                        const consumed_second_char = self.consume(src);
+                        if (!consumed_first_char or !consumed_second_char) {
+                            break :switch_blk .invalid_escape_sequence;
+                        }
+                        const isHex = std.ascii.isHex;
+                        if (!isHex(first_char) or !isHex(self.current)) {
+                            break :switch_blk .invalid_escape_sequence;
+                        }
 
-                            const next_is_curly = if (self.peek(src)) |c| c == '{' else false;
-                            var escape_kind: Token.EscapeKind = undefined;
+                        return .{
+                            .escape_sequence = .{
+                                .kind = .hex_escape,
+                                .span = .{
+                                    .start = state.start,
+                                    .end = self.idx,
+                                },
+                            },
+                        };
+                    },
+                    'u' => {
+                        self.state = switch (state.context) {
+                            .escape_regular => .data,
+                            .escape_in_char_class => |payload| .{
+                                .character_class_body = payload,
+                            },
+                        };
 
-                            if (next_is_curly) {
-                                if (!self.consume(src)) {
-                                    break :switch_blk .dangling_backslash;
-                                } else {
-                                    // handle unicode codepoint, variable 1-6 hex chars + terminating '}'
-                                    var i: u32 = 0;
-                                    escape_kind = .unicode_codepoint;
+                        var consumed_chars: ?bool = null;
+                        var chars_are_hex: ?bool = null;
 
-                                    const err: ?TokenError = while_blk: while (true) : (i += 1) {
-                                        const consumed = self.consume(src);
-                                        if (!consumed) {
-                                            break :while_blk .dangling_backslash;
-                                        }
+                        const isHex = std.ascii.isHex;
 
-                                        const current_is_curly = self.current == '}';
-                                        if (current_is_curly) {
-                                            if (consumed_chars == null) {
-                                                consumed_chars = false;
-                                                chars_are_hex = false;
-                                            }
-                                            if (i < 7) {
-                                                break :while_blk null;
-                                            } else {
-                                                break :while_blk .invalid_escape_sequence;
-                                            }
-                                        }
-                                        if (consumed_chars) |b| {
-                                            consumed_chars = b and consumed;
-                                            chars_are_hex = chars_are_hex.? and isHex(self.current);
-                                        } else {
-                                            consumed_chars = consumed;
-                                            chars_are_hex = isHex(self.current);
-                                        }
-                                    };
+                        const next_is_curly = if (self.peek(src)) |c| c == '{' else false;
+                        var escape_kind: Token.EscapeKind = undefined;
 
-                                    if (err) |e| {
-                                        break :switch_blk e;
-                                    }
-                                }
+                        if (next_is_curly) {
+                            if (!self.consume(src)) {
+                                break :switch_blk .dangling_backslash;
                             } else {
-                                // handle unicode escape, constant 4 hex chars
-                                escape_kind = .unicode_escape;
-                                for (0..4) |_| {
-                                    // std.debug.print("char norn: {c}\n", .{self.current});
+                                // handle unicode codepoint, variable 1-6 hex chars + terminating '}'
+                                var i: u32 = 0;
+                                escape_kind = .unicode_codepoint;
+
+                                const err: ?TokenError = while_blk: while (true) : (i += 1) {
                                     const consumed = self.consume(src);
+                                    if (!consumed) {
+                                        break :while_blk .dangling_backslash;
+                                    }
+
+                                    const current_is_curly = self.current == '}';
+                                    if (current_is_curly) {
+                                        if (consumed_chars == null) {
+                                            consumed_chars = false;
+                                            chars_are_hex = false;
+                                        }
+                                        if (i < 7) {
+                                            break :while_blk null;
+                                        } else {
+                                            break :while_blk .invalid_escape_sequence;
+                                        }
+                                    }
                                     if (consumed_chars) |b| {
                                         consumed_chars = b and consumed;
                                         chars_are_hex = chars_are_hex.? and isHex(self.current);
@@ -461,74 +508,87 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                                         consumed_chars = consumed;
                                         chars_are_hex = isHex(self.current);
                                     }
+                                };
+
+                                if (err) |e| {
+                                    break :switch_blk e;
                                 }
                             }
-
-                            if (!consumed_chars.? or !chars_are_hex.?) {
-                                break :switch_blk .invalid_escape_sequence;
+                        } else {
+                            // handle unicode escape, constant 4 hex chars
+                            escape_kind = .unicode_escape;
+                            for (0..4) |_| {
+                                // std.debug.print("char norn: {c}\n", .{self.current});
+                                const consumed = self.consume(src);
+                                if (consumed_chars) |b| {
+                                    consumed_chars = b and consumed;
+                                    chars_are_hex = chars_are_hex.? and isHex(self.current);
+                                } else {
+                                    consumed_chars = consumed;
+                                    chars_are_hex = isHex(self.current);
+                                }
                             }
+                        }
 
-                            self.state = .data;
-                            return .{
-                                .escape_sequence = .{
-                                    .kind = escape_kind,
-                                    .span = .{
-                                        .start = start,
-                                        .end = self.idx,
-                                    },
+                        if (!consumed_chars.? or !chars_are_hex.?) {
+                            break :switch_blk .invalid_escape_sequence;
+                        }
+
+                        return .{
+                            .escape_sequence = .{
+                                .kind = escape_kind,
+                                .span = .{
+                                    .start = state.start,
+                                    .end = self.idx,
                                 },
-                            };
-                        },
-                        'c' => {
-                            const consumed_char = self.consume(src);
-                            if (!consumed_char) {
-                                break :switch_blk .dangling_backslash;
-                            }
-
-                            const valid_control_char = switch (self.current) {
-                                'A', 'J', 'M', 'Z', 'a' => true,
-                                else => false,
-                            };
-
-                            if (!valid_control_char) {
-                                break :switch_blk .invalid_escape_sequence;
-                            }
-
-                            self.state = .data;
-                            return .{
-                                .escape_sequence = .{
-                                    .kind = .control_char,
-                                    .span = .{
-                                        .start = start,
-                                        .end = self.idx,
-                                    },
-                                },
-                            };
-                        },
-                        else => {
-                            if (Token.EscapeKind.from_char(self.current)) |kind| {
+                            },
+                        };
+                    },
+                    'c' => {
+                        switch (state.context) {
+                            .escape_in_char_class => |p| {
+                                self.state = .{ .character_class_body = p };
+                            },
+                            else => {
                                 self.state = .data;
-                                return .{
-                                    .escape_sequence = .{
-                                        .kind = kind,
-                                        .span = .{
-                                            .start = start,
-                                            .end = self.idx,
-                                        },
-                                    },
-                                };
-                            } else {
-                                break :switch_blk .invalid_escape_sequence;
-                            }
-                        },
-                    };
+                            },
+                        }
 
-                    self.state = .data;
+                        const consumed_char = self.consume(src);
+                        if (!consumed_char) {
+                            break :switch_blk .dangling_backslash;
+                        }
+
+                        const valid_control_char = switch (self.current) {
+                            'A', 'J', 'M', 'Z', 'a' => true,
+                            else => false,
+                        };
+
+                        if (!valid_control_char) {
+                            break :switch_blk .invalid_escape_sequence;
+                        }
+
+                        return .{
+                            .escape_sequence = .{
+                                .kind = .control_char,
+                                .span = .{
+                                    .start = state.start,
+                                    .end = self.idx,
+                                },
+                            },
+                        };
+                    },
+                    else => {
+                        break :switch_blk .invalid_escape_sequence;
+                    },
+                };
+
+                if (parse_error) |e| {
                     return .{
                         .parse_error = .{
-                            .tag = parse_error,
+                            .tag = e,
                             .span = .{
-                                .start = start,
+                                .start = state.start,
                                 .end = self.idx,
                             },
                         },
@@ -987,29 +1047,36 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         return .{ .character_class_close = self.idx - 1 };
                     } else if (current_is_backslash) {
                         const backslash_idx = self.idx - 1;
-                        if (self.consume(src)) {
-                            if (Token.EscapeKind.from_char(self.current)) |kind| {
-                                return .{
-                                    .escape_sequence = .{
-                                        .kind = kind,
-                                        .span = .{
-                                            .start = backslash_idx,
-                                            .end = self.idx,
-                                        },
-                                    },
-                                };
-                            }
-                        }
 
-                        return .{
-                            .parse_error = .{
-                                .tag = .invalid_escape_sequence,
-                                .span = .{
-                                    .start = backslash_idx,
-                                    .end = self.idx,
-                                },
+                        self.state = .{
+                            .escape_sequence_simple = .{
+                                .start = backslash_idx,
+                                .context = .{ .escape_in_char_class = state },
                             },
                         };
+                        // if (self.consume(src)) {
+                        //     if (Token.EscapeKind.from_char(self.current)) |kind| {
+                        //         return .{
+                        //             .escape_sequence = .{
+                        //                 .kind = kind,
+                        //                 .span = .{
+                        //                     .start = backslash_idx,
+                        //                     .end = self.idx,
+                        //                 },
+                        //             },
+                        //         };
+                        //     }
+                        // }
+
+                        // return .{
+                        //     .parse_error = .{
+                        //         .tag = .invalid_escape_sequence,
+                        //         .span = .{
+                        //             .start = backslash_idx,
+                        //             .end = self.idx,
+                        //         },
+                        //     },
+                        // };
                     } else {
                         return .{ .character = self.idx - 1 };
                     }
@@ -2665,6 +2732,177 @@ test "regexp-char-class-range-mixed-with-literals" {
         .{ .character = 8 }, // '2'
         .{ .character = 9 }, // '3'
         .{ .character_class_close = 10 }, // ']'
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-hex" {
+    // Hex escapes inside character classes
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\x41-\\x5A]"; // [A-Z] using hex
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .hex_escape, .span = .{ .start = 1, .end = 5 } } }, // \x41
+        .{ .character = 5 }, // '-'
+        .{ .escape_sequence = .{ .kind = .hex_escape, .span = .{ .start = 6, .end = 10 } } }, // \x5A
+        .{ .character_class_close = 10 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-unicode" {
+    // Unicode escapes inside character classes
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\u0041\\u0042]"; // [AB]
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .unicode_escape, .span = .{ .start = 1, .end = 7 } } }, // \u0041
+        .{ .escape_sequence = .{ .kind = .unicode_escape, .span = .{ .start = 7, .end = 13 } } }, // \u0042
+        .{ .character_class_close = 13 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-unicode-codepoint" {
+    // Unicode codepoint escapes inside character classes
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\u{1F600}\\u{1F601}]"; // [😀😁]
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .unicode_codepoint, .span = .{ .start = 1, .end = 10 } } }, // \u{1F600}
+        .{ .escape_sequence = .{ .kind = .unicode_codepoint, .span = .{ .start = 10, .end = 19 } } }, // \u{1F601}
+        .{ .character_class_close = 19 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-control-char" {
+    // Control character escapes inside character classes
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\cA\\cM]"; // [Ctrl-A, Ctrl-M]
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .control_char, .span = .{ .start = 1, .end = 4 } } }, // \cA
+        .{ .escape_sequence = .{ .kind = .control_char, .span = .{ .start = 4, .end = 7 } } }, // \cM
+        .{ .character_class_close = 7 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-null" {
+    // Null character escape inside character class
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\0abc]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .null_char, .span = .{ .start = 1, .end = 3 } } }, // \0
+        .{ .character = 3 }, // 'a'
+        .{ .character = 4 }, // 'b'
+        .{ .character = 5 }, // 'c'
+        .{ .character_class_close = 6 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-mixed-with-range" {
+    // Mix advanced escapes with ranges
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\x30-\\x39a-z]"; // [0-9a-z] using hex for digits
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .hex_escape, .span = .{ .start = 1, .end = 5 } } }, // \x30
+        .{ .character = 5 }, // '-'
+        .{ .escape_sequence = .{ .kind = .hex_escape, .span = .{ .start = 6, .end = 10 } } }, // \x39
+        .{ .character_class_range = .{ .low = 10, .high = 12 } }, // a-z
+        .{ .character_class_close = 13 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-mixed-advanced" {
+    // Mix all types of escapes in one character class
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\x41\\u0042\\u{43}\\0]"; // [A, B, C, null]
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .hex_escape, .span = .{ .start = 1, .end = 5 } } }, // \x41
+        .{ .escape_sequence = .{ .kind = .unicode_escape, .span = .{ .start = 5, .end = 11 } } }, // \u0042
+        .{ .escape_sequence = .{ .kind = .unicode_codepoint, .span = .{ .start = 11, .end = 17 } } }, // \u{43}
+        .{ .escape_sequence = .{ .kind = .null_char, .span = .{ .start = 17, .end = 19 } } }, // \0
+        .{ .character_class_close = 19 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-basic-still-work" {
+    // Ensure basic escapes still work inside character classes
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[\\d\\w\\s]";
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } },
+        .{ .escape_sequence = .{ .kind = .digit, .span = .{ .start = 1, .end = 3 } } },
+        .{ .escape_sequence = .{ .kind = .word, .span = .{ .start = 3, .end = 5 } } },
+        .{ .escape_sequence = .{ .kind = .whitespace, .span = .{ .start = 5, .end = 7 } } },
+        .{ .character_class_close = 7 },
+    };
+    try testing.expectEqualSlices(Token, &expected, actual.items);
+}
+
+test "regexp-char-class-escape-negated-with-escapes" {
+    // Negated character class with advanced escapes
+    var tokenizer: RegExpTokenizer = .{};
+    const src = "[^\\x00-\\x1F]"; // Not control characters (0-31)
+    var actual: std.ArrayList(Token) = .{};
+    defer actual.deinit(testing.allocator);
+    while (tokenizer.next(src)) |got| {
+        try actual.append(testing.allocator, got);
+    }
+    const expected = [_]Token{
+        .{ .character_class_open = .{ .negated = true, .span = .{ .start = 0, .end = 2 } } },
+        .{ .escape_sequence = .{ .kind = .hex_escape, .span = .{ .start = 2, .end = 6 } } }, // \x00
+        .{ .character = 6 }, // '-'
+        .{ .escape_sequence = .{ .kind = .hex_escape, .span = .{ .start = 7, .end = 11 } } }, // \x1F
+        .{ .character_class_close = 11 },
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
