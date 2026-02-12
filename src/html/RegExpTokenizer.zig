@@ -221,8 +221,10 @@ fn consume(self: *RegExpTokenizer, src: []const u8) bool {
     return true;
 }
 
-// never peek if self.consume has returned false
-fn peek(self: *RegExpTokenizer, src: []const u8) u8 {
+fn peek(self: *RegExpTokenizer, src: []const u8) ?u8 {
+    if (self.idx == src.len) {
+        return null;
+    }
     return src[self.idx];
 }
 
@@ -404,8 +406,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
 
                             const isHex = std.ascii.isHex;
 
-                            const next_is_curly = if (more_tokens) self.peek(src) == '{' else false;
-
+                            const next_is_curly = if (self.peek(src)) |c| c == '{' else false;
                             var escape_kind: Token.EscapeKind = undefined;
 
                             if (next_is_curly) {
@@ -945,7 +946,7 @@ fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                 }
 
                 const current_is_backslash = self.current == '\\';
-                const next_is_dash: bool = if (more_tokens) self.peek(src) == '-' else false;
+                const next_is_dash: bool = if (self.peek(src)) |c| c == '-' else false;
 
                 if (!current_is_backslash and next_is_dash) {
                     const range_start = self.idx - 1;
