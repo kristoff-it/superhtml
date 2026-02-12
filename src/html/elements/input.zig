@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
 const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
+const RegExpTokenizer = @import("../RegExpTokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
 const Element = @import("../Element.zig");
@@ -236,7 +237,43 @@ pub const attributes: AttributeSet = .init(&.{
     .{
         .name = "pattern",
         .model = .{
-            .rule = .any,
+            .rule = .{ .custom = struct {
+                fn custom(
+                    gpa: Allocator,
+                    errors: *std.ArrayListUnmanaged(Ast.Error),
+                    src: []const u8,
+                    node_idx: u32,
+                    attr: Tokenizer.Attr,
+                ) error{OutOfMemory}!void {
+                    const value = attr.value orelse {
+                        return errors.append(gpa, .{
+                            .tag = .missing_attr_value,
+                            .main_location = attr.name,
+                            .node_idx = node_idx,
+                        });
+                    };
+                    var tokenizer: RegExpTokenizer = .{};
+                    while (tokenizer.next(value.span.slice(src))) |got| {
+                        switch (got) {
+                            .parse_error => |e| {
+                                return errors.append(gpa, .{
+                                    .tag = .{
+                                        .invalid_attr_value = .{
+                                            .reason = @tagName(e.tag),
+                                        },
+                                    },
+                                    .main_location = .{
+                                        .start = @intCast(value.span.start + e.span.start),
+                                        .end = @intCast(value.span.start + e.span.end),
+                                    },
+                                    .node_idx = node_idx,
+                                });
+                            },
+                            else => {},
+                        }
+                    }
+                }
+            }.custom },
             .desc = "Pattern the value must match to be valid.",
         },
     },
