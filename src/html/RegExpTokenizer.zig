@@ -1907,7 +1907,7 @@ test "regexp-quantifier-escaped-special-chars" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-dot-single" {
+test "regexp-dot-single" {
     var tokenizer: RegExpTokenizer = .{};
     const src = ".";
     var actual: std.ArrayList(Token) = .{};
@@ -1921,7 +1921,7 @@ test "regex-dot-single" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-dot-in-pattern" {
+test "regexp-dot-in-pattern" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "a.b";
     var actual: std.ArrayList(Token) = .{};
@@ -1937,7 +1937,7 @@ test "regex-dot-in-pattern" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-dot-with-quantifier" {
+test "regexp-dot-with-quantifier" {
     var tokenizer: RegExpTokenizer = .{};
     const src = ".*";
     var actual: std.ArrayList(Token) = .{};
@@ -1952,7 +1952,7 @@ test "regex-dot-with-quantifier" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-dot-escaped" {
+test "regexp-dot-escaped" {
     // Escaped dot should be a literal, not the dot metacharacter
     var tokenizer: RegExpTokenizer = .{};
     const src = "\\.";
@@ -1967,7 +1967,7 @@ test "regex-dot-escaped" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-anchor-start" {
+test "regexp-anchor-start" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "^abc";
     var actual: std.ArrayList(Token) = .{};
@@ -1984,7 +1984,7 @@ test "regex-anchor-start" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-anchor-end" {
+test "regexp-anchor-end" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "abc$";
     var actual: std.ArrayList(Token) = .{};
@@ -2001,7 +2001,7 @@ test "regex-anchor-end" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-anchor-both" {
+test "regexp-anchor-both" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "^abc$";
     var actual: std.ArrayList(Token) = .{};
@@ -2019,7 +2019,7 @@ test "regex-anchor-both" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-anchor-escaped" {
+test "regexp-anchor-escaped" {
     // Escaped anchors should be literals
     var tokenizer: RegExpTokenizer = .{};
     const src = "\\^a\\$";
@@ -2036,7 +2036,7 @@ test "regex-anchor-escaped" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-anchor-word-boundary" {
+test "regexp-anchor-word-boundary" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "\\bword\\b";
     var actual: std.ArrayList(Token) = .{};
@@ -2055,7 +2055,7 @@ test "regex-anchor-word-boundary" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-anchor-non-word-boundary" {
+test "regexp-anchor-non-word-boundary" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "\\Bword\\B";
     var actual: std.ArrayList(Token) = .{};
@@ -2074,7 +2074,7 @@ test "regex-anchor-non-word-boundary" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-complex-pattern-with-anchors-and-dot" {
+test "regexp-complex-pattern-with-anchors-and-dot" {
     // Pattern: ^.*foo$
     var tokenizer: RegExpTokenizer = .{};
     const src = "^.*foo$";
@@ -2095,7 +2095,7 @@ test "regex-complex-pattern-with-anchors-and-dot" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-simple" {
+test "regexp-alternation-simple" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "a|b";
     var actual: std.ArrayList(Token) = .{};
@@ -2111,7 +2111,7 @@ test "regex-alternation-simple" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-multiple" {
+test "regexp-alternation-multiple" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "cat|dog|bird";
     var actual: std.ArrayList(Token) = .{};
@@ -2136,7 +2136,7 @@ test "regex-alternation-multiple" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-with-groups" {
+test "regexp-alternation-with-groups" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "(foo|bar)";
     var actual: std.ArrayList(Token) = .{};
@@ -2158,7 +2158,7 @@ test "regex-alternation-with-groups" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-with-quantifiers" {
+test "regexp-alternation-with-quantifiers" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "a+|b*";
     var actual: std.ArrayList(Token) = .{};
@@ -2176,7 +2176,7 @@ test "regex-alternation-with-quantifiers" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-with-escapes" {
+test "regexp-alternation-with-escapes" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "\\d|\\w";
     var actual: std.ArrayList(Token) = .{};
@@ -2192,7 +2192,7 @@ test "regex-alternation-with-escapes" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-escaped" {
+test "regexp-alternation-escaped" {
     // Escaped pipe should be a literal, not alternation
     var tokenizer: RegExpTokenizer = .{};
     const src = "a\\|b";
@@ -2209,7 +2209,7 @@ test "regex-alternation-escaped" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-empty-alternatives" {
+test "regexp-alternation-empty-alternatives" {
     // Empty alternatives are valid in JavaScript regex
     var tokenizer: RegExpTokenizer = .{};
     const src = "|a|";
@@ -2226,7 +2226,7 @@ test "regex-alternation-empty-alternatives" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-complex-pattern" {
+test "regexp-alternation-complex-pattern" {
     // Pattern: ^(foo|bar|baz)$
     var tokenizer: RegExpTokenizer = .{};
     const src = "^(foo|bar|baz)$";
@@ -2255,7 +2255,7 @@ test "regex-alternation-complex-pattern" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-alternation-with-dot" {
+test "regexp-alternation-with-dot" {
     var tokenizer: RegExpTokenizer = .{};
     const src = ".|a";
     var actual: std.ArrayList(Token) = .{};
@@ -2271,7 +2271,7 @@ test "regex-alternation-with-dot" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-simple" {
+test "regexp-char-class-simple" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[abc]";
     var actual: std.ArrayList(Token) = .{};
@@ -2289,7 +2289,7 @@ test "regex-char-class-simple" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-empty" {
+test "regexp-char-class-empty" {
     // Empty character class [] is technically invalid in most regex engines,
     // but we should handle it gracefully
     var tokenizer: RegExpTokenizer = .{};
@@ -2306,7 +2306,7 @@ test "regex-char-class-empty" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-negated" {
+test "regexp-char-class-negated" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[^abc]";
     var actual: std.ArrayList(Token) = .{};
@@ -2329,7 +2329,7 @@ test "regex-char-class-negated" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-negated-empty" {
+test "regexp-char-class-negated-empty" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[^]";
     var actual: std.ArrayList(Token) = .{};
@@ -2349,7 +2349,7 @@ test "regex-char-class-negated-empty" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-range-simple" {
+test "regexp-char-class-range-simple" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[a-z]";
     var actual: std.ArrayList(Token) = .{};
@@ -2365,7 +2365,7 @@ test "regex-char-class-range-simple" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-range-multiple" {
+test "regexp-char-class-range-multiple" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[a-zA-Z0-9]";
     var actual: std.ArrayList(Token) = .{};
@@ -2383,7 +2383,7 @@ test "regex-char-class-range-multiple" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-dash-at-start" {
+test "regexp-char-class-dash-at-start" {
     // Dash at the start is literal, not a range
     var tokenizer: RegExpTokenizer = .{};
     const src = "[-abc]";
@@ -2403,7 +2403,7 @@ test "regex-char-class-dash-at-start" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-dash-at-end" {
+test "regexp-char-class-dash-at-end" {
     // Dash at the end is literal, not a range
     var tokenizer: RegExpTokenizer = .{};
     const src = "[abc-]";
@@ -2423,7 +2423,7 @@ test "regex-char-class-dash-at-end" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-dash-only" {
+test "regexp-char-class-dash-only" {
     // Single dash inside brackets is literal
     var tokenizer: RegExpTokenizer = .{};
     const src = "[-]";
@@ -2440,7 +2440,7 @@ test "regex-char-class-dash-only" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-bracket-close-first" {
+test "regexp-char-class-bracket-close-first" {
     // First character after '[' or '[^' can be ']' as a literal
     var tokenizer: RegExpTokenizer = .{};
     const src = "[]]";
@@ -2457,7 +2457,7 @@ test "regex-char-class-bracket-close-first" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-bracket-close-first-negated" {
+test "regexp-char-class-bracket-close-first-negated" {
     // '[^]' followed by more characters
     var tokenizer: RegExpTokenizer = .{};
     const src = "[^]a]";
@@ -2480,7 +2480,7 @@ test "regex-char-class-bracket-close-first-negated" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-escaped-bracket" {
+test "regexp-char-class-escaped-bracket" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[a\\]b]";
     var actual: std.ArrayList(Token) = .{};
@@ -2498,7 +2498,7 @@ test "regex-char-class-escaped-bracket" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-escaped-dash" {
+test "regexp-char-class-escaped-dash" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[a\\-b]";
     var actual: std.ArrayList(Token) = .{};
@@ -2516,7 +2516,7 @@ test "regex-char-class-escaped-dash" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-escape-sequences" {
+test "regexp-char-class-escape-sequences" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[\\d\\w\\s]";
     var actual: std.ArrayList(Token) = .{};
@@ -2534,7 +2534,7 @@ test "regex-char-class-escape-sequences" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-special-chars-literal" {
+test "regexp-char-class-special-chars-literal" {
     // Inside character class, most special regex chars are literal
     var tokenizer: RegExpTokenizer = .{};
     const src = "[.()+*?{}|]";
@@ -2559,7 +2559,7 @@ test "regex-char-class-special-chars-literal" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-caret-not-at-start" {
+test "regexp-char-class-caret-not-at-start" {
     // Caret not at the start is a literal character
     var tokenizer: RegExpTokenizer = .{};
     const src = "[a^b]";
@@ -2578,7 +2578,7 @@ test "regex-char-class-caret-not-at-start" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-with-quantifier" {
+test "regexp-char-class-with-quantifier" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[a-z]+";
     var actual: std.ArrayList(Token) = .{};
@@ -2595,7 +2595,7 @@ test "regex-char-class-with-quantifier" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-in-context" {
+test "regexp-char-class-in-context" {
     // Character class in a full pattern
     var tokenizer: RegExpTokenizer = .{};
     const src = "^[a-z]+@[a-z]+\\.[a-z]{2,4}$";
@@ -2634,7 +2634,7 @@ test "regex-char-class-in-context" {
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
-test "regex-char-class-unclosed" {
+test "regexp-char-class-unclosed" {
     // Unclosed character class should produce an error
     var tokenizer: RegExpTokenizer = .{};
     const src = "[abc";
@@ -2649,7 +2649,7 @@ test "regex-char-class-unclosed" {
     try testing.expectEqual(Token.parse_error, @as(std.meta.Tag(Token), actual.items[actual.items.len - 1]));
 }
 
-test "regex-char-class-range-mixed-with-literals" {
+test "regexp-char-class-range-mixed-with-literals" {
     var tokenizer: RegExpTokenizer = .{};
     const src = "[a-cx-z123]";
     var actual: std.ArrayList(Token) = .{};
