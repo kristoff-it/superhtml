@@ -56,7 +56,7 @@ const State = union(enum) {
 // - ranged quantifier where low > high
 // - invalid anchor placement
 
-const TokenError = enum {
+pub const TokenError = enum {
     generic_error,
 
     // groups
@@ -73,10 +73,11 @@ const TokenError = enum {
 
     // character class
     non_terminated_character_class,
+    non_terminated_character_class_range,
     invalid_character_class_token,
 };
 
-const Token = union(enum) {
+pub const Token = union(enum) {
     character: u32,
 
     group_open: struct { kind: GroupKind, span: Span },
@@ -967,29 +968,18 @@ pub fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
             .character_class_body => |state| {
                 const more_tokens = self.consume(src);
 
-                if (state.is_first_transition and more_tokens) switch (self.current) {
-                    ']' => {
-                        const current_idx = self.idx;
-                        const bracket_idx = current_idx - 1;
-                        var return_bracket = false;
-                        while (self.consume(src)) {
-                            if (self.current == ']') {
-                                return_bracket = true;
-                            }
-                        }
-                        self.idx = current_idx;
-                        if (return_bracket) {
-                            return .{ .character = bracket_idx };
-                        }
-                    },
-                    else => {},
-                };
-
                 self.state = .{
                     .character_class_body = .{
                         .pos = state.pos,
                         .is_first_transition = false,
                     },
+                };
+
+                if (state.is_first_transition and more_tokens) switch (self.current) {
+                    '-' => {
+                        return .{ .character = self.idx - 1 };
+                    },
+                    else => {},
                 };
 
                 if (!more_tokens) {
@@ -1017,7 +1007,7 @@ pub fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     if (!cosumed_range) {
                         return .{
                             .parse_error = .{
-                                .tag = .non_terminated_character_class,
+                                .tag = .non_terminated_character_class_range,
                                 .span = .{
                                     .start = state.pos,
                                     .end = self.idx,
@@ -2508,7 +2498,8 @@ test "regexp-char-class-dash-only" {
 }
 
 test "regexp-char-class-bracket-close-first" {
-    // First character after '[' or '[^' can be ']' as a literal
+    // ECMAScript spec: ']' ALWAYS closes a character class (no "first ] is literal" rule)
+    // '[]' creates an empty character class, followed by ']' literal outside the class
     var tokenizer: RegExpTokenizer = .{};
     const src = "[]]";
     var actual: std.ArrayList(Token) = .{};
@@ -2518,14 +2509,15 @@ test "regexp-char-class-bracket-close-first" {
     }
     const expected = [_]Token{
         .{ .character_class_open = .{ .negated = false, .span = .{ .start = 0, .end = 1 } } }, // '['
-        .{ .character = 1 }, // ']' (literal, first char)
-        .{ .character_class_close = 2 }, // ']' (closes class)
+        .{ .character_class_close = 1 }, // ']' (closes the empty class)
+        .{ .character = 2 }, // ']' (literal outside class)
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
 
 test "regexp-char-class-bracket-close-first-negated" {
-    // '[^]' followed by more characters
+    // ECMAScript spec: ']' ALWAYS closes a character class
+    // '[^]' creates an empty negated character class, followed by 'a]' outside the class
     var tokenizer: RegExpTokenizer = .{};
     const src = "[^]a]";
     var actual: std.ArrayList(Token) = .{};
@@ -2540,9 +2532,9 @@ test "regexp-char-class-bracket-close-first-negated" {
                 .span = .{ .start = 0, .end = 2 },
             },
         }, // '[^'
-        .{ .character = 2 }, // ']' (literal, first char after ^)
-        .{ .character = 3 }, // 'a'
-        .{ .character_class_close = 4 }, // ']' (closes class)
+        .{ .character_class_close = 2 }, // ']' (closes the empty negated class)
+        .{ .character = 3 }, // 'a' (literal outside class)
+        .{ .character = 4 }, // ']' (literal outside class)
     };
     try testing.expectEqualSlices(Token, &expected, actual.items);
 }
