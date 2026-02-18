@@ -616,35 +616,31 @@ pub fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                         },
                     };
                 } else {
-                    const is_lazy = self.current == '?';
-                    const is_quantifier_token = switch (self.current) {
+                    switch (self.current) {
                         //  while ++, *+, +*, and ** are instances of repeating
-                        //  a quantifier, ?? is legal
-                        '?' => false,
-                        '+', '*' => true,
-                        else => false,
-                    };
-
-                    if (is_lazy and !is_quantifier_token) {
-                        self.state = .data;
-                        return .{
-                            .quantifier = .{
-                                .kind = kind,
-                                .lazy = true,
-                                .span = .{ .start = state.pos, .end = self.idx },
-                            },
-                        };
-                    }
-                    if (!is_quantifier_token and !is_lazy) {
-                        self.state = .data;
-                        self.idx -= 1;
-                        return .{
-                            .quantifier = .{
-                                .kind = kind,
-                                .lazy = false,
-                                .span = .{ .start = state.pos, .end = self.idx },
-                            },
-                        };
+                        //  a quantifier, ?? is legal; ?? is a lazy ? quantifier
+                        '?' => {
+                            self.state = .data;
+                            return .{
+                                .quantifier = .{
+                                    .kind = kind,
+                                    .lazy = true,
+                                    .span = .{ .start = state.pos, .end = self.idx },
+                                },
+                            };
+                        },
+                        // '+', '*' => true,
+                        else => {
+                            self.state = .data;
+                            self.idx -= 1;
+                            return .{
+                                .quantifier = .{
+                                    .kind = kind,
+                                    .lazy = false,
+                                    .span = .{ .start = state.pos, .end = self.idx },
+                                },
+                            };
+                        },
                     }
                 }
             },
@@ -1715,6 +1711,71 @@ test "regexp-quantifier-simple-lazy" {
         try testing.expectEqual(Token.quantifier, @as(std.meta.Tag(Token), actual.items[1]));
         try testing.expectEqual(tc.kind, actual.items[1].quantifier.kind);
         try testing.expectEqual(true, actual.items[1].quantifier.lazy);
+    }
+}
+
+test "regexp-quantifier-repeating" {
+    const test_cases = [_]struct {
+        src: []const u8,
+        expected: []const Token,
+    }{
+        .{
+            .src = "a**",
+            .expected = &[_]Token{
+                .{ .character = 0 },
+                .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 1, .end = 2 } } },
+                .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 2, .end = 3 } } },
+            },
+        },
+        .{
+            .src = "b++",
+            .expected = &[_]Token{
+                .{ .character = 0 },
+                .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 1, .end = 2 } } },
+                .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 2, .end = 3 } } },
+            },
+        },
+        .{
+            .src = "c?*",
+            .expected = &[_]Token{
+                .{ .character = 0 },
+                .{ .quantifier = .{ .kind = .zero_or_one, .lazy = false, .span = .{ .start = 1, .end = 2 } } },
+                .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 2, .end = 3 } } },
+            },
+        },
+        .{
+            .src = "c*+",
+            .expected = &[_]Token{
+                .{ .character = 0 },
+                .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 1, .end = 2 } } },
+                .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 2, .end = 3 } } },
+            },
+        },
+        .{
+            .src = "c+*",
+            .expected = &[_]Token{
+                .{ .character = 0 },
+                .{ .quantifier = .{ .kind = .one_or_more, .lazy = false, .span = .{ .start = 1, .end = 2 } } },
+                .{ .quantifier = .{ .kind = .zero_or_more, .lazy = false, .span = .{ .start = 2, .end = 3 } } },
+            },
+        },
+        .{
+            .src = "c+?*?",
+            .expected = &[_]Token{
+                .{ .character = 0 },
+                .{ .quantifier = .{ .kind = .one_or_more, .lazy = true, .span = .{ .start = 1, .end = 3 } } },
+                .{ .quantifier = .{ .kind = .zero_or_more, .lazy = true, .span = .{ .start = 3, .end = 5 } } },
+            },
+        },
+    };
+    for (test_cases) |tc| {
+        var tokenizer: RegExpTokenizer = .{};
+        var actual: std.ArrayList(Token) = .{};
+        defer actual.deinit(testing.allocator);
+        while (tokenizer.next(tc.src)) |got| {
+            try actual.append(testing.allocator, got);
+        }
+        try testing.expectEqualSlices(Token, tc.expected, actual.items);
     }
 }
 test "regexp-quantifier-exact-count" {
