@@ -50,12 +50,6 @@ const State = union(enum) {
     };
 };
 
-// errors to handle one layer up:
-// - repeating quantifiers (double, triple, n-ple quantifiers)
-// - quantifier at start of line
-// - ranged quantifier where low > high
-// - invalid anchor placement
-
 pub const TokenError = enum {
     generic_error,
 
