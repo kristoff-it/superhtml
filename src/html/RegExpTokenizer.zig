@@ -73,7 +73,6 @@ pub const TokenError = enum {
 
     // character class
     non_terminated_character_class,
-    non_terminated_character_class_range,
     invalid_character_class_token,
 };
 
@@ -415,6 +414,12 @@ pub fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                 }
             },
             .escape_sequence_advanced => |state| {
+                // there is a minor issue here: if for example we have [\xa]
+                // where a should have two hex chars after it and only has one
+                // to verify this we consume two characters, and don't
+                // reconsume them after validation, so we get two parse errors:
+                // and invalid escape and a unclosed character class one; this
+                // is an edge case of an edge case so leaving it be for now
                 const parse_error: ?TokenError = switch_blk: switch (self.current) {
                     ']' => {
                         switch (state.context) {
@@ -1003,7 +1008,7 @@ pub fn next(self: *RegExpTokenizer, src: []const u8) ?Token {
                     if (!cosumed_range) {
                         return .{
                             .parse_error = .{
-                                .tag = .non_terminated_character_class_range,
+                                .tag = .non_terminated_character_class,
                                 .span = .{
                                     .start = state.pos,
                                     .end = self.idx,

@@ -237,43 +237,7 @@ pub const attributes: AttributeSet = .init(&.{
     .{
         .name = "pattern",
         .model = .{
-            .rule = .{ .custom = struct {
-                fn custom(
-                    gpa: Allocator,
-                    errors: *std.ArrayListUnmanaged(Ast.Error),
-                    src: []const u8,
-                    node_idx: u32,
-                    attr: Tokenizer.Attr,
-                ) error{OutOfMemory}!void {
-                    const value = attr.value orelse {
-                        return errors.append(gpa, .{
-                            .tag = .missing_attr_value,
-                            .main_location = attr.name,
-                            .node_idx = node_idx,
-                        });
-                    };
-                    var tokenizer: RegExpTokenizer = .{};
-                    while (tokenizer.next(value.span.slice(src))) |got| {
-                        switch (got) {
-                            .parse_error => |e| {
-                                return errors.append(gpa, .{
-                                    .tag = .{
-                                        .invalid_attr_value = .{
-                                            .reason = @tagName(e.tag),
-                                        },
-                                    },
-                                    .main_location = .{
-                                        .start = @intCast(value.span.start + e.span.start),
-                                        .end = @intCast(value.span.start + e.span.end),
-                                    },
-                                    .node_idx = node_idx,
-                                });
-                            },
-                            else => {},
-                        }
-                    }
-                }
-            }.custom },
+            .rule = .{ .custom = validatePattern },
             .desc = "Pattern the value must match to be valid.",
         },
     },
@@ -488,6 +452,245 @@ pub const attributes: AttributeSet = .init(&.{
         },
     },
 });
+
+// errors to handle:
+// - invalid anchor placement
+//  - i think i read somewhere in the spec that the pattern passed to this
+//    attribute is anchored before being matched, so not sure what to do
+//    here
+fn validatePattern(
+    gpa: Allocator,
+    errors: *std.ArrayListUnmanaged(Ast.Error),
+    src: []const u8,
+    node_idx: u32,
+    attr: Tokenizer.Attr,
+) error{OutOfMemory}!void {
+    const value = attr.value orelse {
+        return errors.append(gpa, .{
+            .tag = .missing_attr_value,
+            .main_location = attr.name,
+            .node_idx = node_idx,
+        });
+    };
+
+    var tokens: std.ArrayList(RegExpTokenizer.Token) = .empty;
+
+    var capture_group_opens: std.ArrayList(Span) = .empty;
+    defer capture_group_opens.deinit(gpa);
+
+    var tokenizer: RegExpTokenizer = .{};
+    const attribute_value = value.span.slice(src);
+    while (tokenizer.next(attribute_value)) |got| {
+        switch (got) {
+            .group_open => |p| {
+                try capture_group_opens.append(gpa, p.span);
+            },
+            .group_close => |pos| {
+                // this is for extra ')'
+                if (capture_group_opens.pop()) |_| {} else {
+                    try errors.append(gpa, .{
+                        .tag = .{
+                            .invalid_attr_value = .{
+                                .reason = "closing unopened capture group",
+                            },
+                        },
+                        .main_location = .{
+                            .start = @intCast(value.span.start),
+                            .end = @intCast(value.span.start + pos + 1),
+                        },
+                        .node_idx = node_idx,
+                    });
+                }
+            },
+            .parse_error => |e| {
+                switch (e.tag) {
+                    // this is for extra '['
+                    .non_terminated_character_class => {
+                        try errors.append(gpa, .{
+                            .tag = .{
+                                .invalid_attr_value = .{
+                                    .reason = "unclosed character class",
+                                },
+                            },
+                            .main_location = .{
+                                .start = @intCast(value.span.start + e.span.start),
+                                .end = @intCast(value.span.start + e.span.end),
+                            },
+                            .node_idx = node_idx,
+                        });
+                    },
+                    .invalid_escape_sequence => {
+                        try errors.append(gpa, .{
+                            .tag = .{
+                                .invalid_attr_value = .{
+                                    .reason = "invalid escape sequence",
+                                },
+                            },
+                            .main_location = .{
+                                .start = @intCast(value.span.start + e.span.start),
+                                .end = @intCast(value.span.start + e.span.end),
+                            },
+                            .node_idx = node_idx,
+                        });
+                    },
+                    else => {
+                        try tokens.append(gpa, got);
+                    },
+                }
+            },
+            else => {
+                try tokens.append(gpa, got);
+            },
+        }
+    }
+
+    // this is for extra '('
+    for (capture_group_opens.items) |span| {
+        try errors.append(gpa, .{
+            .tag = .{
+                .invalid_attr_value = .{
+                    .reason = "unclosed capture group",
+                },
+            },
+            .main_location = .{
+                .start = @intCast(value.span.start + span.start),
+                .end = @intCast(value.span.end),
+            },
+            .node_idx = node_idx,
+        });
+    }
+
+    tokens_loop: for (tokens.items, 0..) |token, i| {
+        switch (token) {
+            .character_class_range => |range| {
+                const low = attribute_value[range.low];
+                const high = attribute_value[range.high];
+                if (low > high) {
+                    try errors.append(gpa, .{
+                        .tag = .{
+                            .invalid_attr_value = .{
+                                .reason = "invalid character class: range low can't be less than range high",
+                            },
+                        },
+                        .main_location = .{
+                            .start = @intCast(value.span.start + range.low),
+                            .end = @intCast(value.span.start + range.high + 1),
+                        },
+                        .node_idx = node_idx,
+                    });
+                }
+            },
+            .quantifier => |q| {
+                const next_in_bounds = i + 1 < tokens.items.len;
+                if (i == 0) {
+                    try errors.append(gpa, .{
+                        .tag = .{
+                            .invalid_attr_value = .{
+                                .reason = "can't have quantifier at start of pattern",
+                            },
+                        },
+                        .main_location = .{
+                            .start = @intCast(value.span.start + q.span.start),
+                            .end = @intCast(value.span.start + q.span.end),
+                        },
+                        .node_idx = node_idx,
+                    });
+                }
+                if (next_in_bounds) {
+                    switch (tokens.items[i + 1]) {
+                        .quantifier => |next_q| {
+                            try errors.append(gpa, .{
+                                .tag = .{
+                                    .invalid_attr_value = .{
+                                        .reason = "repeating quantifiers",
+                                    },
+                                },
+                                .main_location = .{
+                                    .start = @intCast(value.span.start + q.span.start),
+                                    .end = @intCast(value.span.start + next_q.span.end),
+                                },
+                                .node_idx = node_idx,
+                            });
+                        },
+                        else => {},
+                    }
+                }
+                switch (q.kind) {
+                    .range_count => |tpl| {
+                        const low_span, const high_span = tpl;
+                        const low = std.fmt.parseInt(u32, attribute_value[low_span.start..low_span.end], 10) catch |err| {
+                            try errors.append(gpa, .{
+                                .tag = .{
+                                    .invalid_attr_value = .{
+                                        .reason = switch (err) {
+                                            std.fmt.ParseIntError.InvalidCharacter => "invalid quantifier: could't parse range low, invalid character for range",
+                                            std.fmt.ParseIntError.Overflow => "invalid quantifier: could't parse range low, overflowed u32",
+                                        },
+                                    },
+                                },
+                                .main_location = .{
+                                    .start = @intCast(value.span.start + q.span.start),
+                                    .end = @intCast(value.span.start + q.span.end),
+                                },
+                                .node_idx = node_idx,
+                            });
+                            continue :tokens_loop;
+                        };
+                        const high = std.fmt.parseInt(u32, attribute_value[high_span.start..high_span.end], 10) catch |err| {
+                            try errors.append(gpa, .{
+                                .tag = .{
+                                    // this never triggers, we get an error back from the tokenizer
+                                    .invalid_attr_value = .{
+                                        .reason = switch (err) {
+                                            std.fmt.ParseIntError.InvalidCharacter => "invalid quantifier: could't parse range high, invalid character for range",
+                                            std.fmt.ParseIntError.Overflow => "invalid quantifier: could't parse range high, overflowed u32",
+                                        },
+                                    },
+                                },
+                                .main_location = .{
+                                    .start = @intCast(value.span.start + q.span.start),
+                                    .end = @intCast(value.span.start + q.span.end),
+                                },
+                                .node_idx = node_idx,
+                            });
+                            continue :tokens_loop;
+                        };
+                        if (high < low) {
+                            try errors.append(gpa, .{
+                                .tag = .{
+                                    .invalid_attr_value = .{
+                                        .reason = "invalid quantifier: range high can't be less than range low",
+                                    },
+                                },
+                                .main_location = .{
+                                    .start = @intCast(value.span.start + q.span.start),
+                                    .end = @intCast(value.span.start + q.span.end),
+                                },
+                                .node_idx = node_idx,
+                            });
+                        }
+                    },
+                    else => {},
+                }
+            },
+            .parse_error => |e| {
+                try errors.append(gpa, .{
+                    .tag = .{
+                        .invalid_attr_value = .{
+                            .reason = @tagName(e.tag),
+                        },
+                    },
+                    .main_location = .{
+                        .start = @intCast(value.span.start + e.span.start),
+                        .end = @intCast(value.span.start + e.span.end),
+                    },
+                    .node_idx = node_idx,
+                });
+            },
+            else => {},
+        }
+    }
+}
 
 const Type = blk: {
     const labels = attributes.get("type").?.rule.list.set.keys();
