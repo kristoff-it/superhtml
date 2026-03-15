@@ -25,8 +25,8 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
         role: Role,
 
         cursor: Ast.Cursor,
-        if_stack: std.ArrayListUnmanaged(IfFrame) = .{},
-        loop_stack: std.ArrayListUnmanaged(LoopFrame) = .{},
+        if_stack: std.ArrayList(IfFrame) = .empty,
+        loop_stack: std.ArrayList(LoopFrame) = .empty,
         ctx: std.StringHashMapUnmanaged(Value) = .{},
 
         const Template = @This();

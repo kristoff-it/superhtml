@@ -184,7 +184,7 @@ pub const attributes: AttributeSet = .init(&.{
 
 pub fn validateAttrs(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     nodes: []const Ast.Node,
     parent_idx: u32,
@@ -234,7 +234,7 @@ pub fn validateContent(
     nodes: []const Ast.Node,
     seen_attrs: *std.StringHashMapUnmanaged(Span),
     seen_ids: *std.StringHashMapUnmanaged(Span),
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) !void {

@@ -153,7 +153,7 @@ pub const Node = struct {
         ast: Ast,
     ) void {
         std.debug.print("\n\n-- DEBUG --\n", .{});
-        var stderr = std.fs.File.stderr().writer(&.{});
+        var stderr = std.Io.File.stderr().writer(std.Options.debug_io, &.{});
         node.debugInternal(
             src,
             html_ast,
@@ -408,8 +408,8 @@ pub fn root(ast: Ast) Node {
 const Parser = struct {
     src: []const u8,
     html: html.Ast,
-    nodes: std.ArrayListUnmanaged(Node) = .{},
-    errors: std.ArrayListUnmanaged(Error) = .{},
+    nodes: std.ArrayList(Node) = .empty,
+    errors: std.ArrayList(Error) = .empty,
     extends_idx: u32 = 0,
     interface: std.StringArrayHashMapUnmanaged(u32) = .{},
     blocks: std.StringHashMapUnmanaged(u32) = .{},

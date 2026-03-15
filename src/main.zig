@@ -23,31 +23,32 @@ pub const std_options: std.Options = .{
 
 var lsp_mode = false;
 
-pub fn panic(
+pub const panic = std.debug.FullPanic(panicImpl);
+
+fn panicImpl(
     msg: []const u8,
-    trace: ?*std.builtin.StackTrace,
     ret_addr: ?usize,
 ) noreturn {
+    const trace: ?std.debug.FormatStackTrace = if (@errorReturnTrace()) |t| .{ .stack_trace = t.* } else null;
+
     if (lsp_mode) {
-        std.log.err("\n{s}\n\n{?f}", .{ msg, trace });
+        std.log.err("\n{s}\n\n{?}", .{ msg, trace });
     }
 
     blk: {
-        const out: std.fs.File = if (!lsp_mode) std.fs.File.stderr() else logging.log_file orelse break :blk;
-        var writer = out.writerStreaming(&.{});
+        const out: std.Io.File = if (!lsp_mode) std.Io.File.stderr() else logging.log_file orelse break :blk;
+        var writer = out.writerStreaming(std.Options.debug_io, &.{});
         const w = &writer.interface;
-        w.print("\n{s}\n\n{?f}", .{ msg, trace }) catch {};
+        w.print("\n{s}\n\n{?}", .{ msg, trace }) catch {};
         if (builtin.strip_debug_info) {
             w.print("Unable to dump stack trace: debug info stripped\n", .{}) catch {};
             break :blk;
         }
 
-        if (builtin.zig_version.minor != 15) {
-            std.debug.writeCurrentStackTrace(.{ .first_address = ret_addr }, w, .no_color) catch |err| {
-                w.print("Unable to dump stack trace: {t}\n", .{err}) catch {};
-                break :blk;
-            };
-        }
+        std.debug.writeCurrentStackTrace(.{ .first_address = ret_addr }, .{ .writer = w, .mode = .no_color }) catch |err| {
+            w.print("Unable to dump stack trace: {t}\n", .{err}) catch {};
+            break :blk;
+        };
     }
 
     if (builtin.mode == .Debug) @breakpoint();
@@ -62,14 +63,12 @@ pub const Command = enum {
     version,
 };
 
-pub fn main() !void {
-    var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
-    const gpa = gpa_impl.allocator();
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
 
-    logging.setup(gpa);
+    logging.setup(gpa, init.io, init.environ_map);
 
-    const args = std.process.argsAlloc(gpa) catch oom();
-    defer std.process.argsFree(gpa, args);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     if (args.len < 2) fatalHelp();
 
@@ -81,9 +80,9 @@ pub fn main() !void {
     if (cmd == .lsp) lsp_mode = true;
 
     _ = switch (cmd) {
-        .check => check_exe.run(gpa, args[2..]),
-        .fmt => fmt_exe.run(gpa, args[2..]),
-        .lsp => lsp_exe.run(gpa, args[2..]),
+        .check => check_exe.run(gpa, init.io, args[2..]),
+        .fmt => fmt_exe.run(gpa, init.io, args[2..]),
+        .lsp => lsp_exe.run(gpa, init.io, args[2..]),
         .help => fatalHelp(),
         .version => printVersion(),
     } catch |err| fatal("unexpected error: {t}\n", .{err});

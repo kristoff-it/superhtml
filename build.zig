@@ -298,7 +298,7 @@ fn setupReleaseStep(
                 });
                 const archive = zip.addOutputFileArg(archive_name);
                 zip.addDirectoryArg(super_exe_release.getEmittedBin());
-                _ = zip.captureStdOut();
+                _ = zip.captureStdOut(.{});
 
                 release_step.dependOn(&b.addInstallFileWithDir(
                     archive,
@@ -321,7 +321,7 @@ fn setupReleaseStep(
 
                 tar.addDirectoryArg(super_exe_release.getEmittedBinDirectory());
                 tar.addArg("superhtml");
-                _ = tar.captureStdOut();
+                _ = tar.captureStdOut(.{});
 
                 release_step.dependOn(&b.addInstallFileWithDir(
                     archive,
@@ -361,7 +361,7 @@ fn setupReleaseStep(
         tar.addArg("-C");
         tar.addDirectoryArg(super_wasm_lsp.getEmittedBinDirectory());
         tar.addArg("superhtml.wasm");
-        _ = tar.captureStdOut();
+        _ = tar.captureStdOut(.{});
         release_step.dependOn(&b.addInstallFileWithDir(
             archive,
             .{ .custom = "releases" },
@@ -395,7 +395,7 @@ fn getGitVersion(b: *std.Build) Version {
             b.build_root.path.?, "describe",
             "--match",           "*.*.*",
             "--tags",
-        }, &out, .Ignore) catch return .unknown,
+        }, &out, .ignore) catch return .unknown,
         " \n\r",
     );
 

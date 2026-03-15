@@ -668,7 +668,7 @@ pub fn simpleCompletions(
     parent_reject: Categories,
     simple: Simple,
 ) ![]const Ast.Completion {
-    var list: std.ArrayListUnmanaged(Ast.Completion) = .empty;
+    var list: std.ArrayList(Ast.Completion) = .empty;
     try list.ensureTotalCapacity(
         arena,
         all.values.len - @intFromEnum(Kind.___),

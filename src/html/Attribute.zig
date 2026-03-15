@@ -96,7 +96,7 @@ pub const Rule = union(enum) {
     /// Custom validation
     custom: *const fn (
         gpa: Allocator,
-        errors: *std.ArrayListUnmanaged(Ast.Error),
+        errors: *std.ArrayList(Ast.Error),
         src: []const u8,
         node_idx: u32,
         attr: Tokenizer.Attr,
@@ -242,7 +242,7 @@ pub const Rule = union(enum) {
     pub fn validate(
         rule: Rule,
         gpa: Allocator,
-        errors: *std.ArrayListUnmanaged(Ast.Error),
+        errors: *std.ArrayList(Ast.Error),
         src: []const u8,
         node_idx: u32,
         attr: Tokenizer.Attr,
@@ -555,7 +555,7 @@ pub const Rule = union(enum) {
 
 pub fn validateMime(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,
@@ -573,8 +573,8 @@ pub fn validateMime(
     // 1. Remove any leading and trailing HTTP whitespace from input.
     const value, const spaces: u32 = blk: {
         const raw = raw_value.span.slice(src);
-        const left = std.mem.trimLeft(u8, raw, &std.ascii.whitespace);
-        const left_right = std.mem.trimRight(u8, left, &std.ascii.whitespace);
+        const left = std.mem.trimStart(u8, raw, &std.ascii.whitespace);
+        const left_right = std.mem.trimEnd(u8, left, &std.ascii.whitespace);
         break :blk .{ left_right, @intCast(raw.len - left.len) };
     };
 
@@ -697,7 +697,7 @@ pub fn validateMime(
 
         // 2.Collect a sequence of code points that are HTTP whitespace from
         // input given position.
-        const param_name = std.mem.trimLeft(u8, kvs[0..sep_idx], &std.ascii.whitespace);
+        const param_name = std.mem.trimStart(u8, kvs[0..sep_idx], &std.ascii.whitespace);
 
         if (param_name.len == 0) return errors.append(gpa, .{
             .tag = .{
@@ -842,7 +842,7 @@ pub fn validateMimeChars(bytes: []const u8) ?Rule.ValueRejection {
 
 pub const ValidatingIterator = struct {
     it: Tokenizer,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     seen_attrs: *std.StringHashMapUnmanaged(Span),
     seen_ids: *std.StringHashMapUnmanaged(Span),
     end: u32,
@@ -851,7 +851,7 @@ pub const ValidatingIterator = struct {
 
     /// On initalization will call seen_attrs.clearRetainingCapacity()
     pub fn init(
-        errors: *std.ArrayListUnmanaged(Ast.Error),
+        errors: *std.ArrayList(Ast.Error),
         seen_attrs: *std.StringHashMapUnmanaged(Span),
         seen_ids: *std.StringHashMapUnmanaged(Span),
         lang: Language,
@@ -1737,7 +1737,7 @@ pub const global: AttributeSet = .init(&.{
             .rule = .{ .custom = struct {
                 fn custom(
                     gpa: Allocator,
-                    errors: *std.ArrayListUnmanaged(Ast.Error),
+                    errors: *std.ArrayList(Ast.Error),
                     src: []const u8,
                     node_idx: u32,
                     attr: Tokenizer.Attr,
@@ -2305,7 +2305,7 @@ pub const global: AttributeSet = .init(&.{
 
 pub fn accesskey(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,

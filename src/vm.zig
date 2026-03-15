@@ -39,7 +39,7 @@ pub fn VM(
 
         state: State,
         quota: usize = 100,
-        templates: std.ArrayListUnmanaged(Template) = .{},
+        templates: std.ArrayList(Template) = .empty,
         ctx: *Context,
         scripty_vm: ScriptyVM = .{},
 
@@ -374,7 +374,7 @@ pub fn VM(
             if (tpl.html.errors.len > 0) {
                 const first_err = tpl.html.errors[0];
                 switch (first_err.tag) {
-                    inline else => |tag| tpl.reportError(
+                    inline else => |_, tag| tpl.reportError(
                         vm.err,
                         first_err.main_location,
                         @tagName(tag),
@@ -384,7 +384,7 @@ pub fn VM(
                 }
                 for (tpl.html.errors[1..]) |err| {
                     switch (err.tag) {
-                        inline else => |tag| try tpl.diagnostic(
+                        inline else => |_, tag| try tpl.diagnostic(
                             vm.err,
                             true,
                             @tagName(tag),

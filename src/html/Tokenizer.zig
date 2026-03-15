@@ -5526,7 +5526,8 @@ fn testTokenize(src: []const u8, expected_tokens: []const Token) !void {
 
 test "fuzz" {
     const Context = struct {
-        fn testOne(_: @This(), input: []const u8) anyerror!void {
+        fn testOne(_: @This(), smith: *std.testing.Smith) anyerror!void {
+            const input = smith.in orelse return;
             var t: Tokenizer = .{ .language = .html };
             while (t.next(input)) |tok| {
                 _ = tok;

@@ -466,7 +466,7 @@ pub fn init(
     var nodes = std.array_list.Managed(Node).init(gpa);
     errdefer nodes.deinit();
 
-    var errors: std.ArrayListUnmanaged(Error) = .empty;
+    var errors: std.ArrayList(Error) = .empty;
     errdefer errors.deinit(gpa);
 
     var seen_attrs: std.StringHashMapUnmanaged(Span) = .empty;
@@ -2156,7 +2156,8 @@ test "fuzz" {
     const Context = struct {
         arena: *std.heap.ArenaAllocator,
         out: *Writer,
-        fn testOne(ctx: @This(), input: []const u8) anyerror!void {
+        fn testOne(ctx: @This(), smith: *std.testing.Smith) anyerror!void {
+            const input = smith.in orelse return;
             _ = ctx.arena.reset(.retain_capacity);
             const gpa = ctx.arena.allocator();
 
@@ -2187,7 +2188,7 @@ test "fuzz" {
 
     var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     var buf: [4096]u8 = undefined;
-    var out = std.fs.File.stdout().writer(&buf);
+    var out = std.Io.File.stdout().writer(std.testing.io, &buf);
     try std.testing.fuzz(Context{
         .arena = &arena,
         .out = &out.interface,
