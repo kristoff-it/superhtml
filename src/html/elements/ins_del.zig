@@ -171,8 +171,65 @@ pub fn validateDatetime(
         pos += 2;
     }
 
+    // day
+    {
+        if (pos >= date.len or date[pos] != '-') return errors.append(gpa, .{
+            .tag = .{
+                .invalid_attr_value = .{
+                    .reason = "missing '-' after month",
+                },
+            },
+            .main_location = value.span,
+            .node_idx = node_idx,
+        });
+
+        pos += 1;
+
+        if (pos + 2 > date.len) return errors.append(gpa, .{
+            .tag = .{
+                .invalid_attr_value = .{
+                    .reason = "missing two-digit day",
+                },
+            },
+            .main_location = .{
+                .start = value.span.start + pos,
+                .end = value.span.end,
+            },
+            .node_idx = node_idx,
+        });
+
+        const day = std.fmt.parseInt(u64, date[pos..][0..2], 10) catch return errors.append(gpa, .{
+            .tag = .{
+                .invalid_attr_value = .{
+                    .reason = "not a valid day",
+                },
+            },
+            .main_location = .{
+                .start = value.span.start,
+                .end = value.span.start + pos,
+            },
+            .node_idx = node_idx,
+        });
+
+        if (day < 1 or day > 31) return errors.append(gpa, .{
+            .tag = .{
+                .invalid_attr_value = .{
+                    .reason = "day out of range (must be between 1 and 31)",
+                },
+            },
+            .main_location = .{
+                .start = value.span.start + pos,
+                .end = value.span.start + pos + 2,
+            },
+            .node_idx = node_idx,
+        });
+
+        pos += 2;
+    }
+
     if (pos >= date.len) return;
 
+    // time
     if (date[pos] != 'T' and date[pos] != ' ') return errors.append(gpa, .{
         .tag = .{
             .invalid_attr_value = .{

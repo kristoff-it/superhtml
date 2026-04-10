@@ -117,10 +117,9 @@ const Parser = struct {
     }
 };
 
-pub fn main() !void {
-    var arena_instance: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-    const arena = arena_instance.allocator();
-    defer arena_instance.deinit();
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const arena = init.arena.allocator();
 
     var language: std.ArrayList(Registry.Subtag) = .empty;
     var extlang: std.ArrayList(Registry.Subtag) = .empty;
@@ -144,15 +143,15 @@ pub fn main() !void {
         try list.append(arena, result.subtag);
     }
 
-    var args = try std.process.argsWithAllocator(arena);
+    var args = try init.minimal.args.iterateAllocator(arena);
     std.debug.assert(args.skip());
 
     const file = file: {
-        const output_path = args.next() orelse break :file std.fs.File.stdout();
-        break :file try std.fs.cwd().createFile(output_path, .{});
+        const output_path = args.next() orelse break :file std.Io.File.stdout();
+        break :file try std.Io.Dir.cwd().createFile(io, output_path, .{});
     };
     var buffer: [1024]u8 = undefined;
-    var writer = file.writer(&buffer);
+    var writer = file.writer(io, &buffer);
     const output = &writer.interface;
 
     const registry: Registry = .{

@@ -33,17 +33,20 @@ pub fn panic(
     }
 
     blk: {
-        const out: std.fs.File = if (!lsp_mode) std.fs.File.stderr() else logging.log_file orelse break :blk;
-        var writer = out.writerStreaming(&.{});
+        const out: std.Io.File = if (!lsp_mode) std.Io.File.stderr() else logging.log_file orelse break :blk;
+        var writer = out.writerStreaming(std.Options.debug_io, &.{});
         const w = &writer.interface;
-        w.print("\n{s}\n\n{?f}", .{ msg, trace }) catch {};
+        w.print("\n{s}\n", .{msg}) catch {};
         if (builtin.strip_debug_info) {
             w.print("Unable to dump stack trace: debug info stripped\n", .{}) catch {};
             break :blk;
         }
 
         if (builtin.zig_version.minor != 15) {
-            std.debug.writeCurrentStackTrace(.{ .first_address = ret_addr }, w, .no_color) catch |err| {
+            std.debug.writeCurrentStackTrace(.{ .first_address = ret_addr }, .{
+                .writer = w,
+                .mode = .no_color,
+            }) catch |err| {
                 w.print("Unable to dump stack trace: {t}\n", .{err}) catch {};
                 break :blk;
             };
@@ -62,14 +65,13 @@ pub const Command = enum {
     version,
 };
 
-pub fn main() !void {
-    var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
-    const gpa = gpa_impl.allocator();
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const gpa = init.gpa;
 
-    logging.setup(gpa);
+    logging.setup(io, gpa, init.environ_map);
 
-    const args = std.process.argsAlloc(gpa) catch oom();
-    defer std.process.argsFree(gpa, args);
+    const args = init.minimal.args.toSlice(init.arena.allocator()) catch oom();
 
     if (args.len < 2) fatalHelp();
 
@@ -81,9 +83,9 @@ pub fn main() !void {
     if (cmd == .lsp) lsp_mode = true;
 
     _ = switch (cmd) {
-        .check => check_exe.run(gpa, args[2..]),
-        .fmt => fmt_exe.run(gpa, args[2..]),
-        .lsp => lsp_exe.run(gpa, args[2..]),
+        .check => check_exe.run(io, gpa, args[2..]),
+        .fmt => fmt_exe.run(io, gpa, args[2..]),
+        .lsp => lsp_exe.run(io, gpa, args[2..]),
         .help => fatalHelp(),
         .version => printVersion(),
     } catch |err| fatal("unexpected error: {t}\n", .{err});

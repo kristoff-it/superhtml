@@ -1,36 +1,39 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const Io = std.Io;
+const Allocator = std.mem.Allocator;
 const super = @import("superhtml");
 
 const FileType = enum { html, super };
 
-pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
+pub fn run(io: Io, gpa: Allocator, args: []const []const u8) !noreturn {
     const cmd = Command.parse(args);
     var any_error = false;
     switch (cmd.mode) {
         .stdin => {
-            var fr = std.fs.File.stdin().reader(&.{});
+            var fr = std.Io.File.stdin().reader(io, &.{});
             var aw: std.Io.Writer.Allocating = .init(gpa);
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkHtml(gpa, null, in_bytes, cmd.syntax_only);
+            try checkHtml(io, gpa, null, in_bytes, cmd.syntax_only);
         },
         .stdin_super => {
-            var fr = std.fs.File.stdin().reader(&.{});
+            var fr = std.Io.File.stdin().reader(io, &.{});
             var aw: std.Io.Writer.Allocating = .init(gpa);
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
-            try checkSuper(gpa, null, in_bytes, cmd.syntax_only);
+            try checkSuper(io, gpa, null, in_bytes, cmd.syntax_only);
         },
         .paths => |paths| {
             // checkFile will reset the arena at the end of each call
             var arena_impl = std.heap.ArenaAllocator.init(gpa);
             for (paths) |path| {
                 checkFile(
+                    io,
                     &arena_impl,
-                    std.fs.cwd(),
+                    Io.Dir.cwd(),
                     path,
                     path,
                     &any_error,
@@ -38,6 +41,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
                 ) catch |err| switch (err) {
                     error.IsDir, error.AccessDenied => {
                         checkDir(
+                            io,
                             gpa,
                             &arena_impl,
                             path,
@@ -69,20 +73,22 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
 }
 
 fn checkDir(
+    io: Io,
     gpa: std.mem.Allocator,
     arena_impl: *std.heap.ArenaAllocator,
     path: []const u8,
     any_error: *bool,
     syntax_only: bool,
 ) !void {
-    var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
-    defer dir.close();
+    var dir = try Io.Dir.cwd().openDir(io, path, .{ .iterate = true });
+    defer dir.close(io);
     var walker = dir.walk(gpa) catch oom();
     defer walker.deinit();
-    while (try walker.next()) |item| {
+    while (try walker.next(io)) |item| {
         switch (item.kind) {
             .file => {
                 try checkFile(
+                    io,
                     arena_impl,
                     item.dir,
                     item.basename,
@@ -97,8 +103,9 @@ fn checkDir(
 }
 
 fn checkFile(
+    io: Io,
     arena_impl: *std.heap.ArenaAllocator,
-    base_dir: std.fs.Dir,
+    base_dir: Io.Dir,
     sub_path: []const u8,
     full_path: []const u8,
     any_error: *bool,
@@ -108,14 +115,8 @@ fn checkFile(
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
 
-    const in_bytes = if (builtin.zig_version.minor == 15) try base_dir.readFileAllocOptions(
-        arena,
-        sub_path,
-        super.max_size,
-        null,
-        .of(u8),
-        0,
-    ) else try base_dir.readFileAllocOptions(
+    const in_bytes = try base_dir.readFileAllocOptions(
+        io,
         sub_path,
         arena,
         .limited(super.max_size),
@@ -139,12 +140,14 @@ fn checkFile(
 
     switch (file_type) {
         .html => try checkHtml(
+            io,
             arena,
             full_path,
             in_bytes,
             syntax_only,
         ),
         .super => try checkSuper(
+            io,
             arena,
             full_path,
             in_bytes,
@@ -154,6 +157,7 @@ fn checkFile(
 }
 
 pub fn checkHtml(
+    io: Io,
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
@@ -161,13 +165,14 @@ pub fn checkHtml(
 ) !void {
     const ast = try super.html.Ast.init(arena, code, .html, syntax_only);
     if (ast.errors.len > 0) {
-        var stderr = std.fs.File.stderr().writer(&.{});
+        var stderr = Io.File.stderr().writer(io, &.{});
         try ast.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }
 }
 
 fn checkSuper(
+    io: Io,
     arena: std.mem.Allocator,
     path: ?[]const u8,
     code: [:0]const u8,
@@ -175,14 +180,14 @@ fn checkSuper(
 ) !void {
     const html = try super.html.Ast.init(arena, code, .superhtml, syntax_only);
     if (html.errors.len > 0) {
-        var stderr = std.fs.File.stderr().writer(&.{});
+        var stderr = Io.File.stderr().writer(io, &.{});
         try html.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }
 
     const s = try super.Ast.init(arena, html, code);
     if (s.errors.len > 0) {
-        var stderr = std.fs.File.stderr().writer(&.{});
+        var stderr = Io.File.stderr().writer(io, &.{});
         try s.printErrors(code, path, &stderr.interface);
         std.process.exit(1);
     }

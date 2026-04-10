@@ -1,12 +1,13 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const builtin = @import("builtin");
 const build_options = @import("build_options");
 const folders = @import("known_folders");
 
-pub var log_file: ?std.fs.File = switch (builtin.target.os.tag) {
-    .linux, .macos => std.fs.File.stderr(),
-    else => null,
-};
+var buf: [1024]u8 = undefined;
+
+pub var log_writer: Io.File.Writer = undefined;
 
 // const enabled_scopes = blk: {
 //     const len = build_options.enabled_scopes.len;
@@ -18,12 +19,12 @@ pub var log_file: ?std.fs.File = switch (builtin.target.os.tag) {
 
 pub fn logFn(
     comptime level: std.log.Level,
-    comptime scope: @Type(.enum_literal),
+    comptime scope: @EnumLiteral(),
     comptime format: []const u8,
     args: anytype,
 ) void {
-    // if (builtin.mode == .Debug) switch (scope) {
-    if (true) switch (scope) {
+    if (builtin.mode == .Debug) switch (scope) {
+        // if (true) switch (scope) {
         .root, .element, .super_lsp, .@"html/ast" => {},
         else => return,
     } else inline for (build_options.enabled_scopes) |es| {
@@ -32,39 +33,36 @@ pub fn logFn(
         }
     } else return;
 
-    const l = log_file orelse return;
     const scope_prefix = "(" ++ @tagName(scope) ++ "): ";
     const prefix = "[" ++ @tagName(level) ++ "] " ++ scope_prefix;
 
-    std.debug.lockStdErr();
-    defer std.debug.unlockStdErr();
+    _ = std.debug.lockStderr(&.{});
+    defer std.debug.unlockStderr();
 
-    var buf: [1024]u8 = undefined;
-    var fw = l.writerStreaming(&buf);
-    const w = &fw.interface;
+    const w = &log_writer.interface;
     w.print(prefix ++ format ++ "\n", args) catch return;
     w.flush() catch return;
 }
 
-pub fn setup(gpa: std.mem.Allocator) void {
-    std.debug.lockStdErr();
-    defer std.debug.unlockStdErr();
+pub fn setup(io: Io, gpa: Allocator, environ: *std.process.Environ.Map) void {
+    _ = std.debug.lockStderr(&.{});
+    defer std.debug.unlockStderr();
 
-    setupInternal(gpa) catch {
-        log_file = null;
+    setupInternal(io, gpa, environ) catch {
+        log_writer = Io.File.stderr().writerStreaming(&.{});
     };
 }
 
-fn setupInternal(gpa: std.mem.Allocator) !void {
-    var cache_base = try folders.open(gpa, .cache, .{}) orelse return error.Failure;
-    errdefer cache_base.close();
+fn setupInternal(io: Io, gpa: Allocator, environ: *std.process.Environ.Map) !void {
+    var cache_base = try folders.open(io, gpa, environ.*, .cache, .{}) orelse return error.Failure;
+    errdefer cache_base.close(io);
 
     const log_path = "superhtml.log";
-    const file = try cache_base.createFile(log_path, .{ .truncate = false });
-    errdefer file.close();
+    const file = try cache_base.createFile(io, log_path, .{ .truncate = false });
+    errdefer file.close(io);
 
-    const end = try file.getEndPos();
-    try file.seekTo(end);
+    log_writer = file.writerStreaming(io, &buf);
 
-    log_file = file;
+    // const end = try file.length(io);
+    // try file.seekTo(io, end);
 }

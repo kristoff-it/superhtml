@@ -1,5 +1,6 @@
 import {
     // createStdioOptions,
+    createUriConverters,
     startServer
 } from '@vscode/wasm-wasi-lsp';
 import { ProcessOptions, Stdio, Wasm } from '@vscode/wasm-wasi/v1';
@@ -69,7 +70,7 @@ export async function activate(context: ExtensionContext) {
     const serverOptions: ServerOptions = async () => {
         const options: ProcessOptions = {
             stdio: createStdioOptions(),
-            // mountPoints: [{ kind: 'workspaceFolder' }]
+            // mountPoints: [{ kind: 'workspaceFolder' }],
             args: args,
         };
 
@@ -105,6 +106,7 @@ export async function activate(context: ExtensionContext) {
             { scheme: "file", language: 'superhtml' },
         ],
         outputChannel: channel,
+        uriConverters: createUriConverters()
     };
 
     client = new LanguageClient(

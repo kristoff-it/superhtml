@@ -1,4 +1,6 @@
 const std = @import("std");
+const Io = std.Io;
+const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const build_options = @import("build_options");
 const assert = std.debug.assert;
@@ -11,7 +13,7 @@ const logic = @import("lsp/logic.zig");
 
 const log = std.log.scoped(.superhtml_lsp);
 
-pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
+pub fn run(io: Io, gpa: Allocator, args: []const []const u8) !noreturn {
     log.debug("SuperHTML Langauge Server Started!", .{});
     for (args) |arg| log.debug("arg: {s}", .{arg});
 
@@ -20,11 +22,12 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
     var buf: [4096]u8 = undefined;
     var stdio: lsp.Transport.Stdio = .init(
         &buf,
-        std.fs.File.stdin(),
-        std.fs.File.stdout(),
+        Io.File.stdin(),
+        Io.File.stdout(),
     );
 
     var handler: Handler = .{
+        .io = io,
         .gpa = gpa,
         .transport = &stdio.transport,
         .syntax_only = cmd.syntax_only,
@@ -32,6 +35,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
     defer handler.deinit();
 
     try lsp.basic_server.run(
+        io,
         gpa,
         &stdio.transport,
         &handler,
@@ -43,6 +47,7 @@ pub fn run(gpa: std.mem.Allocator, args: []const []const u8) !noreturn {
 
 pub const Handler = @This();
 
+io: Io,
 gpa: std.mem.Allocator,
 transport: *lsp.Transport,
 files: std.StringHashMapUnmanaged(Document) = .{},
@@ -58,16 +63,17 @@ fn deinit(self: *Handler) void {
 
 fn windowNotification(
     self: *Handler,
-    lvl: types.MessageType,
+    lvl: types.window.MessageType,
     comptime fmt: []const u8,
     args: anytype,
 ) !void {
     const txt = try std.fmt.allocPrint(self.gpa, fmt, args);
 
     try self.transport.writeNotification(
+        self.io,
         self.gpa,
         "window/showMessage",
-        types.ShowMessageParams,
+        types.window.show_message_request.Params,
         .{ .type = lvl, .message = txt },
         .{ .emit_null_optional_fields = false },
     );
@@ -104,7 +110,7 @@ pub fn initialize(
         },
 
         .textDocumentSync = .{
-            .TextDocumentSyncOptions = .{
+            .text_document_sync_options = .{
                 .openClose = true,
                 .change = .Full,
             },
@@ -113,7 +119,7 @@ pub fn initialize(
         .codeActionProvider = .{ .bool = true },
 
         .renameProvider = .{
-            .RenameOptions = .{
+            .rename_options = .{
                 .prepareProvider = true,
             },
         },
@@ -153,13 +159,16 @@ pub fn initialize(
 pub fn @"textDocument/didOpen"(
     self: *Handler,
     arena: std.mem.Allocator,
-    notification: types.DidOpenTextDocumentParams,
+    notification: types.TextDocument.DidOpenParams,
 ) !void {
     const new_text = try self.gpa.dupe(u8, notification.textDocument.text);
     errdefer self.gpa.free(new_text);
 
     const language_id = notification.textDocument.languageId;
-    const language = super.Language.fromSliceResilient(language_id) orelse {
+    const language = super.Language.fromSliceResilient(switch (language_id) {
+        else => |tag| @tagName(tag),
+        .custom_value => |cv| cv,
+    }) orelse {
         log.err("unrecognized language id: '{s}'", .{language_id});
         try self.windowNotification(
             .Error,
@@ -181,7 +190,7 @@ pub fn @"textDocument/didOpen"(
 pub fn @"textDocument/didChange"(
     self: *Handler,
     arena: std.mem.Allocator,
-    notification: types.DidChangeTextDocumentParams,
+    notification: types.TextDocument.DidChangeParams,
 ) !void {
     if (notification.contentChanges.len == 0) {
         return;
@@ -203,11 +212,11 @@ pub fn @"textDocument/didChange"(
 
     for (notification.contentChanges) |content_change| {
         switch (content_change) {
-            .literal_1 => |change| {
+            .text_document_content_change_whole_document => |change| {
                 buffer.clearRetainingCapacity();
                 try buffer.appendSlice(self.gpa, change.text);
             },
-            .literal_0 => |change| {
+            .text_document_content_change_partial => |change| {
                 const loc = offsets.rangeToLoc(buffer.items, change.range, self.offset_encoding);
                 try buffer.replaceRange(self.gpa, loc.start, loc.end - loc.start, change.text);
             },
@@ -230,7 +239,7 @@ pub fn @"textDocument/didChange"(
 pub fn @"textDocument/didClose"(
     self: *Handler,
     _: std.mem.Allocator,
-    notification: types.DidCloseTextDocumentParams,
+    notification: types.TextDocument.DidCloseParams,
 ) void {
     var kv = self.files.fetchRemove(notification.textDocument.uri) orelse return;
     self.gpa.free(kv.key);
@@ -240,7 +249,7 @@ pub fn @"textDocument/didClose"(
 pub fn @"textDocument/formatting"(
     self: *const Handler,
     arena: std.mem.Allocator,
-    request: types.DocumentFormattingParams,
+    request: types.document_formatting.Params,
 ) !?[]const types.TextEdit {
     log.debug("format request!!", .{});
 
@@ -268,7 +277,7 @@ pub fn @"textDocument/formatting"(
 pub fn @"textDocument/codeAction"(
     self: *Handler,
     arena: std.mem.Allocator,
-    request: types.CodeActionParams,
+    request: types.CodeAction.Params,
 ) error{OutOfMemory}!lsp.ResultType("textDocument/codeAction") {
     const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
     const offset = lsp.offsets.positionToIndex(
@@ -310,7 +319,7 @@ pub fn @"textDocument/codeAction"(
 
             const result: lsp.ResultType("textDocument/codeAction") = &.{
                 .{
-                    .CodeAction = .{
+                    .code_action = .{
                         .title = "Replace with 'div'",
                         .kind = .quickfix,
                         .isPreferred = true,
@@ -337,7 +346,7 @@ pub fn @"textDocument/codeAction"(
 pub fn @"textDocument/prepareRename"(
     self: *Handler,
     arena: std.mem.Allocator,
-    request: types.PrepareRenameParams,
+    request: types.prepare_rename.Params,
 ) error{OutOfMemory}!lsp.ResultType("textDocument/prepareRename") {
     _ = arena;
 
@@ -361,21 +370,15 @@ pub fn @"textDocument/prepareRename"(
         .end = it.name_span.end,
     }, self.offset_encoding);
 
-    return .{
-        .Range = range,
-    };
+    return .{ .range = range };
 }
 
 pub fn @"textDocument/rename"(
     self: *Handler,
     arena: std.mem.Allocator,
-    request: types.RenameParams,
+    request: types.rename.Params,
 ) error{OutOfMemory}!lsp.ResultType("textDocument/rename") {
-    const ranges = try tagRanges(
-        self,
-        arena,
-        .{ .textDocument = request.textDocument, .position = request.position },
-    ) orelse return null;
+    const ranges = try tagRanges(self, arena, request) orelse return null;
     const edits = try arena.alloc(types.TextEdit, ranges.len);
 
     for (edits, ranges) |*edit, range| {
@@ -398,7 +401,7 @@ pub fn @"textDocument/rename"(
 pub fn @"textDocument/documentHighlight"(
     self: *Handler,
     arena: std.mem.Allocator,
-    request: types.DocumentHighlightParams,
+    request: types.DocumentHighlight.Params,
 ) error{OutOfMemory}!lsp.ResultType("textDocument/documentHighlight") {
     const ranges = try tagRanges(
         self,
@@ -417,7 +420,7 @@ pub fn @"textDocument/documentHighlight"(
 pub fn @"textDocument/linkedEditingRange"(
     self: *Handler,
     arena: std.mem.Allocator,
-    request: types.LinkedEditingRangeParams,
+    request: types.linked_editing_range.Params,
 ) error{OutOfMemory}!lsp.ResultType("textDocument/linkedEditingRange") {
     const ranges = try tagRanges(
         self,
@@ -436,7 +439,7 @@ pub fn @"textDocument/linkedEditingRange"(
 pub fn @"textDocument/references"(
     self: *Handler,
     arena: std.mem.Allocator,
-    request: types.ReferenceParams,
+    request: types.reference.Params,
 ) error{OutOfMemory}!lsp.ResultType("textDocument/references") {
     const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
     const offset = lsp.offsets.positionToIndex(
@@ -510,8 +513,8 @@ pub fn @"textDocument/references"(
 pub fn @"textDocument/completion"(
     self: *Handler,
     arena: std.mem.Allocator,
-    request: types.CompletionParams,
-) error{OutOfMemory}!lsp.ResultType("textDocument/completion") {
+    request: types.completion.Params,
+) error{OutOfMemory}!?types.completion.Result {
     const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
     const offset = lsp.offsets.positionToIndex(
         doc.src,
@@ -522,7 +525,7 @@ pub fn @"textDocument/completion"(
     log.debug("===== lsp autocomplete! offset={}", .{offset});
 
     const completions = try doc.html.completions(arena, doc.src, @intCast(offset));
-    const items = try arena.alloc(lsp.types.CompletionItem, completions.len);
+    const items = try arena.alloc(types.completion.Item, completions.len);
     for (items, completions) |*it, cpl| {
         log.debug("label = '{s}' desc = '{s}'", .{ cpl.label, cpl.desc });
         const insert_text = if (cpl.value) |v| blk: {
@@ -542,7 +545,7 @@ pub fn @"textDocument/completion"(
             .label = cpl.label,
             .insertText = insert_text,
             .documentation = if (cpl.desc.len == 0) null else .{
-                .MarkupContent = .{
+                .markup_content = .{
                     .kind = .markdown,
                     .value = cpl.desc,
                 },
@@ -553,14 +556,14 @@ pub fn @"textDocument/completion"(
         };
     }
 
-    return .{ .array_of_CompletionItem = items };
+    return .{ .completion_items = items };
 }
 
 pub fn @"textDocument/hover"(
     self: *Handler,
     arena: std.mem.Allocator,
-    request: types.HoverParams,
-) error{OutOfMemory}!lsp.ResultType("textDocument/hover") {
+    request: types.Hover.Params,
+) error{OutOfMemory}!?types.Hover {
     _ = arena;
 
     const doc = self.files.getPtr(request.textDocument.uri) orelse return null;
@@ -573,7 +576,7 @@ pub fn @"textDocument/hover"(
     const desc = doc.html.description(doc.src, @intCast(offset)) orelse return null;
     return .{
         .contents = .{
-            .MarkupContent = .{
+            .markup_content = .{
                 .kind = .markdown,
                 .value = desc,
             },
@@ -624,7 +627,8 @@ pub fn findNode(doc: *const Document, offset: u32) u32 {
 pub fn tagRanges(
     self: *Handler,
     arena: std.mem.Allocator,
-    position: types.TextDocumentPositionParams,
+    /// A LSP type that has textDocument and position
+    position: anytype,
 ) error{OutOfMemory}!?[]const types.Range {
     const doc = self.files.getPtr(position.textDocument.uri) orelse return null;
     const offset = lsp.offsets.positionToIndex(

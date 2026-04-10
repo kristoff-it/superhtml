@@ -286,29 +286,47 @@ pub fn validateAllow(
     var pos: u32 = 0;
 
     policy_directive: while (true) {
-        const directive_start = pos;
+        // Non-standard, added here temporarily to make things like youtube emdeds usable by users
+        // see later comment for more info.
+        while (pos < data.len) : (pos += 1) {
+            switch (data[pos]) {
+                ' ', '\t'...'\r' => continue,
+                else => break,
+            }
+        }
+
+        // const directive_start = pos;
         while (pos < data.len) : (pos += 1) {
             switch (data[pos]) {
                 '0'...'9', 'a'...'z', 'A'...'Z', '-' => continue,
                 else => break,
             }
-        } else return errors.append(gpa, .{
-            .tag = .{
-                .invalid_attr_value = .{
-                    .reason = if (pos == directive_start)
-                        "missing feature identifier"
-                    else
-                        "missing whitespace followed by allow list",
-                },
-            },
-            .main_location = .{
-                .start = value.span.end,
-                .end = value.span.end,
-            },
-            .node_idx = node_idx,
-        });
+        } else return; // temporary leniency change
+        // else return errors.append(gpa, .{
+        //     .tag = .{
+        //         .invalid_attr_value = .{
+        //             .reason = if (pos == directive_start)
+        //                 "missing feature identifier"
+        //             else
+        //                 "missing whitespace followed by allow list",
+        //         },
+        //     },
+        //     .main_location = .{
+        //         .start = value.span.end,
+        //         .end = value.span.end,
+        //     },
+        //     .node_idx = node_idx,
+        // });
 
         if (std.mem.indexOfScalar(u8, &std.ascii.whitespace, data[pos]) == null) {
+            // This is not correct according to the spec, temporarily adding more lenience
+            // to make stuff like youtube embed code working as almost no user is going to
+            // figure out what to do in this case.
+            if (data[pos] == ';') {
+                pos += 1;
+                continue :policy_directive;
+            }
+
             return errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_value = .{
@@ -323,6 +341,7 @@ pub fn validateAllow(
             });
         }
         pos += 1;
+
         allow_list_value: while (true) {
             while (pos < data.len) : (pos += 1) {
                 switch (data[pos]) {

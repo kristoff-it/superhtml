@@ -454,20 +454,15 @@ pub const attributes: AttributeSet = .init(&.{
 
 const Type = blk: {
     const labels = attributes.get("type").?.rule.list.set.keys();
-    var cases: [labels.len]std.builtin.Type.EnumField = undefined;
-    for (labels, &cases, 0..) |l, *case, idx| case.* = .{
-        .name = @ptrCast(l),
-        .value = idx,
-    };
+    var names: [labels.len][]const u8 = undefined;
+    var values: [labels.len]u8 = undefined;
 
-    break :blk @Type(.{
-        .@"enum" = .{
-            .tag_type = u8,
-            .fields = &cases,
-            .decls = &.{},
-            .is_exhaustive = true,
-        },
-    });
+    for (labels, &names, &values, 0..) |l, *n, *v, idx| {
+        n.* = @ptrCast(l);
+        v.* = idx;
+    }
+
+    break :blk @Enum(u8, .exhaustive, &names, &values);
 };
 
 fn validate(
