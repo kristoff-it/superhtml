@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) !void {
         .name = "language-tag-parser",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/html/language_tag/parse.zig"),
-            .target = target,
+            .target = b.graph.host,
         }),
     });
     const language_tag_parse = b.addRunArtifact(language_tag_parser);
