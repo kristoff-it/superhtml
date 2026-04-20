@@ -186,7 +186,7 @@ Follow your editor specific instructions on how to define a new Language Server 
 
 ## FAQs
 ### Why doesn't SuperHTML support self-closing tags?
-Because self-closing tags don't exist in HTML and, while harmless when used with void elements, it just keeps misleating people into thinking that you can self-close HTML tags.
+Because self-closing tags don't exist in HTML and, while harmless when used with void elements, it just keeps misleading people into thinking that you can self-close HTML tags.
 
 In particular, given this HTML code:
 
