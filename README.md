@@ -228,7 +228,7 @@ One common example is `<li>`, which enables this usage pattern:
 ```
 
 The reason why this is not ambiguous is that `<li>`cannot be nested inside
-another `<li>` so whe the second sibling is encountered, it's possible to always
+another `<li>` so when the second sibling is encountered, it's possible to always
 correctly implicitly close the first `<li>`.
 
 SuperHTML breaks compatibility with the HTML spec in this regard for one main reason:
