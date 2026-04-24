@@ -49,7 +49,7 @@ pub fn setup(io: Io, gpa: Allocator, environ: *std.process.Environ.Map) void {
     defer std.debug.unlockStderr();
 
     setupInternal(io, gpa, environ) catch {
-        log_writer = Io.File.stderr().writerStreaming(&.{});
+        log_writer = Io.File.stderr().writerStreaming(io, &.{});
     };
 }
 

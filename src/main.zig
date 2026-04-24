@@ -33,8 +33,10 @@ pub fn panic(
     }
 
     blk: {
-        const out: std.Io.File = if (!lsp_mode) std.Io.File.stderr() else logging.log_file orelse break :blk;
-        var writer = out.writerStreaming(std.Options.debug_io, &.{});
+        var writer = if (!lsp_mode)
+            std.Io.File.stderr().writerStreaming(std.Options.debug_io, &.{})
+        else
+            logging.log_writer;
         const w = &writer.interface;
         w.print("\n{s}\n", .{msg}) catch {};
         if (builtin.strip_debug_info) {

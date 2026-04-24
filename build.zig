@@ -97,22 +97,6 @@ pub fn build(b: *std.Build) !void {
             "error: git tag missing, cannot make release builds",
         ).step);
     }
-
-    setupGeneratorStep(b, target);
-}
-
-fn setupGeneratorStep(b: *std.Build, target: std.Build.ResolvedTarget) void {
-    const gen = b.step("generator", "Build generator executable for reproing fuzz cases");
-    const supergen = b.addExecutable(.{
-        .name = "generator",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/generator.zig"),
-            .target = target,
-            .optimize = .ReleaseSafe,
-        }),
-    });
-
-    gen.dependOn(&b.addInstallArtifact(supergen, .{}).step);
 }
 
 fn setupCheckStep(

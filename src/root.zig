@@ -177,4 +177,5 @@ test {
     _ = @import("html.zig");
     _ = @import("Ast.zig");
     // _ = @import("template.zig");
+    _ = @import("fuzz.zig");
 }
