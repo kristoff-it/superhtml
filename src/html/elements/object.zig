@@ -17,7 +17,7 @@ pub const object: Element = .{
         .categories = .{
             .flow = true,
             .phrasing = true,
-            // .embedded = true,
+            .embedded = true,
         },
         .content = .transparent,
     },
@@ -25,7 +25,7 @@ pub const object: Element = .{
         .categories_superset = .{
             .flow = true,
             .phrasing = true,
-            // .embedded = true,
+            .embedded = true,
         },
     },
     .attributes = .{

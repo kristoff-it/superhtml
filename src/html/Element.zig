@@ -165,7 +165,7 @@ pub const Categories = packed struct {
     sectioning: bool = false,
     heading: bool = false,
     interactive: bool = false,
-    // embedded: bool = false,
+    embedded: bool = false,
 
     pub const none: Categories = .{};
     pub const all: Categories = .{
@@ -176,7 +176,7 @@ pub const Categories = packed struct {
         .sectioning = true,
         .heading = true,
         .interactive = true,
-        // .embedded = true,
+        .embedded = true,
     };
     // Just for clarity
     pub const transparent: Categories = .all;
