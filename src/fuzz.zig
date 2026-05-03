@@ -179,12 +179,32 @@ fn renderAttr(
     }
 }
 
-test "fuzz" {
-    const log = try Io.Dir.cwd().createFile(std.testing.io, "fuzz.log", .{ .truncate = false });
-    var file_writer = log.writerStreaming(std.testing.io, &.{});
+test "fuzz case" {
+    const case_b64 = "";
+    const size = try std.base64.standard.Decoder.calcSizeForSlice(case_b64);
+    const case = try std.testing.allocator.allocWithOptions(u8, size, null, 0);
+    defer std.testing.allocator.free(case);
+    try std.base64.standard.Decoder.decode(case, case_b64);
 
-    try std.testing.fuzz(&file_writer.interface, struct {
-        fn fuzz(l: *Io.Writer, smith: *std.testing.Smith) !void {
+    const ast: Ast = try .init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+
+    if (!ast.has_syntax_errors) {
+        var fmt_out: Io.Writer.Allocating = .init(std.testing.allocator);
+        defer fmt_out.deinit();
+
+        try ast.render(case, &fmt_out.writer);
+    }
+}
+
+test "fuzz" {
+    // const log = try Io.Dir.cwd().createFile(std.testing.io, "fuzz.log", .{ .truncate = false });
+    // var file_writer = log.writerStreaming(std.testing.io, &.{});
+
+    // try std.testing.fuzz(&file_writer.interface, struct {
+    // fn fuzz(l: *Io.Writer, smith: *std.testing.Smith) !void {
+    try std.testing.fuzz({}, struct {
+        fn fuzz(_: void, smith: *std.testing.Smith) !void {
             var stack: std.ArrayList([]const u8) = .empty;
             defer stack.deinit(std.testing.allocator);
 
@@ -206,7 +226,8 @@ test "fuzz" {
                 };
             }
 
-            try l.print("{s}\n---\n\n", .{case.written()});
+            // try std.base64.standard.Encoder.encodeWriter(l, case.written());
+            // try l.print("\n{s}\n---\n\n", .{case.written()});
 
             const ast: Ast = try .init(std.testing.allocator, case.written(), .html, false);
             defer ast.deinit(std.testing.allocator);
