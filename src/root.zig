@@ -178,4 +178,5 @@ test {
     _ = @import("Ast.zig");
     // _ = @import("template.zig");
     _ = @import("fuzz.zig");
+    _ = @import("example.zig");
 }
