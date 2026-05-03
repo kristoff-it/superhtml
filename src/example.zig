@@ -91,16 +91,16 @@ const ExampleContext = struct {
     loop: ?*ExampleValue.Iterator = null,
     @"if": ?*const ExampleValue.Optional = null,
 
+    pub const Dot = true;
     pub const PassByRef = true;
-    pub const dot = scripty.defaultDot(ExampleContext, ExampleValue, false);
     pub const Builtins = struct {};
 
     pub const Site = struct {
         name: []const u8,
         hostname: []const u8,
 
+        pub const Dot = true;
         pub const PassByRef = true;
-        pub const dot = scripty.defaultDot(Site, ExampleValue, false);
 
         pub const Builtins = struct {
             pub const link = struct {
@@ -130,8 +130,8 @@ const ExampleContext = struct {
         title: []const u8,
         content: []const u8,
 
+        pub const Dot = true;
         pub const PassByRef = true;
-        pub const dot = scripty.defaultDot(Page, ExampleValue, false);
         pub const Builtins = struct {};
     };
 };
@@ -194,24 +194,6 @@ pub const ExampleValue = union(Tag) {
         iterator,
         array,
     };
-
-    pub fn dot(
-        self: ExampleValue,
-        gpa: std.mem.Allocator,
-        path: []const u8,
-    ) error{OutOfMemory}!ExampleValue {
-        switch (self) {
-            .string,
-            .bool,
-            .int,
-            .float,
-            .err,
-            .nil,
-            .optional,
-            => return .{ .err = "primitive value" },
-            inline else => |v| return v.dot(gpa, path),
-        }
-    }
 
     pub const call = scripty.defaultCall(ExampleValue, ExampleContext);
 
@@ -309,7 +291,6 @@ pub const ExampleValue = union(Tag) {
             });
         }
 
-        pub const dot = scripty.defaultDot(Iterator, ExampleValue, false);
         pub const Builtins = struct {
             pub const up = struct {
                 pub fn call(
@@ -349,7 +330,6 @@ pub const ExampleValue = union(Tag) {
         empty: bool,
         _items: []const ExampleValue,
 
-        pub const dot = scripty.defaultDot(Array, ExampleValue, false);
         pub const Builtins = struct {
             pub const at = struct {
                 pub fn call(

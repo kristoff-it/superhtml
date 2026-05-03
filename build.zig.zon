@@ -2,7 +2,7 @@
     .name = .superhtml,
     .version = "0.6.2",
     .fingerprint = 0xc5e9aede3c1db363,
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .known_folders = .{
             .url = "git+https://github.com/ziglibs/known-folders#175f5596b3d2ee3c658282bb07885580895a0e73",
@@ -17,8 +17,8 @@
             .hash = "lsp_kit-0.1.0-bi_PL_kyDACVTEhLaMq2-PJx0MocqRyjXDAN0ybMUyQQ",
         },
         .scripty = .{
-            .url = "git+https://github.com/kristoff-it/scripty#154779b47be67f766ee13080ce7aa68a18daebd9",
-            .hash = "scripty-0.1.0-LKK5OwTdAACftzrZyMpWZUJ7OLyI3UwAwqQfE2cdgRoO",
+            .url = "git+https://github.com/kristoff-it/scripty#4b815a13e2456e5552c7ce43759f69e40ffdc702",
+            .hash = "scripty-0.1.0-LKK5O7j0AABV5Y9oNimQCXTzFXPQ_ZPWivEcUGmeXJZB",
         },
     },
     .paths = .{
