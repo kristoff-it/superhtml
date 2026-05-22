@@ -235,7 +235,7 @@ One common example is `<li>`, which enables this usage pattern:
 ```
 
 The reason why this is not ambiguous is that `<li>`cannot be nested inside
-another `<li>` so whe the second sibling is encountered, it's possible to always
+another `<li>` so when the second sibling is encountered, it's possible to always
 correctly implicitly close the first `<li>`.
 
 SuperHTML breaks compatibility with the HTML spec in this regard for one main reason:
@@ -252,7 +252,7 @@ Consider the following snippet:
 If SuperHTML were to follow the HTML spec it would have to consider this valid
 HTML that represents two bullet points, the second of which contains no content.
 
-Unfortunately it's also very likely (acutally even more so) that the user just
+Unfortunately it's also very likely (actually even more so) that the user just
 forgot the closing slash in the second tag.
 
 For this reason SuperHTML does not allow closing tags implicitly even if the

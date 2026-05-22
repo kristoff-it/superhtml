@@ -14,7 +14,7 @@ const logic = @import("lsp/logic.zig");
 const log = std.log.scoped(.superhtml_lsp);
 
 pub fn run(io: Io, gpa: Allocator, args: []const []const u8) !noreturn {
-    log.debug("SuperHTML Langauge Server Started!", .{});
+    log.debug("SuperHTML Language Server Started!", .{});
     for (args) |arg| log.debug("arg: {s}", .{arg});
 
     const cmd = Command.parse(args);
@@ -697,7 +697,7 @@ fn fatalHelp() noreturn {
     const msg =
         \\Usage: superhtml lsp [--syntax-only]
         \\
-        \\The --syntax-only flag disables HTML element and attribute validation. 
+        \\The --syntax-only flag disables HTML element and attribute validation.
     ;
 
     std.debug.print(msg, .{});

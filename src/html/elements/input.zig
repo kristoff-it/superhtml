@@ -814,12 +814,12 @@ fn validateAccept(value: []const u8) ?Attribute.Rule.ValueRejection {
     // 4. If type is the empty string or does not solely contain HTTP token code
     // points, then return failure.
     if (mime_type.len == 0) return .{
-        .reason = "emtpy MIME type",
+        .reason = "empty MIME type",
         .offset = @intCast(slash_idx),
     };
 
     if (std.mem.trim(u8, value[slash_idx + 1 ..], &std.ascii.whitespace).len == 0) return .{
-        .reason = "emtpy MIME subtype",
+        .reason = "empty MIME subtype",
         .offset = @intCast(slash_idx + 1),
     };
 

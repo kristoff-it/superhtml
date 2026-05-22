@@ -120,7 +120,7 @@ pub fn validateContent(
                                 .tag = .{
                                     .invalid_nesting = .{
                                         .span = parent_span,
-                                        .reason = "<div> under <dl> only accepts <dt>, <dd>, <srcipt> or <template>",
+                                        .reason = "<div> under <dl> only accepts <dt>, <dd>, <script> or <template>",
                                     },
                                 },
                                 .main_location = child.span(src),
