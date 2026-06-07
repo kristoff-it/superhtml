@@ -17,7 +17,7 @@ pub fn loadFile(
 ) !void {
     errdefer @panic("error while loading document!");
 
-    var res: lsp.types.PublishDiagnosticsParams = .{
+    var res: lsp.types.publish_diagnostics.Params = .{
         .uri = uri,
         .diagnostics = &.{},
     };
@@ -58,7 +58,7 @@ pub fn loadFile(
                 .relatedInformation = switch (err.tag) {
                     else => null,
                     .duplicate_id => |span| try arena.dupe(
-                        lsp.types.DiagnosticRelatedInformation,
+                        lsp.types.Diagnostic.RelatedInformation,
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
@@ -70,7 +70,7 @@ pub fn loadFile(
                         },
                     ),
                     .duplicate_class => |span| try arena.dupe(
-                        lsp.types.DiagnosticRelatedInformation,
+                        lsp.types.Diagnostic.RelatedInformation,
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
@@ -82,7 +82,7 @@ pub fn loadFile(
                         },
                     ),
                     .duplicate_attribute_name => |span| try arena.dupe(
-                        lsp.types.DiagnosticRelatedInformation,
+                        lsp.types.Diagnostic.RelatedInformation,
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
@@ -94,7 +94,7 @@ pub fn loadFile(
                         },
                     ),
                     .duplicate_child => |dc| try arena.dupe(
-                        lsp.types.DiagnosticRelatedInformation,
+                        lsp.types.Diagnostic.RelatedInformation,
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
@@ -106,7 +106,7 @@ pub fn loadFile(
                         },
                     ),
                     .invalid_nesting => |in| try arena.dupe(
-                        lsp.types.DiagnosticRelatedInformation,
+                        lsp.types.Diagnostic.RelatedInformation,
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
@@ -140,9 +140,10 @@ pub fn loadFile(
     }
 
     try self.transport.writeNotification(
+        self.io,
         self.gpa,
         "textDocument/publishDiagnostics",
-        lsp.types.PublishDiagnosticsParams,
+        lsp.types.publish_diagnostics.Params,
         res,
         .{ .emit_null_optional_fields = false },
     );

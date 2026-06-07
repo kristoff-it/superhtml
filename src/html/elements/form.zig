@@ -103,7 +103,7 @@ pub const attributes: AttributeSet = .init(&.{
                     },
                 }),
             },
-            .desc = "Only accepts 'UTF-8' as a value, no reason to specify this atttribute.",
+            .desc = "Only accepts 'UTF-8' as a value, no reason to specify this attribute.",
         },
     },
 });

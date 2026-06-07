@@ -248,12 +248,12 @@ pub inline fn modelRejects(
                 descendant_element.meta.categories_superset,
             );
 
-            inline for (std.meta.fields(Categories)) |f| {
-                if (@field(intersection, f.name) and @hasField(Reasons.Categories, f.name)) {
+            inline for (comptime std.meta.fieldNames(Categories)) |f_name| {
+                if (@field(intersection, f_name) and @hasField(Reasons.Categories, f_name)) {
                     // if this is not a runtime property, report it as the reason
-                    if (!@field(descendant_element.model.categories, f.name)) {
+                    if (!@field(descendant_element.model.categories, f_name)) {
                         return .{
-                            .reason = @field(descendant_element.reasons.categories, f.name).accept,
+                            .reason = @field(descendant_element.reasons.categories, f_name).accept,
                             .span = parent_span,
                         };
                     }
@@ -299,12 +299,12 @@ pub inline fn modelRejects(
             descendant_rt_model.categories,
         );
 
-        inline for (std.meta.fields(Categories)) |f| {
-            if (@field(intersection, f.name) and @hasField(Reasons.Categories, f.name)) {
+        inline for (comptime std.meta.fieldNames(Categories)) |f_name| {
+            if (@field(intersection, f_name) and @hasField(Reasons.Categories, f_name)) {
                 // if this is not a runtime property, report it as the reason
-                if (!@field(descendant_element.model.categories, f.name)) {
+                if (!@field(descendant_element.model.categories, f_name)) {
                     return .{
-                        .reason = @field(descendant_element.reasons.categories, f.name).reject,
+                        .reason = @field(descendant_element.reasons.categories, f_name).reject,
                         .span = parent_span,
                     };
                 }
@@ -717,14 +717,14 @@ const KindMap = std.StaticStringMapWithEql(
 );
 
 pub const elements: KindMap = blk: {
-    const fields = std.meta.fields(Ast.Kind)[8..];
-    assert(std.mem.eql(u8, fields[0].name, "a"));
+    const field_names = std.meta.fieldNames(Ast.Kind)[8..];
+    assert(std.mem.eql(u8, field_names[0], "a"));
 
     const KV = struct { []const u8, Ast.Kind };
     var keys: []const KV = &.{};
-    for (fields) |f| keys = keys ++ &[_]KV{.{
-        f.name,
-        @enumFromInt(f.value),
+    for (field_names) |f_name| keys = keys ++ &[_]KV{.{
+        f_name,
+        @field(Ast.Kind, f_name),
     }};
 
     break :blk .initComptime(keys);
@@ -733,15 +733,15 @@ pub const elements: KindMap = blk: {
 pub const all_completions = blk: {
     var ac: std.EnumArray(Ast.Kind, Ast.Completion) = undefined;
 
-    const fields = std.meta.fields(Ast.Kind)[8..];
-    assert(std.mem.eql(u8, fields[0].name, "a"));
-    for (ac.values[8..], fields, all.values[8..]) |*completion, f, elem| {
+    const field_names = std.meta.fieldNames(Ast.Kind)[8..];
+    assert(std.mem.eql(u8, field_names[0], "a"));
+    for (ac.values[8..], field_names, all.values[8..]) |*completion, f_name, elem| {
         completion.* = .{
-            .label = f.name,
-            .value = if (@field(Ast.Kind, f.name).isVoid())
-                f.name ++ "$1>"
+            .label = f_name,
+            .value = if (@field(Ast.Kind, f_name).isVoid())
+                f_name ++ "$1>"
             else
-                f.name ++ "$1>$0</" ++ f.name ++ ">",
+                f_name ++ "$1>$0</" ++ f_name ++ ">",
             .desc = elem.desc,
             .kind = .element_open,
         };

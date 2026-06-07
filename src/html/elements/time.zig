@@ -96,7 +96,11 @@ pub fn validateContent(
         const child = nodes[child_idx];
         defer child_idx = child.next_idx;
         switch (child.kind) {
-            .text, .comment => continue,
+            .text => {
+                // TODO: validate text
+                continue;
+            },
+            .comment => continue,
             else => {},
         }
 

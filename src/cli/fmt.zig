@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const Writer = std.Io.Writer;
 const super = @import("superhtml");
@@ -8,25 +9,26 @@ var bufout: [4096]u8 = undefined;
 var buferr: [4096]u8 = undefined;
 
 var syntax_errors = false;
-pub fn run(gpa: Allocator, args: []const []const u8) !noreturn {
+pub fn run(io: Io, gpa: Allocator, args: []const []const u8) !noreturn {
     // Prints html errors found in the document
-    var stderr_writer = std.fs.File.stderr().writerStreaming(&buferr);
+    var stderr_writer = Io.File.stderr().writerStreaming(io, &buferr);
     const stderr = &stderr_writer.interface;
 
     // Prints file paths of files that were modified on disk
-    var stdout_writer = std.fs.File.stdout().writerStreaming(&bufout);
+    var stdout_writer = Io.File.stdout().writerStreaming(io, &bufout);
     const stdout = &stdout_writer.interface;
 
     const cmd = Command.parse(args);
     switch (cmd.mode) {
         .stdin => |lang| {
-            var fr = std.fs.File.stdin().reader(&.{});
+            var fr = Io.File.stdin().reader(io, &.{});
             var aw: Writer.Allocating = .init(gpa);
             _ = try fr.interface.streamRemaining(&aw.writer);
             const in_bytes = try aw.toOwnedSliceSentinel(0);
 
             if (try fmt(gpa, stderr, null, in_bytes, lang, cmd.syntax_only)) |fmt_src| {
-                try std.fs.File.stdout().writeAll(fmt_src);
+                var writer = Io.File.stdout().writer(io, &.{});
+                try writer.interface.writeAll(fmt_src);
             }
         },
         .paths => |paths| {
@@ -34,16 +36,18 @@ pub fn run(gpa: Allocator, args: []const []const u8) !noreturn {
             var arena_impl = std.heap.ArenaAllocator.init(gpa);
             for (paths) |path| {
                 formatFile(
+                    io,
                     &arena_impl,
                     stdout,
                     stderr,
                     cmd.check,
-                    std.fs.cwd(),
+                    Io.Dir.cwd(),
                     path,
                     path,
                     cmd.syntax_only,
                 ) catch |err| switch (err) {
                     error.IsDir, error.AccessDenied => formatDir(
+                        io,
                         gpa,
                         &arena_impl,
                         stdout,
@@ -75,6 +79,7 @@ pub fn run(gpa: Allocator, args: []const []const u8) !noreturn {
 }
 
 fn formatDir(
+    io: Io,
     gpa: std.mem.Allocator,
     arena_impl: *std.heap.ArenaAllocator,
     stdout: *Writer,
@@ -83,15 +88,16 @@ fn formatDir(
     path: []const u8,
     syntax_only: bool,
 ) !void {
-    var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
-    defer dir.close();
+    var dir = try Io.Dir.cwd().openDir(io, path, .{ .iterate = true });
+    defer dir.close(io);
 
     var walker = dir.walk(gpa) catch oom();
     defer walker.deinit();
 
-    while (try walker.next()) |item| {
+    while (try walker.next(io)) |item| {
         switch (item.kind) {
             .file => try formatFile(
+                io,
                 arena_impl,
                 stdout,
                 stderr,
@@ -107,11 +113,12 @@ fn formatDir(
 }
 
 fn formatFile(
+    io: Io,
     arena_impl: *std.heap.ArenaAllocator,
     stdout: *Writer,
     stderr: *Writer,
     check: bool,
-    base_dir: std.fs.Dir,
+    base_dir: Io.Dir,
     sub_path: []const u8,
     full_path: []const u8,
     syntax_only: bool,
@@ -119,14 +126,8 @@ fn formatFile(
     defer _ = arena_impl.reset(.retain_capacity);
     const arena = arena_impl.allocator();
 
-    const in_bytes = if (builtin.zig_version.minor == 15) try base_dir.readFileAllocOptions(
-        arena,
-        sub_path,
-        super.max_size,
-        null,
-        .of(u8),
-        0,
-    ) else try base_dir.readFileAllocOptions(
+    const in_bytes = try base_dir.readFileAllocOptions(
+        io,
         sub_path,
         arena,
         .limited(super.max_size),
@@ -158,11 +159,12 @@ fn formatFile(
             return;
         }
 
-        var af = try base_dir.atomicFile(sub_path, .{ .write_buffer = &.{} });
-        defer af.deinit();
+        var af = try base_dir.createFileAtomic(io, sub_path, .{});
+        defer af.deinit(io);
 
-        try af.file_writer.interface.writeAll(fmt_src);
-        try af.finish();
+        var writer = af.file.writer(io, &.{});
+        try writer.interface.writeAll(fmt_src);
+        try af.link(io);
         try stdout.print("{s}\n", .{full_path});
     } else if (check) {
         syntax_errors = true;

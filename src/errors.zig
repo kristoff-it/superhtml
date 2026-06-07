@@ -63,13 +63,13 @@ pub fn diagnostic(
     const line_off = span.line(src);
 
     // trim spaces
-    const line_trim_left = std.mem.trimLeft(u8, line_off.line, &std.ascii.whitespace);
+    const line_trim_left = std.mem.trimStart(u8, line_off.line, &std.ascii.whitespace);
     const start_trim_left = line_off.start + line_off.line.len - line_trim_left.len;
 
     const caret_len = span.end - span.start;
     const caret_spaces_len = span.start -| start_trim_left;
 
-    const line_trim = std.mem.trimRight(u8, line_trim_left, &std.ascii.whitespace);
+    const line_trim = std.mem.trimEnd(u8, line_trim_left, &std.ascii.whitespace);
 
     var buf: [1024]u8 = undefined;
 

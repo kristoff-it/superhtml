@@ -573,8 +573,8 @@ pub fn validateMime(
     // 1. Remove any leading and trailing HTTP whitespace from input.
     const value, const spaces: u32 = blk: {
         const raw = raw_value.span.slice(src);
-        const left = std.mem.trimLeft(u8, raw, &std.ascii.whitespace);
-        const left_right = std.mem.trimRight(u8, left, &std.ascii.whitespace);
+        const left = std.mem.trimStart(u8, raw, &std.ascii.whitespace);
+        const left_right = std.mem.trimEnd(u8, left, &std.ascii.whitespace);
         break :blk .{ left_right, @intCast(raw.len - left.len) };
     };
 
@@ -697,7 +697,7 @@ pub fn validateMime(
 
         // 2.Collect a sequence of code points that are HTTP whitespace from
         // input given position.
-        const param_name = std.mem.trimLeft(u8, kvs[0..sep_idx], &std.ascii.whitespace);
+        const param_name = std.mem.trimStart(u8, kvs[0..sep_idx], &std.ascii.whitespace);
 
         if (param_name.len == 0) return errors.append(gpa, .{
             .tag = .{

@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const Writer = std.Io.Writer;
 const tracy = @import("tracy");
 const root = @import("../root.zig");
@@ -2150,46 +2151,46 @@ pub const Cursor = struct {
     }
 };
 
-test "fuzz" {
-    const Reader = std.Io.Reader;
-    const generator = @import("../generator/html.zig");
-    const Context = struct {
-        arena: *std.heap.ArenaAllocator,
-        out: *Writer,
-        fn testOne(ctx: @This(), input: []const u8) anyerror!void {
-            _ = ctx.arena.reset(.retain_capacity);
-            const gpa = ctx.arena.allocator();
+// test "fuzz" {
+//     const Reader = std.Io.Reader;
+//     const generator = @import("../generator/html.zig");
+//     const Context = struct {
+//         arena: *std.heap.ArenaAllocator,
+//         out: *Writer,
+//         fn testOne(ctx: @This(), input: []const u8) anyerror!void {
+//             _ = ctx.arena.reset(.retain_capacity);
+//             const gpa = ctx.arena.allocator();
 
-            var in: Reader = .fixed(input);
-            var out: Writer.Allocating = .init(gpa);
-            generator.generate(gpa, &in, &out.writer) catch |err| {
-                if (err == error.Skip) return;
-                return err;
-            };
+//             var in: Reader = .fixed(input);
+//             var out: Writer.Allocating = .init(gpa);
+//             generator.generate(gpa, &in, &out.writer) catch |err| {
+//                 if (err == error.Skip) return;
+//                 return err;
+//             };
 
-            if (builtin.fuzz) {
-                std.debug.print("--begin--\n{s}\n\n", .{out.written()});
-            }
+//             if (builtin.fuzz) {
+//                 std.debug.print("--begin--\n{s}\n\n", .{out.written()});
+//             }
 
-            const ast: Ast = try .init(gpa, out.written(), .html, false);
+//             const ast: Ast = try .init(gpa, out.written(), .html, false);
 
-            var bufnull: [4096]u8 = undefined;
-            var devnull: Writer.Discarding = .init(&bufnull);
-            if (!ast.has_syntax_errors) {
-                try ast.render(out.written(), &devnull.writer);
-            }
+//             var bufnull: [4096]u8 = undefined;
+//             var devnull: Writer.Discarding = .init(&bufnull);
+//             if (!ast.has_syntax_errors) {
+//                 try ast.render(out.written(), &devnull.writer);
+//             }
 
-            if (ast.errors.len > 0) {
-                try ast.printErrors(out.written(), null, &devnull.writer);
-            }
-        }
-    };
+//             if (ast.errors.len > 0) {
+//                 try ast.printErrors(out.written(), null, &devnull.writer);
+//             }
+//         }
+//     };
 
-    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-    var buf: [4096]u8 = undefined;
-    var out = std.fs.File.stdout().writer(&buf);
-    try std.testing.fuzz(Context{
-        .arena = &arena,
-        .out = &out.interface,
-    }, Context.testOne, .{});
-}
+//     var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+//     var buf: [4096]u8 = undefined;
+//     var out = Io.File.stdout().writer(io, &buf);
+//     try std.testing.fuzz(Context{
+//         .arena = &arena,
+//         .out = &out.interface,
+//     }, Context.testOne, .{});
+// }

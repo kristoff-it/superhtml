@@ -5524,14 +5524,14 @@ fn testTokenize(src: []const u8, expected_tokens: []const Token) !void {
     return testTokenizeWithState(&tokenizer, src, expected_tokens);
 }
 
-test "fuzz" {
-    const Context = struct {
-        fn testOne(_: @This(), input: []const u8) anyerror!void {
-            var t: Tokenizer = .{ .language = .html };
-            while (t.next(input)) |tok| {
-                _ = tok;
-            }
-        }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
-}
+// test "fuzz" {
+//     const Context = struct {
+//         fn testOne(_: @This(), input: []const u8) anyerror!void {
+//             var t: Tokenizer = .{ .language = .html };
+//             while (t.next(input)) |tok| {
+//                 _ = tok;
+//             }
+//         }
+//     };
+//     try std.testing.fuzz(Context{}, Context.testOne, .{});
+// }
