@@ -1874,7 +1874,7 @@ pub const global: AttributeSet = .init(&.{
                         .label = "time",
                         .desc = "[Warning: This is an ARIA document structural role. These roles all have semantic HTML equivalents. Preferably, they should not be used by web authors. Opt for HTML semantic elements instead.] Word or phrase with an optional corresponding definition. Prohibited attributes: aria-label and aria-labelledby. See term role for more information.",
                     },
-                    //
+                    // end of structural roles
                     .{
                         .label = "feed",
                         .desc = "A feed is a dynamic scrollable list of articles in which articles are added to or removed from either end of the list as the user scrolls. A feed enables screen readers to use the browse mode reading cursor to both read and scroll through a stream of rich content that may continue scrolling infinitely by loading more content as the user reads.",
@@ -2896,7 +2896,7 @@ pub const global: AttributeSet = .init(&.{
         .name = "aria-controls",
         .model = .{
             .rule = .{
-                .custom = id_reference_list,
+                .custom = idReferenceList,
             },
             .desc = "Identifies the element (or elements) whose contents or presence are controlled by the current element. See related aria-owns. Attribute value must be a space-separated list of ID references.",
         },
@@ -2932,8 +2932,8 @@ pub const global: AttributeSet = .init(&.{
                         .desc = "Represents the current item within a set.",
                     },
                     .{
-                        .label = "false (default)",
-                        .desc = "Does not represent the current item within a set.",
+                        .label = "false",
+                        .desc = "(default) Does not represent the current item within a set.",
                     },
                 }),
             },
@@ -2945,7 +2945,7 @@ pub const global: AttributeSet = .init(&.{
         .name = "aria-describedby",
         .model = .{
             .rule = .{
-                .custom = id_reference_list,
+                .custom = idReferenceList,
             },
             .desc = "Identifies the element (or elements) that describes the object. See related aria-labelledby and aria-description. Attribute value must be a space-separated list of ID references.",
         },
@@ -2963,7 +2963,7 @@ pub const global: AttributeSet = .init(&.{
         .name = "aria-details",
         .model = .{
             .rule = .{
-                .custom = id_reference_list,
+                .custom = idReferenceList,
             },
             .desc = "Identifies the element (or elements) that provide additional information related to the object. See related aria-describedby. Attribute value must be a space-separated list of ID references.",
         },
@@ -3026,7 +3026,7 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-errormessage",
         .model = .{
-            .rule = .{ .custom = id_reference_list },
+            .rule = .{ .custom = idReferenceList },
             .desc = "Identifies the element (or elements) that provides an error message for an object. See related aria-invalid and aria-describedby. Attribute value must be a space-separated list of ID references.",
         },
     },
@@ -3043,7 +3043,7 @@ pub const global: AttributeSet = .init(&.{
         .name = "aria-flowto",
         .model = .{
             .rule = .{
-                .custom = id_reference_list,
+                .custom = idReferenceList,
             },
             .desc = "Identifies the next element (or elements) in an alternate reading order of content which, at the user's discretion, allows assistive technology to override the general default of reading in document source order. When aria-flowto has a single id reference, it allows assistive technologies to, at the user's request, go to the element targeted via that id instead of reading the document in the order of the DOM. When the aria-flowto value uses a space separated list of multiple id references, assistive technology can provide the user with a list of path choices, with each id referenced being a choice. The path choice names are determined by the accessible name of each target element of the aria-flowto attribute. Attribute value must be a space-separated list of ID references.",
         },
@@ -3176,7 +3176,7 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-labelledby",
         .model = .{
-            .rule = .{ .custom = id_reference_list },
+            .rule = .{ .custom = idReferenceList },
             .desc = "Identifies the element (or elements) that labels the current element. See related aria-label and aria-describedby.",
         },
     },
@@ -3295,7 +3295,7 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-owns",
         .model = .{
-            .rule = .{ .custom = id_reference_list },
+            .rule = .{ .custom = idReferenceList },
             .desc = "Identifies an element (or elements) in order to define a visual, functional, or contextual parent/child relationship between DOM elements where the DOM hierarchy cannot be used to represent the relationship. See related aria-controls.",
         },
     },
@@ -3420,7 +3420,7 @@ pub const global: AttributeSet = .init(&.{
         .name = "aria-rowcount",
         .model = .{
             .rule = .{
-                .custom = minus_one_or_integer,
+                .custom = minusOneOrInteger,
             },
             .desc = "Defines the total number of rows in a table, grid, or treegrid. See related aria-rowindex. Value should be the number of rows in the full table or -1 if the table size is not known.",
         },
@@ -3476,7 +3476,7 @@ pub const global: AttributeSet = .init(&.{
     .{
         .name = "aria-setsize",
         .model = .{
-            .rule = .{ .custom = minus_one_or_integer },
+            .rule = .{ .custom = minusOneOrInteger },
             .desc = "Defines the number of items in the current set of listitems or treeitems. Not required if all elements in the set are present in the DOM. See related aria-posinset. Value should be the number of items in the full set or -1 if the set size is unknown.",
         },
     },
@@ -3609,7 +3609,7 @@ pub fn accesskey(
     }
 }
 
-fn minus_one_or_integer(
+fn minusOneOrInteger(
     gpa: Allocator,
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
@@ -3639,7 +3639,7 @@ fn minus_one_or_integer(
     }
 }
 
-fn id_reference_list(
+fn idReferenceList(
     gpa: Allocator,
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
