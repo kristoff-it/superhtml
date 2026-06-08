@@ -1,6 +1,7 @@
 const Ast = @This();
 
 const std = @import("std");
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const Writer = std.Io.Writer;
 const builtin = @import("builtin");
@@ -148,12 +149,13 @@ pub const Node = struct {
 
     pub fn debug(
         node: *const Node,
+        io: Io,
         src: []const u8,
         html_ast: html.Ast,
         ast: Ast,
     ) void {
         std.debug.print("\n\n-- DEBUG --\n", .{});
-        var stderr = std.fs.File.stderr().writer(&.{});
+        var stderr = Io.File.stderr().writer(io, &.{});
         node.debugInternal(
             src,
             html_ast,
@@ -408,8 +410,8 @@ pub fn root(ast: Ast) Node {
 const Parser = struct {
     src: []const u8,
     html: html.Ast,
-    nodes: std.ArrayListUnmanaged(Node) = .{},
-    errors: std.ArrayListUnmanaged(Error) = .{},
+    nodes: std.ArrayList(Node) = .empty,
+    errors: std.ArrayList(Error) = .empty,
     extends_idx: u32 = 0,
     interface: std.StringArrayHashMapUnmanaged(u32) = .{},
     blocks: std.StringHashMapUnmanaged(u32) = .{},
@@ -1119,7 +1121,7 @@ test "basics" {
     const r = tree.root();
     try std.testing.expectEqual(Node.Kind.root, r.kind);
 
-    errdefer r.debug(case, html_ast, tree);
+    errdefer r.debug(std.testing.io, case, html_ast, tree);
 
     try std.testing.expectEqual(0, r.parent_idx);
     try std.testing.expectEqual(0, r.next_idx);

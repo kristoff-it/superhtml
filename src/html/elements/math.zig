@@ -14,11 +14,17 @@ const AttributeSet = Attribute.AttributeSet;
 pub const math: Element = .{
     .tag = .math,
     .model = .{
-        .categories = .{ .flow = true },
+        .categories = .{
+            .flow = true,
+            .phrasing = true,
+        },
         .content = .none,
     },
     .meta = .{
-        .categories_superset = .{ .flow = true },
+        .categories_superset = .{
+            .flow = true,
+            .phrasing = true,
+        },
     },
     .attributes = .static,
     .content = .model,

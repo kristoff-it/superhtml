@@ -5,7 +5,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const enable_tracy = b.option(bool, "tracy", "Enable Tracy profiling") orelse false;
-    const version = b.option([]const u8, "version", "Override the version of SuperHTML") orelse zon.version;
+    const version = b.option(
+        []const u8,
+        "version",
+        "Override the version of SuperHTML",
+    ) orelse zon.version;
 
     const tracy = b.dependency("tracy", .{ .enable = enable_tracy });
     const scripty = b.dependency("scripty", .{
@@ -26,7 +30,7 @@ pub fn build(b: *std.Build) !void {
         .name = "language-tag-parser",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/html/language_tag/parse.zig"),
-            .target = target,
+            .target = b.graph.host,
         }),
     });
     const language_tag_parse = b.addRunArtifact(language_tag_parser);
@@ -70,7 +74,7 @@ pub fn build(b: *std.Build) !void {
     setupWasmStep(b, optimize, options, superhtml, lsp);
     setupFetchLanguageSubtagRegistryStep(b, target);
 
-    const release = b.step("release", "Create release builds of Zine");
+    const release = b.step("release", "Create release builds of SuperHTML");
     const git_version = getGitVersion(b);
     if (git_version == .tag) {
         if (std.mem.eql(u8, version, git_version.tag[1..])) {
@@ -93,22 +97,6 @@ pub fn build(b: *std.Build) !void {
             "error: git tag missing, cannot make release builds",
         ).step);
     }
-
-    setupGeneratorStep(b, target);
-}
-
-fn setupGeneratorStep(b: *std.Build, target: std.Build.ResolvedTarget) void {
-    const gen = b.step("generator", "Build generator executable for reproing fuzz cases");
-    const supergen = b.addExecutable(.{
-        .name = "generator",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/generator.zig"),
-            .target = target,
-            .optimize = .ReleaseSafe,
-        }),
-    });
-
-    gen.dependOn(&b.addInstallArtifact(supergen, .{}).step);
 }
 
 fn setupCheckStep(
@@ -151,10 +139,10 @@ fn setupTestStep(
 
     const unit_tests = b.addTest(.{
         .root_module = superhtml,
-        .filters = b.args orelse &.{},
     });
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
+
     test_step.dependOn(&run_unit_tests.step);
 }
 
@@ -186,7 +174,7 @@ fn setupCliTool(
     super_cli.root_module.addOptions("build_options", options);
 
     const run_exe = b.addRunArtifact(super_cli);
-    if (b.args) |args| run_exe.addArgs(args);
+    run_exe.addPassthruArgs();
     const run_exe_step = b.step("run", "Run the SuperHTML CLI");
     run_exe_step.dependOn(&run_exe.step);
 
@@ -200,7 +188,7 @@ fn setupWasmStep(
     superhtml: *std.Build.Module,
     lsp: *std.Build.Dependency,
 ) void {
-    const wasm = b.step("wasm", "Generate a WASM build of the SuperHTML LSP for VSCode");
+    const wasm = b.step("wasm", "Generate a WASM build of the SuperHTML LSP");
     const super_wasm_lsp = b.addExecutable(.{
         .name = "superhtml",
         .root_module = b.createModule(.{
@@ -298,7 +286,7 @@ fn setupReleaseStep(
                 });
                 const archive = zip.addOutputFileArg(archive_name);
                 zip.addDirectoryArg(super_exe_release.getEmittedBin());
-                _ = zip.captureStdOut();
+                _ = zip.captureStdOut(.{});
 
                 release_step.dependOn(&b.addInstallFileWithDir(
                     archive,
@@ -321,7 +309,7 @@ fn setupReleaseStep(
 
                 tar.addDirectoryArg(super_exe_release.getEmittedBinDirectory());
                 tar.addArg("superhtml");
-                _ = tar.captureStdOut();
+                _ = tar.captureStdOut(.{});
 
                 release_step.dependOn(&b.addInstallFileWithDir(
                     archive,
@@ -352,7 +340,7 @@ fn setupReleaseStep(
         super_wasm_lsp.root_module.addImport("lsp", lsp.module("lsp"));
         super_wasm_lsp.root_module.addOptions("build_options", options);
 
-        const archive_name = "wasm-wasi-lsponly.tar.xz";
+        const archive_name = "wasm32-wasi-lsponly.tar.xz";
         const tar = b.addSystemCommand(&.{
             "gtar",
             "-cJf",
@@ -361,7 +349,7 @@ fn setupReleaseStep(
         tar.addArg("-C");
         tar.addDirectoryArg(super_wasm_lsp.getEmittedBinDirectory());
         tar.addArg("superhtml.wasm");
-        _ = tar.captureStdOut();
+        _ = tar.captureStdOut(.{});
         release_step.dependOn(&b.addInstallFileWithDir(
             archive,
             .{ .custom = "releases" },
@@ -385,17 +373,18 @@ const Version = union(Kind) {
         };
     }
 };
+
 fn getGitVersion(b: *std.Build) Version {
-    const git_path = b.findProgram(&.{"git"}, &.{}) catch return .unknown;
+    const git_path = b.findProgram(.{ .names = &.{"git"} }) orelse return .unknown;
     var out: u8 = undefined;
     const git_describe = std.mem.trim(
         u8,
         b.runAllowFail(&[_][]const u8{
-            git_path,            "-C",
-            b.build_root.path.?, "describe",
-            "--match",           "*.*.*",
+            git_path,               "-C",
+            b.root.root_dir.path.?, "describe",
+            "--match",              "*.*.*",
             "--tags",
-        }, &out, .Ignore) catch return .unknown,
+        }, &out, .ignore) catch return .unknown,
         " \n\r",
     );
 

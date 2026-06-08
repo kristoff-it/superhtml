@@ -4,11 +4,17 @@ const Element = @import("../Element.zig");
 pub const svg: Element = .{
     .tag = .svg,
     .model = .{
-        .categories = .{ .flow = true },
+        .categories = .{
+            .flow = true,
+            .phrasing = true,
+        },
         .content = .none,
     },
     .meta = .{
-        .categories_superset = .{ .flow = true },
+        .categories_superset = .{
+            .flow = true,
+            .phrasing =true,
+        },
     },
     .attributes = .manual, // we just don't do it
     .content = .model,

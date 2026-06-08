@@ -29,10 +29,10 @@ pub const HtmlSafe = struct {
 };
 
 pub const utils = struct {
-    pub fn IteratorContext(comptime Value: type, comptime Template: type) type {
+    pub fn IteratorContext(comptime Value: type) type {
         return struct {
             idx: u32 = undefined,
-            tpl: *const VM(Template, Value).Template = undefined,
+            tpl: *const VM(Value).Template = undefined,
 
             pub fn up(lc: @This()) Value {
                 return lc.tpl.loopUp(lc.idx);
@@ -44,7 +44,7 @@ pub const utils = struct {
         return struct {
             _map: *const std.StringHashMapUnmanaged(Value) = undefined,
 
-            pub fn dot(
+            pub fn dynamicDot(
                 ctx: *const @This(),
                 _: std.mem.Allocator,
                 path: []const u8,
@@ -177,4 +177,6 @@ test {
     _ = @import("html.zig");
     _ = @import("Ast.zig");
     // _ = @import("template.zig");
+    _ = @import("fuzz.zig");
+    _ = @import("example.zig");
 }

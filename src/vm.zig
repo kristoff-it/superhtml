@@ -27,10 +27,7 @@ pub const Exception = error{
     OutIO,
 };
 
-pub fn VM(
-    comptime Context: type,
-    comptime Value: type,
-) type {
+pub fn VM(comptime Value: type) type {
     return struct {
         arena: std.mem.Allocator,
         content_name: []const u8,
@@ -39,8 +36,8 @@ pub fn VM(
 
         state: State,
         quota: usize = 100,
-        templates: std.ArrayListUnmanaged(Template) = .{},
-        ctx: *Context,
+        templates: std.ArrayList(Template) = .empty,
+        ctx: ScriptyVM.RootRef,
         scripty_vm: ScriptyVM = .{},
 
         // discovering templates state
@@ -49,7 +46,7 @@ pub fn VM(
             idx: usize,
         }) = .{},
 
-        const ScriptyVM = scripty.VM(Context, Value);
+        const ScriptyVM = scripty.VM(Value);
         const Self = @This();
 
         pub const Template = SuperTemplate(ScriptyVM);
@@ -79,7 +76,7 @@ pub fn VM(
 
         pub fn init(
             arena: std.mem.Allocator,
-            context: *Context,
+            context: ScriptyVM.RootRef,
             layout_name: []const u8,
             layout_path: []const u8,
             layout_src: []const u8,
@@ -374,7 +371,7 @@ pub fn VM(
             if (tpl.html.errors.len > 0) {
                 const first_err = tpl.html.errors[0];
                 switch (first_err.tag) {
-                    inline else => |tag| tpl.reportError(
+                    inline else => |_, tag| tpl.reportError(
                         vm.err,
                         first_err.main_location,
                         @tagName(tag),
@@ -384,7 +381,7 @@ pub fn VM(
                 }
                 for (tpl.html.errors[1..]) |err| {
                     switch (err.tag) {
-                        inline else => |tag| try tpl.diagnostic(
+                        inline else => |_, tag| try tpl.diagnostic(
                             vm.err,
                             true,
                             @tagName(tag),

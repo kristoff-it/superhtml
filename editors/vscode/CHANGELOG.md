@@ -1,6 +1,6 @@
 # Change Log
 
-All notable changes to the "super" extension will be documented in this file.
+All notable changes to the SuperHTML extension will be documented in this file.
 
 ## [v0.6.2]
 - The "boolean attributes cannot have a value" error now puts squigglies under the attribute name instead of the value.
