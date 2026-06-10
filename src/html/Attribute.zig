@@ -90,7 +90,7 @@ pub const Rule = union(enum) {
     /// An entry in a static list of options
     list: List,
 
-    /// A valid url. Value decides if emtpy string is allowed or not.
+    /// A valid url. Value decides if empty string is allowed or not.
     url: enum { empty, not_empty },
 
     /// Custom validation
@@ -604,7 +604,7 @@ pub fn validateMime(
         if (mime_type.len == 0) return errors.append(gpa, .{
             .tag = .{
                 .invalid_attr_value = .{
-                    .reason = "emtpy MIME type",
+                    .reason = "empty MIME type",
                 },
             },
             .main_location = .{
@@ -658,7 +658,7 @@ pub fn validateMime(
     if (subtype.len == 0) return errors.append(gpa, .{
         .tag = .{
             .invalid_attr_value = .{
-                .reason = "emtpy MIME subtype",
+                .reason = "empty MIME subtype",
             },
         },
         .main_location = .{
@@ -702,7 +702,7 @@ pub fn validateMime(
         if (param_name.len == 0) return errors.append(gpa, .{
             .tag = .{
                 .invalid_attr_value = .{
-                    .reason = "emtpy MIME parameter name",
+                    .reason = "empty MIME parameter name",
                 },
             },
             .main_location = .{
