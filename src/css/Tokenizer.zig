@@ -199,7 +199,7 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
             '"', '\'' => return self.string(src),
             '#' => {
                 if (self.peek(src) != null and isIdentChar(self.peek(src).?)) {
-                    var token = .{ .hash = self.identSequence(src) };
+                    var token = Token{ .hash = self.identSequence(src) };
                     token.hash.start -= 1;
                     return token;
                 } else {

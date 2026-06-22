@@ -1,7 +1,7 @@
 const Ast = @This();
 
 const std = @import("std");
-const Writer = std.Io.Writer();
+const Writer = std.Io.Writer;
 const Tokenizer = @import("Tokenizer.zig");
 const root = @import("../root.zig");
 const Span = root.Span;
@@ -47,7 +47,7 @@ pub const Rule = struct {
                     ast: Ast,
                     src: []const u8,
                     w: *Writer,
-                ) !void {
+                ) Writer.Error!void {
                     if (self.element_name) |element_name| {
                         switch (element_name) {
                             .name => |name| _ = try w.write(name.slice(src)),
@@ -100,7 +100,7 @@ pub const Rule = struct {
             src: []const u8,
             w: *Writer,
             depth: usize,
-        ) !void {
+        ) Writer.Error!void {
             for (0..depth) |_| _ = try w.write("    ");
             for (ast.selectors[style.selectors.start..style.selectors.end], 0..) |selector, i| {
                 if (i != 0) {
@@ -187,7 +187,7 @@ pub const Rule = struct {
             src: []const u8,
             w: *Writer,
             depth: usize,
-        ) !void {
+        ) Writer.Error!void {
             for (0..depth) |_| _ = try w.write("    ");
 
             _ = try w.write("@media ");
@@ -231,7 +231,7 @@ pub const Rule = struct {
         src: []const u8,
         w: *Writer,
         depth: usize,
-    ) anyerror!void {
+    ) Writer.Error!void {
         switch (rule.type) {
             .style => |style| try style.render(ast, src, w, depth),
             .media => |media| try media.render(ast, src, w, depth),
@@ -267,12 +267,12 @@ const State = struct {
     tokenizer: Tokenizer,
     src: []const u8,
     reconsumed: ?Tokenizer.Token,
-    errors: std.ArrayListUnmanaged(Error),
-    rules: std.ArrayListUnmanaged(Rule),
-    selectors: std.ArrayListUnmanaged(Rule.Style.Selector),
-    declarations: std.ArrayListUnmanaged(Rule.Style.Declaration),
-    specifiers: std.ArrayListUnmanaged(Rule.Style.Selector.Simple.Specifier),
-    media_queries: std.ArrayListUnmanaged(Span),
+    errors: std.ArrayList(Error),
+    rules: std.ArrayList(Rule),
+    selectors: std.ArrayList(Rule.Style.Selector),
+    declarations: std.ArrayList(Rule.Style.Declaration),
+    specifiers: std.ArrayList(Rule.Style.Selector.Simple.Specifier),
+    media_queries: std.ArrayList(Span),
 
     fn consume(self: *State) error{OutOfMemory}!?Tokenizer.Token {
         if (self.reconsumed) |tok| {
@@ -311,8 +311,8 @@ const Formatter = struct {
     ast: Ast,
     src: []const u8,
 
-    pub fn format(f: Formatter, w: *Writer) !void {
-        try f.ast.render(f.src, w);
+    pub fn format(f: Formatter, w: *Writer) Writer.Error!void {
+        return f.ast.render(f.src, w);
     }
 };
 
@@ -323,7 +323,7 @@ pub fn formatter(self: Ast, src: []const u8) Formatter {
     };
 }
 
-pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
+pub fn render(ast: Ast, src: []const u8, w: *Writer) Writer.Error!void {
     var first = true;
     var rule = ast.rules[ast.first_rule orelse return];
     while (true) {
@@ -364,12 +364,12 @@ pub fn init(allocator: std.mem.Allocator, src: []const u8) error{OutOfMemory}!As
         .tokenizer = .{},
         .src = src,
         .reconsumed = null,
-        .errors = .{},
-        .rules = .{},
-        .selectors = .{},
-        .declarations = .{},
-        .specifiers = .{},
-        .media_queries = .{},
+        .errors = .empty,
+        .rules = .empty,
+        .selectors = .empty,
+        .declarations = .empty,
+        .specifiers = .empty,
+        .media_queries = .empty,
     };
 
     const first_rule = try parseRules(&state);
@@ -410,7 +410,7 @@ fn parseRules(s: *State) error{OutOfMemory}!?u32 {
                             if (std.ascii.eqlIgnoreCase(name, at_rule.name)) {
                                 s.reconsume(token);
 
-                                const rule = .{
+                                const rule = Rule{
                                     .type = @unionInit(
                                         @TypeOf(@as(Rule, undefined).type),
                                         at_rule.name,
@@ -469,7 +469,7 @@ fn parseRules(s: *State) error{OutOfMemory}!?u32 {
                 else => {
                     s.reconsume(token);
 
-                    const rule = .{
+                    const rule = Rule{
                         .type = .{
                             .style = try parseStyleRule(s),
                         },
@@ -803,7 +803,7 @@ test "simple stylesheet" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expect(ast.errors.len == 0);
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(src)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(src)});
 }
 
 test "empty" {
@@ -811,7 +811,7 @@ test "empty" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expect(ast.errors.len == 0);
-    try std.testing.expectFmt("", "{s}", .{ast.formatter("")});
+    try std.testing.expectFmt("", "{f}", .{ast.formatter("")});
 }
 
 test "full example" {
@@ -834,7 +834,7 @@ test "full example" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expect(ast.errors.len == 0);
-    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+    try std.testing.expectFmt(src, "{f}", .{ast.formatter(src)});
 }
 
 test "example.org" {
@@ -872,7 +872,7 @@ test "example.org" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expect(ast.errors.len == 0);
-    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+    try std.testing.expectFmt(src, "{f}", .{ast.formatter(src)});
 }
 
 test "minimized example.org" {
@@ -913,7 +913,7 @@ test "minimized example.org" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expect(ast.errors.len == 0);
-    try std.testing.expectFmt(expected, "{s}", .{ast.formatter(src)});
+    try std.testing.expectFmt(expected, "{f}", .{ast.formatter(src)});
 }
 
 test "media queries" {
@@ -941,7 +941,7 @@ test "media queries" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expect(ast.errors.len == 0);
-    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+    try std.testing.expectFmt(src, "{f}", .{ast.formatter(src)});
 }
 
 test "invalid at rule" {
@@ -989,7 +989,7 @@ test "pseudo-classes and pseudo-elements" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expect(ast.errors.len == 0);
-    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+    try std.testing.expectFmt(src, "{f}", .{ast.formatter(src)});
 }
 
 test "truncated string" {
@@ -1024,5 +1024,5 @@ test "number literals" {
     defer ast.deinit(std.testing.allocator);
 
     try std.testing.expect(ast.errors.len == 0);
-    try std.testing.expectFmt(src, "{s}", .{ast.formatter(src)});
+    try std.testing.expectFmt(src, "{f}", .{ast.formatter(src)});
 }
