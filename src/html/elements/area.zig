@@ -334,7 +334,7 @@ fn validateAttrs(
 
                 var idx: usize = 0;
                 var first: i64 = undefined;
-                var third: i64 = undefined;
+                var second: i64 = undefined;
                 if (std.mem.trim(u8, value_slice, &std.ascii.whitespace).len > 0) {
                     while (it.next()) |digits| : (idx += 1) {
                         if (idx == 4) {
@@ -382,11 +382,14 @@ fn validateAttrs(
                                 first = num;
                             },
                             1 => {
+                                second = num;
+                            },
+                            2 => {
                                 if (num <= first) {
                                     try errors.append(gpa, .{
                                         .tag = .{
                                             .invalid_attr_value = .{
-                                                .reason = "first number must be lower than the second number",
+                                                .reason = "first number must be lower than the third number",
                                             },
                                         },
                                         .main_location = .{
@@ -401,15 +404,12 @@ fn validateAttrs(
                                     });
                                 }
                             },
-                            2 => {
-                                third = num;
-                            },
                             3 => {
-                                if (num <= third) {
+                                if (num <= second) {
                                     try errors.append(gpa, .{
                                         .tag = .{
                                             .invalid_attr_value = .{
-                                                .reason = "third number must be lower than the fourth number",
+                                                .reason = "second number must be lower than the fourth number",
                                             },
                                         },
                                         .main_location = .{
