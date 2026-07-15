@@ -204,8 +204,12 @@ fn validate(
                         continue;
                     }
 
-                    if (!img_allow_autosizes) try errors.append(gpa, .{
-                        .tag = .{ .missing_required_attr = "sizes" },
+                    if (seen_any_w and !img_allow_autosizes) try errors.append(gpa, .{
+                        .tag = .{
+                            .missing_required_attr =
+                            \\presence of a width descriptor requires 'sizes' attribute to be present 
+                            ,
+                        },
                         .main_location = vait.name,
                         .node_idx = child_idx,
                     });
