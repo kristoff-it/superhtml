@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const Writer = std.Io.Writer;
 const scripty = @import("scripty");
 const tracy = @import("tracy");
@@ -907,11 +908,19 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                         }
 
                         if (elem.kind.isElement() and !elem.kind.isVoid()) {
-                            // Print up to the close tag
-                            const end = elem.close.end;
-                            const up_to_attr = tpl.src[tpl.print_cursor..end];
-                            writer.writeAll(up_to_attr) catch return error.OutIO;
-                            tpl.print_cursor = end;
+                            if (elem.self_closing) {
+                                assert(tpl.html.language == .xml);
+                                // Synthesize a closing tag
+                                writer.print("</{s}>", .{
+                                    elem.open.getName(tpl.src, tpl.html.language).slice(tpl.src),
+                                }) catch return error.OutIO;
+                            } else {
+                                // Print up to the close tag
+                                const end = elem.close.end;
+                                const up_to_end = tpl.src[tpl.print_cursor..end];
+                                writer.writeAll(up_to_end) catch return error.OutIO;
+                                tpl.print_cursor = end;
+                            }
                         }
                         _ = tpl.cursor.next();
                     },
