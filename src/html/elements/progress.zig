@@ -114,7 +114,7 @@ fn validate(
             return progress.model;
         };
 
-        if (number < 0) {
+        if (number <= 0) {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_value = .{
@@ -155,11 +155,11 @@ fn validate(
             return progress.model;
         };
 
-        if (number <= 0) {
+        if (number < 0) {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_value = .{
-                        .reason = "must be greater than zero",
+                        .reason = "must be greater than or equal to zero",
                     },
                 },
                 .main_location = attr.name,
@@ -169,7 +169,7 @@ fn validate(
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_value = .{
-                        .reason = "must be lower or equal than [max] (defaults to 1.0)",
+                        .reason = "must be lower than or equal to [max] (defaults to 1.0)",
                     },
                 },
                 .main_location = attr.name,
