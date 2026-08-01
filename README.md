@@ -263,8 +263,8 @@ common example is `<li>`, which enables this usage pattern:
 
 ```html
 <ul>
-  <li>First point</li>
-  <li>Second point</li>
+  <li>First point
+  <li>Second point
 </ul>
 ```
 
@@ -279,8 +279,7 @@ documents, it creates a problematic gray area when it comes to typos.
 Consider the following snippet:
 
 ```html
-<li>first point</li>
-<li></li>
+<li>first point<li>
 ```
 
 If SuperHTML were to follow the HTML spec it would have to consider this
