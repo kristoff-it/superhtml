@@ -9,6 +9,7 @@ current: u8 = undefined,
 
 pub const Error = enum {
     truncated_string,
+    bad_url,
 };
 
 pub const Token = union(enum) {
@@ -304,7 +305,7 @@ fn identLike(self: *Tokenizer, src: []const u8) Token {
     if (std.ascii.eqlIgnoreCase(span.slice(src), "url") and
         self.peek(src) != null and self.peek(src).? == '(')
     {
-        @panic("TODO");
+        return self.url(src);
     } else if (self.peek(src) != null and self.peek(src).? == '(') {
         std.debug.assert(self.consume(src));
         return .{ .function = .{ .start = span.start, .end = self.idx } };
@@ -409,6 +410,61 @@ fn string(self: *Tokenizer, src: []const u8) Token {
         }
     }
 }
+// https://www.w3.org/TR/css-syntax-3/#consume-url-token
+fn url(self: *Tokenizer, src: []const u8) Token {
+    const start = self.idx + 1;
+
+    self.skipWhitespace(src);
+
+    while (self.consume(src)) {
+        switch (self.current) {
+            '"', '\'', '(' => {
+                return self.consumeBadUrl(src, start);
+            },
+            '\\' => {
+                const c = self.peek(src) orelse {
+                    return self.consumeBadUrl(src, start);
+                };
+
+                if (c == '\n') {
+                    return self.consumeBadUrl(src, start);
+                }
+            },
+            ')' => {
+                return .{
+                    .url = .{ .start = start, .end = self.idx - 1 },
+                };
+            },
+            else => {},
+        }
+    }
+    return .{
+        .err = .{
+            .tag = .bad_url,
+            .span = .{ .start = start, .end = self.idx - 1 },
+        },
+    };
+}
+fn consumeBadUrl(self: *Tokenizer, src: []const u8, start: u32) Token {
+    while (self.consume(src)) {
+        if (self.current == ')') break;
+    }
+    return .{
+        .err = .{
+            .tag = .bad_url,
+            .span = .{ .start = start, .end = self.idx - 1 },
+        },
+    };
+}
+
+fn skipWhitespace(self: *Tokenizer, src: []const u8) void {
+    while (self.consume(src)) {
+        switch (self.current) {
+            '\n', '\t', ' ' => {},
+            else => return,
+        }
+    }
+}
 
 test {
     const src =
@@ -426,5 +482,58 @@ test {
     try std.testing.expectEqual(Token{ .ident = .{ .start = 15, .end = 18 } }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .semicolon = 18 }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .close_curly = 20 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(null, tokenizer.next(src));
+}
+
+test "url property" {
+    const src =
+        \\ :root {
+        \\   --base-img: url(/img/bg.png);
+        \\   --base-img-dark: url(/img/bg-dark.png);
+        \\ }
+    ;
+    var tokenizer = Tokenizer{};
+
+    try std.testing.expectEqual(Token{ .colon = 1 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .ident = .{ .start = 2, .end = 6 } }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .open_curly = 7 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .ident = .{ .start = 12, .end = 22 } }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .colon = 22 }, tokenizer.next(src).?);
+    var url_tok = tokenizer.next(src).?;
+    try std.testing.expectEqual(Token{ .url = .{ .start = 28, .end = 39 } }, url_tok);
+    try std.testing.expectEqualStrings("/img/bg.png", url_tok.span().slice(src));
+    try std.testing.expectEqual(Token{ .semicolon = 40 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .ident = .{ .start = 45, .end = 60 } }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .colon = 60 }, tokenizer.next(src).?);
+    url_tok = tokenizer.next(src).?;
+    try std.testing.expectEqual(Token{ .url = .{ .start = 66, .end = 82 } }, url_tok);
+    try std.testing.expectEqualStrings("/img/bg-dark.png", url_tok.span().slice(src));
+    try std.testing.expectEqual(Token{ .semicolon = 83 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .close_curly = 86 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(null, tokenizer.next(src));
+}
+test "bad url property" {
+    const src =
+        \\ :root {
+        \\   --base-img: url("/img/bg.png");
+        \\   --base-img: url('/img/bg.png);
+        \\ }
+    ;
+    var tokenizer = Tokenizer{};
+
+    try std.testing.expectEqual(Token{ .colon = 1 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .ident = .{ .start = 2, .end = 6 } }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .open_curly = 7 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .ident = .{ .start = 12, .end = 22 } }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .colon = 22 }, tokenizer.next(src).?);
+    var url_tok = tokenizer.next(src).?;
+    try std.testing.expectEqual(Token{ .err = .{ .tag = .bad_url, .span = .{ .start = 28, .end = 41 } } }, url_tok);
+    try std.testing.expectEqual(Token{ .semicolon = 42 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .ident = .{ .start = 47, .end = 57 } }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .colon = 57 }, tokenizer.next(src).?);
+    url_tok = tokenizer.next(src).?;
+    try std.testing.expectEqual(Token{ .err = .{ .tag = .bad_url, .span = .{ .start = 63, .end = 75 } } }, url_tok);
+    try std.testing.expectEqual(Token{ .semicolon = 76 }, tokenizer.next(src).?);
+    try std.testing.expectEqual(Token{ .close_curly = 79 }, tokenizer.next(src).?);
     try std.testing.expectEqual(null, tokenizer.next(src));
 }
