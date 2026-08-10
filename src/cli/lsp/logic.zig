@@ -52,7 +52,12 @@ pub fn loadFile(
                     .unsupported_doctype, .duplicate_class => .Warning,
                     else => .Error,
                 },
-                .message = try std.fmt.allocPrint(arena, "{f}", .{err.tag.fmt(doc.src)}),
+                .message = .{
+                    .markup_content = .{
+                        .kind = .markdown,
+                        .value = try std.fmt.allocPrint(arena, "{f}", .{err.tag.fmt(doc.src)}),
+                    },
+                },
                 .code = .{ .string = @tagName(err.tag) },
                 .source = if (err.tag == .token) "html tokenizer" else "html parser",
                 .relatedInformation = switch (err.tag) {
@@ -132,7 +137,12 @@ pub fn loadFile(
                 d.* = .{
                     .range = range,
                     .severity = .Error,
-                    .message = err.kind.message(),
+                    .message = .{
+                        .markup_content = .{
+                            .kind = .markdown,
+                            .value = err.kind.message(),
+                        },
+                    },
                 };
             }
             res.diagnostics = diags;

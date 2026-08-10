@@ -142,7 +142,7 @@ fn setupFuzzStep(
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/fuzz/afl-repro.zig"),
             .target = target,
-            .optimize = .Debug,
+            .optimize = .debug,
             .single_threaded = true,
         }),
     });

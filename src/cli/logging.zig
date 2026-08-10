@@ -23,7 +23,7 @@ pub fn logFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (builtin.mode == .Debug) switch (scope) {
+    if (builtin.mode == .debug) switch (scope) {
         // if (true) switch (scope) {
         .root, .element, .super_lsp, .@"html/ast" => {},
         else => return,

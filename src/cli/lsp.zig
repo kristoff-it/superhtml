@@ -143,7 +143,7 @@ pub fn initialize(
         .documentFormattingProvider = .{ .bool = true },
     };
 
-    if (@import("builtin").mode == .Debug) {
+    if (@import("builtin").mode == .debug) {
         lsp.basic_server.validateServerCapabilities(Handler, capabilities);
     }
 
