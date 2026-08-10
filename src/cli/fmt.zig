@@ -159,12 +159,12 @@ fn formatFile(
             return;
         }
 
-        var af = try base_dir.createFileAtomic(io, sub_path, .{});
+        var af = try base_dir.createFileAtomic(io, sub_path, .{ .replace = true });
         defer af.deinit(io);
 
         var writer = af.file.writer(io, &.{});
         try writer.interface.writeAll(fmt_src);
-        try af.link(io);
+        try af.replace(io);
         try stdout.print("{s}\n", .{full_path});
     } else if (check) {
         syntax_errors = true;
