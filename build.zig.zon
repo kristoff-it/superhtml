@@ -2,7 +2,7 @@
     .name = .superhtml,
     .version = "0.7.0",
     .fingerprint = 0xc5e9aede3c1db363,
-    .minimum_zig_version = "0.17.0-dev.1471+ff10b90bc",
+    .minimum_zig_version = "0.17.0-dev.2319+7cef4755c",
     .dependencies = .{
         .known_folders = .{
             .url = "git+https://github.com/ziglibs/known-folders#207c34a16e4365edc20d92c7892f962b3bed46e8",
