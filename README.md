@@ -119,41 +119,25 @@ See the Releases section here on GitHub.
 Install the [Super HTML VSCode extension](https://marketplace.visualstudio.com/items?itemName=LorisCro.super) (doesn't require the CLI tool as it bundles a WASM build of the language server).
 
 #### Neovim
-1. Download a prebuilt version of `superhtml` from the Releases section (or build it yourself).
-2. Put `superhtml` in your `PATH`.
-3. Configure `superhtml` for your chosen lsp
+This guide assumes that you are already familiar with Neovims built-in package manager [Pack](https://neovim.io/doc/user/pack/), [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) and [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter).
 
-	- ##### [Neovim Built-In](https://neovim.io/doc/user/lsp.html#vim.lsp.start())
+Prerequisites are that you have SuperHTML installed and available in your `$PATH`.
 
-		```lua
-		vim.api.nvim_create_autocmd("Filetype", {
-			pattern = { "html", "shtml", "htm" },
-			callback = function()
-				vim.lsp.start({
-					name = "superhtml",
-					cmd = { "superhtml", "lsp" },
-					root_dir = vim.fs.dirname(vim.fs.find({".git"}, { upward = true })[1])
-				})
-			end
-		})
-		```
+The following is a complete Neovim configuration that:
+- installs `nvim-lspconfig` and `nvim-treesitter` plugins using Neovim's built-in plugin manager;
+- enables the usage of SuperHTML language server;
+- and installs the corresponding Tree-sitter parser.
 
-	- ##### [LspZero](https://github.com/VonHeikemen/lsp-zero.nvim)
+```lua
+vim.pack.add{
+  { src = 'https://github.com/neovim/nvim-lspconfig' },
+  { src = 'https://github.com/nvim-treesitter/nvim-treesitter' }
+}
 
-		```lua
-		local lsp = require("lsp-zero")
+vim.lsp.enable('superhtml')
 
-		require('lspconfig.configs').superhtml = {
-				default_config = {
-						name = 'superhtml',
-						cmd = {'superhtml', 'lsp'},
-						filetypes = {'html', 'shtml', 'htm'},
-						root_dir = require('lspconfig.util').root_pattern('.git')
-				}
-		}
-
-		lsp.configure('superhtml', {force_setup = true})
-		```
+require('nvim-treesitter').install({ 'superhtml' })
+```
 
 #### Helix
 In versions later than `24.07` `superhtml` is supported out of the box, simply add executable to your `PATH`.
