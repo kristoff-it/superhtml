@@ -53,10 +53,9 @@ pub fn loadFile(
                     else => .Error,
                 },
                 .message = .{
-                    .markup_content = .{
-                        .kind = .markdown,
-                        .value = try std.fmt.allocPrint(arena, "{f}", .{err.tag.fmt(doc.src)}),
-                    },
+                    .string = try std.fmt.allocPrint(arena, "{f}", .{
+                        err.tag.fmt(doc.src),
+                    }),
                 },
                 .code = .{ .string = @tagName(err.tag) },
                 .source = if (err.tag == .token) "html tokenizer" else "html parser",
@@ -137,12 +136,7 @@ pub fn loadFile(
                 d.* = .{
                     .range = range,
                     .severity = .Error,
-                    .message = .{
-                        .markup_content = .{
-                            .kind = .markdown,
-                            .value = err.kind.message(),
-                        },
-                    },
+                    .message = .{ .string = err.kind.message() },
                 };
             }
             res.diagnostics = diags;
