@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -263,13 +262,13 @@ fn validate(
             return superset;
         };
 
-        const name_value_slice = name_value.span.slice(src);
+        const name_value_slice = name_value.loc.slice(src);
         const rule = comptime attributes.get("name").?.rule.list;
         const match = try rule.match(
             gpa,
             errors,
             node_idx,
-            name_value.span.start,
+            name_value.loc.start,
             name_value_slice,
         );
 
@@ -359,13 +358,13 @@ fn validate(
             return superset;
         };
 
-        const equiv_value_slice = equiv_value.span.slice(src);
+        const equiv_value_slice = equiv_value.loc.slice(src);
         const model = comptime attributes.get("http-equiv").?.rule.list;
         const match = try model.match(
             gpa,
             errors,
             node_idx,
-            equiv_value.span.start,
+            equiv_value.loc.start,
             equiv_value_slice,
         );
 
@@ -389,7 +388,7 @@ fn validate(
             return superset;
         };
 
-        const content_slice = content_value.span.slice(src);
+        const content_slice = content_value.loc.slice(src);
 
         switch (match) {
             else => {},
@@ -410,7 +409,7 @@ fn validate(
                         .tag = .{ .invalid_attr_value = .{
                             .reason = "must be 'text/html;charset=utf-8'",
                         } },
-                        .main_location = content_value.span,
+                        .main_location = content_value.loc,
                         .node_idx = node_idx,
                     };
                     var it = std.mem.tokenizeAny(u8, content_slice, &std.ascii.whitespace);
@@ -476,7 +475,7 @@ fn validate(
             return superset;
         };
 
-        const content_slice = value.span.slice(src);
+        const content_slice = value.loc.slice(src);
         if (!std.ascii.eqlIgnoreCase(content_slice, "utf-8")) {
             try errors.append(gpa, .{
                 .tag = .{
@@ -484,7 +483,7 @@ fn validate(
                         .reason = "must be 'utf-8' (case-insensitive)",
                     },
                 },
-                .main_location = value.span,
+                .main_location = value.loc,
                 .node_idx = node_idx,
             });
         }
@@ -545,13 +544,13 @@ fn validateCharset(
         .node_idx = node_idx,
     });
 
-    const value_slice = value.span.slice(src);
+    const value_slice = value.loc.slice(src);
     if (!std.ascii.eqlIgnoreCase(value_slice, "utf-8")) {
         return errors.append(gpa, .{
             .tag = .{
                 .invalid_attr_value = .{ .reason = "must be 'utf-8' (case insensitive)" },
             },
-            .main_location = value.span,
+            .main_location = value.loc,
             .node_idx = node_idx,
         });
     }

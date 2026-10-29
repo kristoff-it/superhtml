@@ -291,11 +291,11 @@ pub fn @"textDocument/codeAction"(
     for (doc.html.errors) |err| {
         if (err.tag != .invalid_html_tag_name) continue;
 
-        const span = err.main_location;
-        if (span.start <= offset and span.end > offset) {
+        const loc = err.main_location;
+        if (loc.start <= offset and loc.end > offset) {
             const edits = try arena.alloc(lsp.types.TextEdit, 2);
             edits[0] = .{
-                .range = getRange(span, doc.src),
+                .range = getRange(loc, doc.src),
                 .newText = "div",
             };
 
@@ -366,8 +366,8 @@ pub fn @"textDocument/prepareRename"(
     const it = node.startTagIterator(doc.src, doc.language);
 
     const range = lsp.offsets.locToRange(doc.src, .{
-        .start = it.name_span.start,
-        .end = it.name_span.end,
+        .start = it.name_loc.start,
+        .end = it.name_loc.end,
     }, self.offset_encoding);
 
     return .{ .range = range };
@@ -458,11 +458,11 @@ pub fn @"textDocument/references"(
         while (it.next(doc.src)) |attr| {
             if (std.ascii.eqlIgnoreCase(attr.name.slice(doc.src), "class")) {
                 const value = attr.value orelse return null;
-                const slice = value.span.slice(doc.src);
+                const slice = value.loc.slice(doc.src);
                 if (slice.len == 0 or slice[0] == '$') return null;
-                if (offset < value.span.start or offset >= value.span.end) return null;
+                if (offset < value.loc.start or offset >= value.loc.end) return null;
 
-                const rel_offset = offset - value.span.start;
+                const rel_offset = offset - value.loc.start;
 
                 var vit = std.mem.tokenizeScalar(u8, slice, ' ');
 
@@ -486,14 +486,14 @@ pub fn @"textDocument/references"(
         outer: while (it.next(doc.src)) |attr| {
             if (std.ascii.eqlIgnoreCase(attr.name.slice(doc.src), "class")) {
                 const value = attr.value orelse break :outer;
-                const slice = value.span.slice(doc.src);
+                const slice = value.loc.slice(doc.src);
                 if (slice.len == 0 or slice[0] == '$') break :outer;
                 var vit = std.mem.tokenizeScalar(u8, slice, ' ');
                 while (vit.next()) |cls| {
                     if (std.mem.eql(u8, class, cls)) {
                         const range = lsp.offsets.locToRange(doc.src, .{
-                            .start = value.span.start + vit.index - cls.len,
-                            .end = value.span.start + vit.index,
+                            .start = value.loc.start + vit.index - cls.len,
+                            .end = value.loc.start + vit.index,
                         }, self.offset_encoding);
 
                         try locations.append(arena, .{
@@ -592,8 +592,8 @@ pub fn onResponse(
     log.warn("received unexpected response from client with id '{?}'!", .{response.id});
 }
 
-pub fn getRange(span: super.Span, src: []const u8) types.Range {
-    const r = span.range(src);
+pub fn getRange(loc: super.Loc, src: []const u8) types.Range {
+    const r = loc.range(src);
     return .{
         .start = .{ .line = r.start.row, .character = r.start.col },
         .end = .{ .line = r.end.row, .character = r.end.col },
@@ -640,11 +640,11 @@ pub fn tagRanges(
     const node_idx: u32 = for (doc.html.errors) |err| {
         // Find erroneous end tags in the error list but also any other error that
         // has a node associated that happens to match our offset.
-        const span = err.main_location;
-        if (span.start <= offset and span.end > offset) {
+        const loc = err.main_location;
+        if (loc.start <= offset and loc.end > offset) {
             if (err.tag == .erroneous_end_tag) {
                 const ranges = try arena.alloc(types.Range, 1);
-                ranges[0] = getRange(span, doc.src);
+                ranges[0] = getRange(loc, doc.src);
                 return ranges;
             }
             if (err.node_idx != 0) break err.node_idx;
@@ -660,14 +660,14 @@ pub fn tagRanges(
         const ranges = try arena.alloc(lsp.types.Range, 1);
 
         const it = node.startTagIterator(doc.src, doc.language);
-        ranges[0] = getRange(it.name_span, doc.src);
+        ranges[0] = getRange(it.name_loc, doc.src);
         return ranges;
     }
 
     const ranges = try arena.alloc(types.Range, 2);
 
     const it = node.startTagIterator(doc.src, doc.language);
-    ranges[0] = getRange(it.name_span, doc.src);
+    ranges[0] = getRange(it.name_loc, doc.src);
 
     const close = node.close;
     if (close.end < 2 or close.start > close.end - 2) {

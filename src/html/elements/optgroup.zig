@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Ast = @import("../Ast.zig");
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Language = root.Language;
 const Element = @import("../Element.zig");
 const Categories = Element.Categories;
@@ -74,8 +74,8 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -140,21 +140,21 @@ pub fn validateContent(
                 .legend => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = vait.name,
+                            .loc = vait.name,
                             .reason = "<legend> children must go above all others",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = vait.name,
+                            .loc = vait.name,
                             .reason = "only <option>, <script>, <template>, <noscript>, and <div> children are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },

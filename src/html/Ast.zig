@@ -9,7 +9,7 @@ const Writer = std.Io.Writer;
 const tracy = @import("tracy");
 const root = @import("../root.zig");
 const Language = root.Language;
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("Tokenizer.zig");
 const Element = @import("Element.zig");
 const elements = Element.all;
@@ -51,7 +51,7 @@ pub const Kind = enum {
     // zig fmt: on
 
     pub fn isElement(k: Kind) bool {
-        return @intFromEnum(k) > @intFromEnum(Kind.text);
+        return @backingInt(k) > @backingInt(Kind.text);
     }
 
     pub fn isVoid(k: Kind) bool {
@@ -136,12 +136,12 @@ pub const unsupported_names = Set.initComptime(.{
 });
 
 pub const Node = struct {
-    /// Span covering start_tag, diamond brackets included
-    open: Span,
-    /// Span covering end_tag, diamond brackets included
+    /// Loc covering start_tag, diamond brackets included
+    open: Loc,
+    /// Loc covering end_tag, diamond brackets included
     /// Unset status is represented by .start = 0
     /// not set for doctype, element_void and element_self_closing
-    close: Span = .{ .start = 0, .end = 0 },
+    close: Loc = .{ .start = 0, .end = 0 },
 
     parent_idx: u32 = 0,
     first_child_idx: u32 = 0,
@@ -179,7 +179,7 @@ pub const Node = struct {
 
     pub const TagIterator = struct {
         end: u32,
-        name_span: Span,
+        name_loc: Loc,
         tokenizer: Tokenizer,
 
         pub fn next(ti: *TagIterator, src: []const u8) ?Tokenizer.Attr {
@@ -206,13 +206,13 @@ pub const Node = struct {
         return .{
             .end = n.open.end,
             .tokenizer = t,
-            .name_span = name,
+            .name_loc = name,
         };
     }
 
-    pub fn span(n: Node, src: []const u8) Span {
+    pub fn loc(n: Node, src: []const u8) Loc {
         if (n.kind.isElement()) {
-            return n.startTagIterator(src, .html).name_span;
+            return n.startTagIterator(src, .html).name_loc;
         }
 
         return n.open;
@@ -255,25 +255,25 @@ pub const Error = struct {
         missing_attr_value,
         boolean_attr,
         invalid_attr_combination: []const u8, // reason
-        duplicate_class: Span, // original
+        duplicate_class: Loc, // original
         missing_required_attr: []const u8,
         wrong_position: enum { first, second, first_or_last },
         missing_ancestor: Kind,
         missing_child: Kind,
         duplicate_child: struct {
-            span: Span, // original child
+            loc: Loc, // original child
             reason: []const u8 = "",
         },
         wrong_sibling_sequence: struct {
-            span: ?Span = null, // previous sibling
+            loc: ?Loc = null, // previous sibling
             reason: []const u8 = "",
         },
-        // Contains a span to the tag name of the ancestor that forbids this
+        // Contains a Loc to the tag name of the ancestor that forbids this
         // nesting. Usually the parent, but not always. In the case of
         // elements with a transparent content model, the non-transparent
         // ancestor that forbits the node will be used.
         invalid_nesting: struct {
-            span: Span, // parent node that caused this error
+            loc: Loc, // parent node that caused this error
             reason: []const u8 = "",
         },
         invalid_html_tag_name,
@@ -281,9 +281,9 @@ pub const Error = struct {
         missing_end_tag,
         erroneous_end_tag,
         void_end_tag,
-        duplicate_attribute_name: Span, // original attribute
-        duplicate_sibling_attr: Span, // original attribute in another element
-        duplicate_id: Span, // original location
+        duplicate_attribute_name: Loc, // original attribute
+        duplicate_sibling_attr: Loc, // original attribute in another element
+        duplicate_id: Loc, // original location
         deprecated_and_unsupported,
 
         const Tag = @This();
@@ -363,7 +363,7 @@ pub const Error = struct {
                     },
                     .invalid_nesting => |in| {
                         try w.print("invalid nesting under <{s}>", .{
-                            in.span.slice(tf.src),
+                            in.loc.slice(tf.src),
                         });
                         if (in.reason.len > 0) {
                             try w.print(": {s}", .{in.reason});
@@ -394,7 +394,7 @@ pub const Error = struct {
             }
         };
     },
-    main_location: Span,
+    main_location: Loc,
     node_idx: u32, // 0 = missing node
 };
 
@@ -421,14 +421,14 @@ pub fn printErrors(
     }
 }
 
-fn printSourceLine(src: []const u8, span: Span, w: *Writer) !void {
+fn printSourceLine(src: []const u8, loc: Loc, w: *Writer) !void {
     // test.html:3:7: invalid attribute for this element
     //         <div foo bar baz>
     //              ^^^
 
     // If the error starts on a newline (eg `foo="bar\n`), we want to consider
     // it ast part of the previous line.
-    var idx = span.start -| 1;
+    var idx = loc.start -| 1;
     var spaces_left: u32 = 0;
     const line_start = while (idx > 0) : (idx -= 1) switch (src[idx]) {
         '\n' => break idx + 1,
@@ -436,8 +436,8 @@ fn printSourceLine(src: []const u8, span: Span, w: *Writer) !void {
         else => spaces_left = 0,
     } else 0;
 
-    idx = span.start;
-    var last_non_space = idx -| 1; // if span.start is a newline don't print it
+    idx = loc.start;
+    var last_non_space = idx -| 1; // if loc.start is a newline don't print it
     while (idx < src.len) : (idx += 1) switch (src[idx]) {
         '\n' => break,
         ' ', '\t', ('\n' + 1)...'\r' => {},
@@ -446,8 +446,8 @@ fn printSourceLine(src: []const u8, span: Span, w: *Writer) !void {
 
     const line = src[line_start + spaces_left .. last_non_space + 1];
     try w.print("   {s}\n", .{line});
-    try w.splatByteAll(' ', span.start - (line_start + spaces_left) + 3);
-    try w.splatByteAll('^', @max(1, span.end - span.start));
+    try w.splatByteAll(' ', loc.start - (line_start + spaces_left) + 3);
+    try w.splatByteAll('^', @max(1, loc.end - loc.start));
     try w.print("\n", .{});
 }
 
@@ -471,11 +471,11 @@ pub fn init(
     var errors: std.ArrayListUnmanaged(Error) = .empty;
     errdefer errors.deinit(gpa);
 
-    var seen_attrs: std.StringHashMapUnmanaged(Span) = .empty;
+    var seen_attrs: std.StringHashMapUnmanaged(Loc) = .empty;
     defer seen_attrs.deinit(gpa);
 
     // It's a stack because of <template> (which can also be nested)
-    var seen_ids_stack: std.ArrayList(std.StringHashMapUnmanaged(Span)) = .empty;
+    var seen_ids_stack: std.ArrayList(std.StringHashMapUnmanaged(Loc)) = .empty;
     try seen_ids_stack.append(gpa, .empty);
     defer {
         for (seen_ids_stack.items) |*seen_ids| seen_ids.deinit(gpa);
@@ -522,7 +522,7 @@ pub fn init(
             .doctype => |dt| {
                 var new: Node = .{
                     .kind = .doctype,
-                    .open = dt.span,
+                    .open = dt.loc,
                     .model = .{
                         .categories = .none,
                         .content = .none,
@@ -559,7 +559,7 @@ pub fn init(
                             if (svg_lvl != 0 or math_lvl != 0 or language == .xml) {
                                 break :node .{
                                     .kind = .___,
-                                    .open = tag.span,
+                                    .open = tag.loc,
                                     .model = .{
                                         .categories = .all,
                                         .content = .all,
@@ -586,7 +586,7 @@ pub fn init(
                                     kinds.get(name) orelse .___;
 
                                 break :node .{
-                                    .open = tag.span,
+                                    .open = tag.loc,
                                     .kind = kind,
                                     .model = .{
                                         .categories = .all,
@@ -616,7 +616,7 @@ pub fn init(
                                                 nodes.items,
                                                 parent_idx,
                                                 src,
-                                                tag.span,
+                                                tag.loc,
                                                 @intCast(nodes.items.len),
                                             );
 
@@ -625,7 +625,7 @@ pub fn init(
                                         }
 
                                         break :node .{
-                                            .open = tag.span,
+                                            .open = tag.loc,
                                             .kind = kind,
                                             .model = model,
                                             .self_closing = self_closing,
@@ -641,7 +641,7 @@ pub fn init(
 
                                 break :node .{
                                     .kind = .___,
-                                    .open = tag.span,
+                                    .open = tag.loc,
                                     .model = .{
                                         .categories = .all,
                                         .content = .all,
@@ -651,7 +651,7 @@ pub fn init(
                             },
                             .xml => break :node .{
                                 .kind = .___,
-                                .open = tag.span,
+                                .open = tag.loc,
                                 .model = .{
                                     .categories = .all,
                                     .content = .all,
@@ -707,7 +707,7 @@ pub fn init(
                                     try errors.append(gpa, .{
                                         .tag = .{
                                             .invalid_nesting = .{
-                                                .span = ancestor.span(src),
+                                                .loc = ancestor.loc(src),
                                                 .reason = "main can only nest under html, body, div and form",
                                             },
                                         },
@@ -808,12 +808,12 @@ pub fn init(
                             // malformed HTML and we also expect in all of
                             // those cases that errors were already emitted
                             // by the tokenizer
-                            const name_span = temp_tok.getName(tag_src) orelse {
+                            const name_loc = temp_tok.getName(tag_src) orelse {
                                 current = original_current;
                                 current_idx = original_current_idx;
                                 break;
                             };
-                            break :blk name_span.slice(tag_src);
+                            break :blk name_loc.slice(tag_src);
                         };
 
                         const same_name = end_kind == current.kind and
@@ -832,12 +832,12 @@ pub fn init(
                                 map.deinit(gpa);
                             }
 
-                            current.close = tag.span;
+                            current.close = tag.loc;
 
                             var cur = original_current;
                             while (cur != current) {
                                 if (!cur.isClosed()) {
-                                    const cur_name: Span = blk: {
+                                    const cur_name: Loc = blk: {
                                         var temp_tok: Tokenizer = .{
                                             .language = language,
                                             .return_attrs = true,
@@ -947,7 +947,7 @@ pub fn init(
                     .tag = .{
                         .token = pe.tag,
                     },
-                    .main_location = pe.span,
+                    .main_location = pe.loc,
                     .node_idx = switch (current.direction()) {
                         .in => current_idx,
                         .after => current.parent_idx,
@@ -1399,7 +1399,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                     last_rbracket = current.open.end;
 
                     var sti = current.startTagIterator(src, ast.language);
-                    const name = sti.name_span.slice(src);
+                    const name = sti.name_loc.slice(src);
 
                     if (current.kind == .pre and !current.self_closing) {
                         pre += 1;
@@ -1464,7 +1464,7 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
                             };
                             try w.print("={s}{s}{s}", .{
                                 q,
-                                val.span.slice(src),
+                                val.loc.slice(src),
                                 q,
                             });
                         }
@@ -1541,8 +1541,8 @@ pub fn render(ast: Ast, src: []const u8, w: *Writer) !void {
 pub fn validateNesting(
     gpa: Allocator,
     nodes: []const Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids_stack: *std.ArrayList(std.StringHashMapUnmanaged(Span)),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids_stack: *std.ArrayList(std.StringHashMapUnmanaged(Loc)),
     errors: *std.ArrayListUnmanaged(Error),
     src: []const u8,
     language: Language,
@@ -1687,14 +1687,14 @@ pub fn description(ast: *const Ast, src: []const u8, offset: u32) ?[]const u8 {
 
     if (n.open.end > offset) {
         var it = n.startTagIterator(src, ast.language);
-        if (offset < it.name_span.end and offset >= it.name_span.start) {
+        if (offset < it.name_loc.end and offset >= it.name_loc.start) {
             // element name
             const e = Element.all.get(n.kind);
             return e.desc;
         }
 
         while (it.next(src)) |attr| {
-            const end = if (attr.value) |v| v.span.end else attr.name.end;
+            const end = if (attr.value) |v| v.loc.end else attr.name.end;
             if (offset < end and offset >= attr.name.start) {
                 const name = attr.name.slice(src);
                 const attr_model = Attribute.element_attrs.get(n.kind).get(name) orelse

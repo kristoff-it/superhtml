@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -41,8 +41,8 @@ pub const figure: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -54,9 +54,9 @@ pub fn validateContent(
     // Or: flow content.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
-    var has_fc: ?Span = null;
+    var has_fc: ?Loc = null;
 
     var child_idx = parent.first_child_idx;
     while (child_idx != 0) {
@@ -70,12 +70,12 @@ pub fn validateContent(
         if (child.kind == .figcaption) {
             if (has_fc) |lg| {
                 try errors.append(gpa, .{
-                    .tag = .{ .duplicate_child = .{ .span = lg } },
-                    .main_location = child.span(src),
+                    .tag = .{ .duplicate_child = .{ .loc = lg } },
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 });
             } else {
-                has_fc = child.span(src);
+                has_fc = child.loc(src);
                 if (child_idx != parent.first_child_idx and child.next_idx != 0) {
                     try errors.append(gpa, .{
                         .tag = .{ .wrong_position = .first_or_last },
@@ -86,8 +86,8 @@ pub fn validateContent(
             }
         } else if (!child.model.categories.flow) {
             try errors.append(gpa, .{
-                .tag = .{ .invalid_nesting = .{ .span = parent_span } },
-                .main_location = child.span(src),
+                .tag = .{ .invalid_nesting = .{ .loc = parent_loc } },
+                .main_location = child.loc(src),
                 .node_idx = child_idx,
             });
         }

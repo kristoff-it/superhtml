@@ -7,7 +7,7 @@ const Ast = @import("Ast.zig");
 const Tokenizer = @import("Tokenizer.zig");
 const root = @import("../root.zig");
 const Language = root.Language;
-const Span = root.Span;
+const Loc = root.Loc;
 const log = std.log.scoped(.attribute);
 const language_tag = @import("language_tag.zig");
 
@@ -263,15 +263,15 @@ pub const Rule = union(enum) {
             .cors => continue :rule .{ .list = cors_list },
             .lang => {
                 const value = attr.value orelse return;
-                const value_slice = value.span.slice(src);
+                const value_slice = value.loc.slice(src);
                 if (value_slice.len == 0) return;
                 if (language_tag.validate(value_slice)) |rejection| return errors.append(gpa, .{
                     .tag = .{
                         .invalid_attr_value = .{ .reason = rejection.reason },
                     },
                     .main_location = .{
-                        .start = value.span.start + rejection.offset,
-                        .end = value.span.start + rejection.offset + rejection.length,
+                        .start = value.loc.start + rejection.offset,
+                        .end = value.loc.start + rejection.offset + rejection.length,
                     },
                     .node_idx = node_idx,
                 });
@@ -282,7 +282,7 @@ pub const Rule = union(enum) {
                     .main_location = attr.name,
                     .node_idx = node_idx,
                 });
-                const value_slice = value.span.slice(src);
+                const value_slice = value.loc.slice(src);
                 const content = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
                 if (content.len == 0) return errors.append(gpa, .{
                     .tag = .missing_attr_value,
@@ -297,7 +297,7 @@ pub const Rule = union(enum) {
                     .node_idx = node_idx,
                 });
 
-                const value_slice = value.span.slice(src);
+                const value_slice = value.loc.slice(src);
                 if (value_slice.len == 0) return errors.append(gpa, .{
                     .tag = .missing_attr_value,
                     .main_location = attr.name,
@@ -312,8 +312,8 @@ pub const Rule = union(enum) {
                             },
                         },
                         .main_location = .{
-                            .start = @intCast(value.span.start + pos),
-                            .end = @intCast(value.span.start + pos + 1),
+                            .start = @intCast(value.loc.start + pos),
+                            .end = @intCast(value.loc.start + pos + 1),
                         },
                         .node_idx = node_idx,
                     });
@@ -321,25 +321,25 @@ pub const Rule = union(enum) {
             },
             .class => {
                 const value = attr.value orelse return;
-                const value_slice = value.span.slice(src);
+                const value_slice = value.loc.slice(src);
                 var it = std.mem.tokenizeAny(u8, value_slice, &std.ascii.whitespace);
 
-                var seen_classes: std.StringHashMapUnmanaged(Span) = .empty;
+                var seen_classes: std.StringHashMapUnmanaged(Loc) = .empty;
                 defer seen_classes.deinit(gpa);
 
                 while (it.next()) |c| {
-                    const span: Span = .{
-                        .start = @intCast(value.span.start + it.index - c.len),
-                        .end = @intCast(value.span.start + it.index),
+                    const loc: Loc = .{
+                        .start = @intCast(value.loc.start + it.index - c.len),
+                        .end = @intCast(value.loc.start + it.index),
                     };
                     const gop = try seen_classes.getOrPut(gpa, c);
                     if (gop.found_existing) {
                         try errors.append(gpa, .{
                             .tag = .{ .duplicate_class = gop.value_ptr.* },
-                            .main_location = span,
+                            .main_location = loc,
                             .node_idx = node_idx,
                         });
-                    } else gop.value_ptr.* = span;
+                    } else gop.value_ptr.* = loc;
                 }
             },
             // .number => {
@@ -374,7 +374,7 @@ pub const Rule = union(enum) {
                     .node_idx = node_idx,
                 });
 
-                const value_slice = value.span.slice(src);
+                const value_slice = value.loc.slice(src);
                 const digits = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
                 if (std.fmt.parseInt(i64, digits, 10)) |num| {
                     if (num < limits.min or num > limits.max) return errors.append(gpa, .{
@@ -384,7 +384,7 @@ pub const Rule = union(enum) {
                                 .max = limits.max,
                             },
                         },
-                        .main_location = value.span,
+                        .main_location = value.loc,
                         .node_idx = node_idx,
                     });
                 } else |_| return errors.append(gpa, .{
@@ -393,7 +393,7 @@ pub const Rule = union(enum) {
                             .reason = "invalid non-negative integer",
                         },
                     },
-                    .main_location = value.span,
+                    .main_location = value.loc,
                     .node_idx = node_idx,
                 });
             },
@@ -403,14 +403,14 @@ pub const Rule = union(enum) {
                     .main_location = attr.name,
                     .node_idx = node_idx,
                 });
-                const slice = value.span.slice(src);
+                const slice = value.loc.slice(src);
                 if (slice.len < 2 or slice[0] != '#') return errors.append(gpa, .{
                     .tag = .{
                         .invalid_attr_value = .{
                             .reason = "invalid hash name reference",
                         },
                     },
-                    .main_location = value.span,
+                    .main_location = value.loc,
                     .node_idx = node_idx,
                 });
             },
@@ -431,14 +431,14 @@ pub const Rule = union(enum) {
                 var seen_items: VoidSet = .{};
                 defer seen_items.deinit(gpa);
 
-                const value_slice = value.span.slice(src);
+                const value_slice = value.loc.slice(src);
                 switch (list.count) {
                     .one => {
                         _ = try list.match(
                             gpa,
                             errors,
                             node_idx,
-                            value.span.start,
+                            value.loc.start,
                             value_slice,
                         );
                         return;
@@ -452,7 +452,7 @@ pub const Rule = union(enum) {
                                 gpa,
                                 errors,
                                 node_idx,
-                                @intCast(value.span.start + it.index - item.len),
+                                @intCast(value.loc.start + it.index - item.len),
                                 item,
                             ) == .none) continue;
 
@@ -466,8 +466,8 @@ pub const Rule = union(enum) {
                                     },
                                 },
                                 .main_location = .{
-                                    .start = @intCast(value.span.start + it.index - item.len),
-                                    .end = @intCast(value.span.start + it.index),
+                                    .start = @intCast(value.loc.start + it.index - item.len),
+                                    .end = @intCast(value.loc.start + it.index),
                                 },
                                 .node_idx = node_idx,
                             });
@@ -485,7 +485,7 @@ pub const Rule = union(enum) {
                                 gpa,
                                 errors,
                                 node_idx,
-                                @intCast(value.span.start + last_index),
+                                @intCast(value.loc.start + last_index),
                                 item,
                             ) == .none) continue;
                             const gop = try seen_items.getOrPut(gpa, item);
@@ -496,8 +496,8 @@ pub const Rule = union(enum) {
                                     },
                                 },
                                 .main_location = .{
-                                    .start = value.span.start + last_index,
-                                    .end = @intCast(value.span.start + last_index + item.len),
+                                    .start = value.loc.start + last_index,
+                                    .end = @intCast(value.loc.start + last_index + item.len),
                                 },
                                 .node_idx = node_idx,
                             });
@@ -516,7 +516,7 @@ pub const Rule = union(enum) {
 
                 const url = std.mem.trim(
                     u8,
-                    value.span.slice(src),
+                    value.loc.slice(src),
                     &std.ascii.whitespace,
                 );
 
@@ -529,7 +529,7 @@ pub const Rule = union(enum) {
                                     .reason = "cannot be empty",
                                 },
                             },
-                            .main_location = value.span,
+                            .main_location = value.loc,
                             .node_idx = node_idx,
                         }),
                     };
@@ -543,7 +543,7 @@ pub const Rule = union(enum) {
                                 .reason = "invalid URL",
                             },
                         },
-                        .main_location = value.span,
+                        .main_location = value.loc,
                         .node_idx = node_idx,
                     });
                 };
@@ -572,7 +572,7 @@ pub fn validateMime(
 
     // 1. Remove any leading and trailing HTTP whitespace from input.
     const value, const spaces: u32 = blk: {
-        const raw = raw_value.span.slice(src);
+        const raw = raw_value.loc.slice(src);
         const left = std.mem.trimStart(u8, raw, &std.ascii.whitespace);
         const left_right = std.mem.trimEnd(u8, left, &std.ascii.whitespace);
         break :blk .{ left_right, @intCast(raw.len - left.len) };
@@ -592,7 +592,7 @@ pub fn validateMime(
                         .reason = "missing '/' in MIME value",
                     },
                 },
-                .main_location = raw_value.span,
+                .main_location = raw_value.loc,
                 .node_idx = node_idx,
             });
         };
@@ -608,8 +608,8 @@ pub fn validateMime(
                 },
             },
             .main_location = .{
-                .start = raw_value.span.start,
-                .end = @intCast(raw_value.span.start + spaces + slash_idx),
+                .start = raw_value.loc.start,
+                .end = @intCast(raw_value.loc.start + spaces + slash_idx),
             },
             .node_idx = node_idx,
         });
@@ -621,8 +621,8 @@ pub fn validateMime(
                 },
             },
             .main_location = .{
-                .start = raw_value.span.start + spaces + (rejection.offset orelse 0),
-                .end = @intCast(raw_value.span.start + spaces + (rejection.offset orelse mime_type.len) + 1),
+                .start = raw_value.loc.start + spaces + (rejection.offset orelse 0),
+                .end = @intCast(raw_value.loc.start + spaces + (rejection.offset orelse mime_type.len) + 1),
             },
             .node_idx = node_idx,
         });
@@ -644,8 +644,8 @@ pub fn validateMime(
                 },
             },
             .main_location = .{
-                .start = @intCast(raw_value.span.start + slash_idx + 1),
-                .end = @intCast(raw_value.span.end),
+                .start = @intCast(raw_value.loc.start + slash_idx + 1),
+                .end = @intCast(raw_value.loc.end),
             },
             .node_idx = node_idx,
         });
@@ -662,8 +662,8 @@ pub fn validateMime(
             },
         },
         .main_location = .{
-            .start = @intCast(raw_value.span.start + spaces + slash_idx + 1),
-            .end = @intCast(raw_value.span.start + spaces + slash_idx + 1 + semi_idx),
+            .start = @intCast(raw_value.loc.start + spaces + slash_idx + 1),
+            .end = @intCast(raw_value.loc.start + spaces + slash_idx + 1 + semi_idx),
         },
         .node_idx = node_idx,
     });
@@ -676,10 +676,10 @@ pub fn validateMime(
         },
         .main_location = .{
             .start = @intCast(
-                raw_value.span.start + spaces + slash_idx + 1 + (rejection.offset orelse 0),
+                raw_value.loc.start + spaces + slash_idx + 1 + (rejection.offset orelse 0),
             ),
             .end = @intCast(
-                raw_value.span.start + spaces + slash_idx + 1 + (rejection.offset orelse subtype.len) + 1,
+                raw_value.loc.start + spaces + slash_idx + 1 + (rejection.offset orelse subtype.len) + 1,
             ),
         },
         .node_idx = node_idx,
@@ -689,7 +689,7 @@ pub fn validateMime(
 
     // 11. While position is not past the end of input:
     var kv_offset: u32 = @intCast(
-        raw_value.span.start + spaces + slash_idx + 1 + semi_idx + 1,
+        raw_value.loc.start + spaces + slash_idx + 1 + semi_idx + 1,
     );
 
     while (true) {
@@ -843,19 +843,19 @@ pub fn validateMimeChars(bytes: []const u8) ?Rule.ValueRejection {
 pub const ValidatingIterator = struct {
     it: Tokenizer,
     errors: *std.ArrayListUnmanaged(Ast.Error),
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     end: u32,
     node_idx: u32,
-    name: Span = undefined,
+    name: Loc = undefined,
 
     /// On initalization will call seen_attrs.clearRetainingCapacity()
     pub fn init(
         errors: *std.ArrayListUnmanaged(Ast.Error),
-        seen_attrs: *std.StringHashMapUnmanaged(Span),
-        seen_ids: *std.StringHashMapUnmanaged(Span),
+        seen_attrs: *std.StringHashMapUnmanaged(Loc),
+        seen_ids: *std.StringHashMapUnmanaged(Loc),
         lang: Language,
-        tag: Span,
+        tag: Loc,
         src: []const u8,
         node_idx: u32,
     ) ValidatingIterator {
@@ -913,14 +913,14 @@ pub const ValidatingIterator = struct {
                     } else {
                         if (std.ascii.eqlIgnoreCase(attr_name, "id")) {
                             if (attr.value) |v| {
-                                const idgop = try vait.seen_ids.getOrPut(gpa, v.span.slice(src));
+                                const idgop = try vait.seen_ids.getOrPut(gpa, v.loc.slice(src));
                                 if (idgop.found_existing) {
                                     try vait.errors.append(gpa, .{
                                         .tag = .{ .duplicate_id = idgop.value_ptr.* },
-                                        .main_location = v.span,
+                                        .main_location = v.loc,
                                         .node_idx = vait.node_idx,
                                     });
-                                } else idgop.value_ptr.* = v.span;
+                                } else idgop.value_ptr.* = v.loc;
                             }
                         }
                         gop.value_ptr.* = attr.name;
@@ -965,9 +965,9 @@ pub fn completions(
         };
 
         if (attr.value) |v| {
-            log.debug("offset = {} v.span = {any}", .{ offset, v.span });
-            if (offset >= v.span.start and
-                offset <= v.span.end)
+            log.debug("offset = {} v.loc = {any}", .{ offset, v.loc });
+            if (offset >= v.loc.start and
+                offset <= v.loc.end)
             {
                 // <div attribute="">
                 //                ^
@@ -975,7 +975,7 @@ pub fn completions(
                 //                ^^^
                 const value_content = std.mem.trim(
                     u8,
-                    v.span.slice(src),
+                    v.loc.slice(src),
                     &std.ascii.whitespace,
                 );
 
@@ -1040,7 +1040,7 @@ pub fn completions(
                     else => return &.{},
                 }
             } else if (offset >= attr.name.end and
-                offset < v.span.start)
+                offset < v.loc.start)
             {
                 // <div attribute= anotherattribute>
                 //               ^
@@ -2191,7 +2191,7 @@ pub const global: AttributeSet = .init(&.{
                     });
                     const digits = std.mem.trim(
                         u8,
-                        value.span.slice(src),
+                        value.loc.slice(src),
                         &std.ascii.whitespace,
                     );
                     _ = std.fmt.parseInt(i64, digits, 10) catch {
@@ -2201,7 +2201,7 @@ pub const global: AttributeSet = .init(&.{
                                     .reason = "not a valid integer number",
                                 },
                             },
-                            .main_location = value.span,
+                            .main_location = value.loc,
                             .node_idx = node_idx,
                         });
                     };
@@ -3556,14 +3556,14 @@ pub fn accesskey(
         });
     };
 
-    var seen_toks: std.StringHashMapUnmanaged(Span) = .empty;
+    var seen_toks: std.StringHashMapUnmanaged(Loc) = .empty;
     defer seen_toks.deinit(gpa);
 
-    var it = std.mem.tokenizeAny(u8, value.span.slice(src), &std.ascii.whitespace);
+    var it = std.mem.tokenizeAny(u8, value.loc.slice(src), &std.ascii.whitespace);
     while (it.next()) |tok| {
-        const span: Span = .{
-            .start = @intCast(it.index - tok.len + value.span.start),
-            .end = @intCast(it.index + value.span.start),
+        const loc: Loc = .{
+            .start = @intCast(it.index - tok.len + value.loc.start),
+            .end = @intCast(it.index + value.loc.start),
         };
 
         const count = std.unicode.utf8CountCodepoints(tok) catch {
@@ -3573,7 +3573,7 @@ pub fn accesskey(
                         .reason = "token must be valid unicode",
                     },
                 },
-                .main_location = span,
+                .main_location = loc,
                 .node_idx = node_idx,
             });
             continue;
@@ -3586,7 +3586,7 @@ pub fn accesskey(
                         .reason = "token must be a single codepoint",
                     },
                 },
-                .main_location = span,
+                .main_location = loc,
                 .node_idx = node_idx,
             });
             continue;
@@ -3600,12 +3600,12 @@ pub fn accesskey(
                         .reason = "duplicate token",
                     },
                 },
-                .main_location = span,
+                .main_location = loc,
                 .node_idx = node_idx,
             });
             continue;
         }
-        gop.value_ptr.* = span;
+        gop.value_ptr.* = loc;
     }
 }
 
@@ -3622,7 +3622,7 @@ fn minusOneOrInteger(
             .main_location = attr.name,
             .node_idx = node_idx,
         });
-        const value_slice = value.span.slice(src);
+        const value_slice = value.loc.slice(src);
         const digits = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
         if (std.mem.eql(u8, digits, "-1")) {
             return;
@@ -3633,7 +3633,7 @@ fn minusOneOrInteger(
                     .reason = "invalid integer",
                 },
             },
-            .main_location = value.span,
+            .main_location = value.loc,
             .node_idx = node_idx,
         });
     }
@@ -3655,7 +3655,7 @@ fn idReferenceList(
     };
     var seen_items: VoidSet = .{};
     defer seen_items.deinit(gpa);
-    const value_slice = value.span.slice(src);
+    const value_slice = value.loc.slice(src);
     if (value_slice.len == 0) {
         try errors.append(gpa, .{
             .tag = .{
@@ -3664,8 +3664,8 @@ fn idReferenceList(
                 },
             },
             .main_location = .{
-                .start = @intCast(value.span.start),
-                .end = @intCast(value.span.end),
+                .start = @intCast(value.loc.start),
+                .end = @intCast(value.loc.end),
             },
             .node_idx = node_idx,
         });
@@ -3680,8 +3680,8 @@ fn idReferenceList(
                 },
             },
             .main_location = .{
-                .start = @intCast(value.span.start + it.index - item.len),
-                .end = @intCast(value.span.start + it.index),
+                .start = @intCast(value.loc.start + it.index - item.len),
+                .end = @intCast(value.loc.start + it.index),
             },
             .node_idx = node_idx,
         });

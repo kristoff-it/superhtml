@@ -2,7 +2,6 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ast = @import("../Ast.zig");
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Language = root.Language;
 const Element = @import("../Element.zig");
 const Categories = Element.Categories;

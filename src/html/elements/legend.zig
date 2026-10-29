@@ -5,7 +5,7 @@ const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const root = @import("../../root.zig");
 const Language = root.Language;
-const Span = root.Span;
+const Loc = root.Loc;
 
 pub const legend: Element = .{
     .tag = .legend,
@@ -39,8 +39,8 @@ pub const legend: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -48,7 +48,7 @@ pub fn validateContent(
     _ = seen_attrs;
     _ = seen_ids;
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
     const mode: enum { optgroup, fieldset } = switch (nodes[parent.parent_idx].kind) {
         .optgroup => .optgroup,
@@ -56,11 +56,11 @@ pub fn validateContent(
         else => return errors.append(gpa, .{
             .tag = .{
                 .invalid_nesting = .{
-                    .span = nodes[parent.parent_idx].span(src),
+                    .loc = nodes[parent.parent_idx].loc(src),
                     .reason = "must be a child of <optgroup> or <fieldset>",
                 },
             },
-            .main_location = parent_span,
+            .main_location = parent_loc,
             .node_idx = parent_idx,
         }),
     };
@@ -93,17 +93,17 @@ pub fn validateContent(
                     nodes,
                     src,
                     parent,
-                    parent_span,
+                    parent_loc,
                     &Element.all.get(node.kind),
                     node.model,
                 )) |rejection| try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = rejection.span,
+                            .loc = rejection.loc,
                             .reason = rejection.reason,
                         },
                     },
-                    .main_location = node.span(src),
+                    .main_location = node.loc(src),
                     .node_idx = node_idx,
                 });
             }
@@ -115,7 +115,7 @@ pub fn validateContent(
                 const child = nodes[child_idx];
                 defer child_idx = child.next_idx;
 
-                const child_span = child.span(src);
+                const child_loc = child.loc(src);
 
                 switch (child.kind) {
                     .text,
@@ -133,9 +133,9 @@ pub fn validateContent(
 
                 if (!child.model.categories.phrasing) try errors.append(gpa, .{
                     .tag = .{
-                        .invalid_nesting = .{ .span = parent_span },
+                        .invalid_nesting = .{ .loc = parent_loc },
                     },
-                    .main_location = child_span,
+                    .main_location = child_loc,
                     .node_idx = child_idx,
                 });
             }

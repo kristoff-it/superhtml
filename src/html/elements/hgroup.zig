@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -46,8 +46,8 @@ pub const hgroup: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -59,10 +59,10 @@ pub fn validateContent(
     // script-supporting elements.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
     var state: enum { prefix, heading, suffix } = .prefix;
-    var heading: ?Span = null;
+    var heading: ?Loc = null;
 
     var child_idx = parent.first_child_idx;
     while (child_idx != 0) {
@@ -80,11 +80,11 @@ pub fn validateContent(
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <p> and headings allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
@@ -95,24 +95,24 @@ pub fn validateContent(
                         try errors.append(gpa, .{
                             .tag = .{
                                 .duplicate_child = .{
-                                    .span = h,
+                                    .loc = h,
                                     .reason = "only one heading element allowed",
                                 },
                             },
-                            .main_location = child.span(src),
+                            .main_location = child.loc(src),
                             .node_idx = child_idx,
                         });
-                    } else heading = child.span(src);
+                    } else heading = child.loc(src);
                 },
                 .p => state = .suffix,
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <p> and headings allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
@@ -121,21 +121,21 @@ pub fn validateContent(
                 .h1, .h2, .h3, .h4, .h5, .h6 => try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = heading.?,
+                            .loc = heading.?,
                             .reason = "only one heading element allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <p> and headings allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },

@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Element = @import("../Element.zig");
 const Model = Element.Model;
 const Ast = @import("../Ast.zig");
@@ -38,8 +38,8 @@ pub const div: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -54,7 +54,7 @@ pub fn validateContent(
     // Otherwise: flow content.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
     var ancestor_idx = parent.parent_idx;
     const state: enum { dl, option, optgroup, select, flow } = while (ancestor_idx != 0) {
@@ -92,11 +92,11 @@ pub fn validateContent(
                             try errors.append(gpa, .{
                                 .tag = .{
                                     .invalid_nesting = .{
-                                        .span = parent_span,
+                                        .loc = parent_loc,
                                         .reason = "as a child of <dl> it only accepts <dt>, <dd>, <script> or <template>",
                                     },
                                 },
-                                .main_location = child.span(src),
+                                .main_location = child.loc(src),
                                 .node_idx = child_idx,
                             });
                         }
@@ -106,11 +106,11 @@ pub fn validateContent(
                             try errors.append(gpa, .{
                                 .tag = .{
                                     .invalid_nesting = .{
-                                        .span = parent_span,
+                                        .loc = parent_loc,
                                         .reason = "<dt> elements must go before all others",
                                     },
                                 },
-                                .main_location = child.span(src),
+                                .main_location = child.loc(src),
                                 .node_idx = child_idx,
                             });
                         } else if (child.kind == .dd) {
@@ -119,11 +119,11 @@ pub fn validateContent(
                             try errors.append(gpa, .{
                                 .tag = .{
                                     .invalid_nesting = .{
-                                        .span = parent_span,
+                                        .loc = parent_loc,
                                         .reason = "<div> under <dl> only accepts <dt>, <dd>, <script> or <template>",
                                     },
                                 },
-                                .main_location = child.span(src),
+                                .main_location = child.loc(src),
                                 .node_idx = child_idx,
                             });
                         }
@@ -141,18 +141,18 @@ pub fn validateContent(
                     nodes,
                     src,
                     parent,
-                    parent_span,
+                    parent_loc,
                     &Element.all.get(child.kind),
                     child.model,
                 )) |rejection| {
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = rejection.span,
+                                .loc = rejection.loc,
                                 .reason = rejection.reason,
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                 }
@@ -175,7 +175,7 @@ pub fn validateContent(
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = if (state == .select)
                                 \\as descendant of <select> it only accepts <optgroup>, <hr>, <option>, <script>, <template>, <noscript> or <div>
                             else
@@ -183,7 +183,7 @@ pub fn validateContent(
                             ,
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 });
             }
@@ -205,18 +205,18 @@ pub fn validateContent(
                     nodes,
                     src,
                     parent,
-                    parent_span,
+                    parent_loc,
                     &Element.all.get(child.kind),
                     child.model,
                 )) |rejection| {
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = rejection.span,
+                                .loc = rejection.loc,
                                 .reason = rejection.reason,
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                     continue;
@@ -224,8 +224,8 @@ pub fn validateContent(
 
                 if (child.kind == .datalist or child.kind == .object) {
                     try errors.append(gpa, .{
-                        .tag = .{ .invalid_nesting = .{ .span = parent_span } },
-                        .main_location = child.span(src),
+                        .tag = .{ .invalid_nesting = .{ .loc = parent_loc } },
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                     continue;

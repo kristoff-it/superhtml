@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Ast = @import("../Ast.zig");
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Language = root.Language;
 const Element = @import("../Element.zig");
 const Categories = Element.Categories;
@@ -71,8 +71,8 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -227,7 +227,7 @@ fn validateChildren(
     simple: Element.Simple,
 ) !void {
     const parent = nodes[parent_idx];
-    const parent_span = parent.startTagIterator(src, .html).name_span;
+    const parent_loc = parent.startTagIterator(src, .html).name_loc;
     assert(parent.kind.isElement());
     assert(parent.kind != .___);
     const first_child_idx = nodes[parent_idx].first_child_idx;
@@ -247,7 +247,7 @@ fn validateChildren(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                             },
                         },
                         .main_location = child.open,
@@ -268,10 +268,10 @@ fn validateChildren(
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_nesting = .{
-                        .span = parent_span,
+                        .loc = parent_loc,
                     },
                 },
-                .main_location = child.span(src),
+                .main_location = child.loc(src),
                 .node_idx = child_idx,
             });
             continue;
@@ -283,10 +283,10 @@ fn validateChildren(
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                         },
                     },
-                    .main_location = child.startTagIterator(src, .html).name_span,
+                    .main_location = child.startTagIterator(src, .html).name_loc,
                     .node_idx = child_idx,
                 });
                 continue :outer;
@@ -328,10 +328,10 @@ fn validateChildren(
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                         },
                     },
-                    .main_location = node.startTagIterator(src, .html).name_span,
+                    .main_location = node.startTagIterator(src, .html).name_loc,
                     .node_idx = node_idx,
                 });
                 continue :outer;
@@ -344,11 +344,11 @@ fn validateChildren(
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_nesting = .{
-                        .span = parent_span,
+                        .loc = parent_loc,
                         .reason = "presence of [tabindex]",
                     },
                 },
-                .main_location = node.startTagIterator(src, .html).name_span,
+                .main_location = node.startTagIterator(src, .html).name_loc,
                 .node_idx = node_idx,
             });
             continue :outer;

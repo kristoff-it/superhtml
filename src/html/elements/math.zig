@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -68,7 +67,7 @@ pub const attributes: AttributeSet = .init(&.{
 
 test "math - bad display attribute" {
     const case = "<math " ++
-    \\display="bad"
+        \\display="bad"
     ++ "></math>\n";
     const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
@@ -77,7 +76,7 @@ test "math - bad display attribute" {
 
 test "math - display attribute" {
     const case = "<math " ++
-    \\display="block"
+        \\display="block"
     ++ "></math>\n";
     const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
@@ -85,7 +84,7 @@ test "math - display attribute" {
 }
 test "math - alttext attribute" {
     const case = "<math " ++
-    \\alttext="x equals y sqaured"
+        \\alttext="x equals y sqaured"
     ++ "></math>\n";
     const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
@@ -94,16 +93,17 @@ test "math - alttext attribute" {
 
 test "math display - completion" {
     const case = "<math " ++
-    \\display=""
+        \\display=""
     ++ "></math>\n";
     const ast = try Ast.init(std.testing.allocator, case, .html, false);
     defer ast.deinit(std.testing.allocator);
 
-    var arena: std.heap.ArenaAllocator= .init(std.testing.allocator);
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    const comp = try ast.completions(alloc,case, 14);
+    const comp = try ast.completions(alloc, case, 14);
     const expected = "inline";
-    try std.testing.expectEqualStrings(expected,comp[1].label);
-    try std.testing.expect(2 == comp.len);}
+    try std.testing.expectEqualStrings(expected, comp[1].label);
+    try std.testing.expect(2 == comp.len);
+}

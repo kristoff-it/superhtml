@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -38,8 +38,8 @@ pub const head: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -59,9 +59,9 @@ pub fn validateContent(
     // There must be no more than one title element per document.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
-    var has_title: ?Span = null;
+    var has_title: ?Loc = null;
     var child_idx = parent.first_child_idx;
     while (child_idx != 0) {
         const child = nodes[child_idx];
@@ -72,11 +72,11 @@ pub fn validateContent(
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only metadata children allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 });
                 continue;
@@ -87,20 +87,20 @@ pub fn validateContent(
         if (child.kind == .title) {
             if (has_title) |t| {
                 try errors.append(gpa, .{
-                    .tag = .{ .duplicate_child = .{ .span = t } },
-                    .main_location = child.span(src),
+                    .tag = .{ .duplicate_child = .{ .loc = t } },
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 });
-            } else has_title = child.span(src);
+            } else has_title = child.loc(src);
         } else if (!child.model.categories.metadata) {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_nesting = .{
-                        .span = parent_span,
+                        .loc = parent_loc,
                         .reason = "only metadata children allowed",
                     },
                 },
-                .main_location = child.span(src),
+                .main_location = child.loc(src),
                 .node_idx = child_idx,
             });
         }
@@ -109,7 +109,7 @@ pub fn validateContent(
     if (has_title == null) {
         try errors.append(gpa, .{
             .tag = .{ .missing_child = .title },
-            .main_location = parent_span,
+            .main_location = parent_loc,
             .node_idx = parent_idx,
         });
     }

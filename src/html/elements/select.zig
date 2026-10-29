@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
 const Model = Element.Model;
@@ -120,8 +120,8 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -139,7 +139,7 @@ pub fn validateContent(
     // element's multiple content attribute is present, and 1 otherwise.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
     var vait: ValidatingIterator = .init(
         errors,
         seen_attrs,
@@ -172,7 +172,7 @@ pub fn validateContent(
 
                     const value_string = std.mem.trim(
                         u8,
-                        value.span.slice(src),
+                        value.loc.slice(src),
                         &std.ascii.whitespace,
                     );
 
@@ -225,7 +225,7 @@ pub fn validateContent(
 
         if (child.kind == .comment) continue;
 
-        const child_span = child.span(src);
+        const child_loc = child.loc(src);
 
         state: switch (state) {
             .button => switch (child.kind) {
@@ -237,8 +237,8 @@ pub fn validateContent(
             },
             .rest => |maybe_btn| switch (child.kind) {
                 else => try errors.append(gpa, .{
-                    .tag = .{ .invalid_nesting = .{ .span = parent_span } },
-                    .main_location = child_span,
+                    .tag = .{ .invalid_nesting = .{ .loc = parent_loc } },
+                    .main_location = child_loc,
                     .node_idx = child_idx,
                 }),
                 .option,
@@ -252,23 +252,23 @@ pub fn validateContent(
                 .button => if (maybe_btn) |first_idx| try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[first_idx].span(src),
+                            .loc = nodes[first_idx].loc(src),
                         },
                     },
-                    .main_location = child_span,
+                    .main_location = child_loc,
                     .node_idx = child_idx,
                 }) else if (can_have_button) try errors.append(gpa, .{
                     .tag = .{ .wrong_position = .first },
-                    .main_location = child_span,
+                    .main_location = child_loc,
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "requires <select> to have [size] set to 1 and to not define [multiple]",
                         },
                     },
-                    .main_location = child_span,
+                    .main_location = child_loc,
                     .node_idx = child_idx,
                 }),
             },
@@ -300,7 +300,7 @@ fn completionsContent(
             const value = attr.value orelse continue;
             const value_string = std.mem.trim(
                 u8,
-                value.span.slice(src),
+                value.loc.slice(src),
                 &std.ascii.whitespace,
             );
 

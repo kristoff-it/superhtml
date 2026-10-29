@@ -2,7 +2,6 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
 const Language = root.Language;
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
@@ -282,7 +281,7 @@ pub fn validateAllow(
         .node_idx = node_idx,
     });
 
-    const data = value.span.slice(src);
+    const data = value.loc.slice(src);
     var pos: u32 = 0;
 
     policy_directive: while (true) {
@@ -334,8 +333,8 @@ pub fn validateAllow(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + pos,
-                    .end = value.span.end,
+                    .start = value.loc.start + pos,
+                    .end = value.loc.end,
                 },
                 .node_idx = node_idx,
             });
@@ -351,8 +350,8 @@ pub fn validateAllow(
             } else return errors.append(gpa, .{
                 .tag = .{ .invalid_attr_value = .{ .reason = "missing allow list" } },
                 .main_location = .{
-                    .start = value.span.end,
-                    .end = value.span.end,
+                    .start = value.loc.end,
+                    .end = value.loc.end,
                 },
                 .node_idx = node_idx,
             });
@@ -376,8 +375,8 @@ pub fn validateAllow(
                                         },
                                     },
                                     .main_location = .{
-                                        .start = value.span.start + start,
-                                        .end = value.span.start + pos,
+                                        .start = value.loc.start + start,
+                                        .end = value.loc.start + pos,
                                     },
                                     .node_idx = node_idx,
                                 });
@@ -405,7 +404,7 @@ pub fn validateAllow(
                 ';' => continue :policy_directive,
                 else => return errors.append(gpa, .{
                     .tag = .{ .invalid_attr_value = .{ .reason = "missing allow list" } },
-                    .main_location = value.span,
+                    .main_location = value.loc,
                     .node_idx = node_idx,
                 }),
             }

@@ -106,25 +106,25 @@ pub const Range = struct {
 
 pub const Line = struct { line: []const u8, start: u32 };
 
-pub const Span = struct {
+pub const Loc = struct {
     start: u32,
     end: u32,
 
-    pub fn len(span: Span) u32 {
-        return span.end - span.start;
+    pub fn len(loc: Loc) u32 {
+        return loc.end - loc.start;
     }
 
-    pub fn slice(self: Span, src: []const u8) []const u8 {
-        return src[self.start..self.end];
+    pub fn slice(loc: Loc, src: []const u8) []const u8 {
+        return src[loc.start..loc.end];
     }
 
-    pub fn range(self: Span, code: []const u8) Range {
+    pub fn range(loc: Loc, code: []const u8) Range {
         var selection: Range = .{
             .start = .{ .row = 0, .col = 0 },
             .end = undefined,
         };
 
-        for (code[0..self.start]) |c| {
+        for (code[0..loc.start]) |c| {
             if (c == '\n') {
                 selection.start.row += 1;
                 selection.start.col = 0;
@@ -132,7 +132,7 @@ pub const Span = struct {
         }
 
         selection.end = selection.start;
-        for (code[self.start..self.end]) |c| {
+        for (code[loc.start..loc.end]) |c| {
             if (c == '\n') {
                 selection.end.row += 1;
                 selection.end.col = 0;
@@ -143,13 +143,13 @@ pub const Span = struct {
 
     /// Finds the line around a Node. Choose simple nodes
     //  if you don't want unwanted newlines in the middle.
-    pub fn line(span: Span, src: []const u8) Line {
-        var idx = span.start;
+    pub fn line(loc: Loc, src: []const u8) Line {
+        var idx = loc.start;
         const s = while (idx > 0) : (idx -= 1) {
             if (src[idx] == '\n') break idx + 1;
         } else 0;
 
-        idx = span.end;
+        idx = loc.end;
         const e = while (idx < src.len) : (idx += 1) {
             if (src[idx] == '\n') break idx;
         } else src.len - 1;
@@ -157,19 +157,19 @@ pub const Span = struct {
         return .{ .line = src[s..e], .start = s };
     }
 
-    pub fn getName(span: Span, full_src: []const u8, language: Language) Span {
+    pub fn getName(loc: Loc, full_src: []const u8, language: Language) Loc {
         var temp_tok: html.Tokenizer = .{
             .language = language,
             .return_attrs = true,
-            .idx = span.start,
+            .idx = loc.start,
         };
 
-        const src = full_src[0..span.end];
+        const src = full_src[0..loc.end];
         return temp_tok.getName(src).?;
     }
 
-    pub fn debug(span: Span, src: []const u8) void {
-        std.debug.print("{s}", .{span.slice(src)});
+    pub fn debug(loc: Loc, src: []const u8) void {
+        std.debug.print("{s}", .{loc.slice(src)});
     }
 };
 

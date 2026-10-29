@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Ast = @import("../Ast.zig");
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Language = root.Language;
 const Element = @import("../Element.zig");
 const Categories = Element.Categories;
@@ -55,8 +55,8 @@ pub const ruby: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -64,7 +64,7 @@ pub fn validateContent(
     _ = seen_attrs;
     _ = seen_ids;
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
     var state: union(enum) { phrasing, rp_start: u32, rp_rt: u32, rp_end } = .phrasing;
     var child_idx = parent.first_child_idx;
@@ -88,18 +88,18 @@ pub fn validateContent(
                         nodes,
                         src,
                         parent,
-                        parent_span,
+                        parent_loc,
                         &Element.all.get(child.kind),
                         child.model,
                     )) |rejection| {
                         try errors.append(gpa, .{
                             .tag = .{
                                 .invalid_nesting = .{
-                                    .span = rejection.span,
+                                    .loc = rejection.loc,
                                     .reason = rejection.reason,
                                 },
                             },
-                            .main_location = child.span(src),
+                            .main_location = child.loc(src),
                             .node_idx = child_idx,
                         });
                         continue;
@@ -111,8 +111,8 @@ pub fn validateContent(
                     while (descendant_idx != stop) : (descendant_idx += 1) {
                         const descendant = nodes[descendant_idx];
                         if (descendant.kind == .ruby) try errors.append(gpa, .{
-                            .tag = .{ .invalid_nesting = .{ .span = parent_span } },
-                            .main_location = descendant.span(src),
+                            .tag = .{ .invalid_nesting = .{ .loc = parent_loc } },
+                            .main_location = descendant.loc(src),
                             .node_idx = descendant_idx,
                         });
                     }
@@ -125,11 +125,11 @@ pub fn validateContent(
                     //missing rt
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "the first <rp> of a group must be followed by <rt><rp>",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
@@ -139,11 +139,11 @@ pub fn validateContent(
                     // missing rp
                     .tag = .{
                         .wrong_sibling_sequence = .{
-                            .span = nodes[rt_idx].span(src),
+                            .loc = nodes[rt_idx].loc(src),
                             .reason = "<rt> must be followed by one <rp>",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
@@ -160,30 +160,30 @@ pub fn validateContent(
     switch (state) {
         else => {},
         .rp_start => |rp_idx| {
-            const child_span = nodes[rp_idx].span(src);
+            const child_loc = nodes[rp_idx].loc(src);
             try errors.append(gpa, .{
                 // missing rt
                 .tag = .{
                     .wrong_sibling_sequence = .{
-                        .span = child_span,
+                        .loc = child_loc,
                         .reason = "the first <rp> of a group must be followed by <rt><rp>",
                     },
                 },
-                .main_location = child_span,
+                .main_location = child_loc,
                 .node_idx = child_idx,
             });
         },
         .rp_rt => |rt_idx| {
-            const child_span = nodes[rt_idx].span(src);
+            const child_loc = nodes[rt_idx].loc(src);
             try errors.append(gpa, .{
                 // missing rt
                 .tag = .{
                     .wrong_sibling_sequence = .{
-                        .span = child_span,
+                        .loc = child_loc,
                         .reason = "<rt> must be followed by one <rp>",
                     },
                 },
-                .main_location = child_span,
+                .main_location = child_loc,
                 .node_idx = child_idx,
             });
         },

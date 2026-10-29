@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -371,9 +371,9 @@ fn validateAttrs(
     // - the type attribute is in the Submit Button state.
 
     var type_submit: ?bool = null;
-    var command: ?Span = null;
-    var commandfor: ?Span = null;
-    var form_attrs: [5]Span = undefined;
+    var command: ?Loc = null;
+    var commandfor: ?Loc = null;
+    var form_attrs: [5]Loc = undefined;
     var form_idx: usize = 0;
     while (try vait.next(gpa, src)) |attr| {
         const name = attr.name.slice(src);
@@ -400,7 +400,7 @@ fn validateAttrs(
                         });
                         continue;
                     };
-                    const value_slice = value.span.slice(src);
+                    const value_slice = value.loc.slice(src);
                     const model = comptime attributes.get("type").?;
                     const list_idx = model.rule.list.set.getIndex(value_slice) orelse {
                         try errors.append(gpa, .{
@@ -443,7 +443,7 @@ fn validateAttrs(
         });
 
         if (!is_submit) {
-            for (form_attrs[0..form_idx]) |span| {
+            for (form_attrs[0..form_idx]) |loc| {
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_attr_combination = blk: {
@@ -459,7 +459,7 @@ fn validateAttrs(
                             // "requires 'type=submit' or for the button element to not be the child of a 'select' and to not have 'command'/'commandfor' defined",
                         },
                     },
-                    .main_location = span,
+                    .main_location = loc,
                     .node_idx = node_idx,
                 });
             }
@@ -472,8 +472,8 @@ fn validateAttrs(
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -482,7 +482,7 @@ pub fn validateContent(
     _ = seen_ids;
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.startTagIterator(src, .html).name_span;
+    const parent_loc = parent.startTagIterator(src, .html).name_loc;
     const first_child_idx = parent.first_child_idx;
     if (first_child_idx == 0) return;
     const stop_idx = parent.stop(nodes);
@@ -496,7 +496,7 @@ pub fn validateContent(
             granpa.first_child_idx == parent_idx;
     };
 
-    var seen_selectedcontent: ?Span = null;
+    var seen_selectedcontent: ?Loc = null;
     var next_idx = first_child_idx;
     while (next_idx < stop_idx) {
         const node_idx = next_idx;
@@ -512,18 +512,18 @@ pub fn validateContent(
             if (!node.kind.isElement()) continue;
         }
 
-        const node_span = node.startTagIterator(src, .html).name_span;
+        const node_loc = node.startTagIterator(src, .html).name_loc;
 
         if (node.kind == .selectedcontent) {
             if (!can_have_selectedcontent) {
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only allowed when button is the first child of a <select>",
                         },
                     },
-                    .main_location = node_span,
+                    .main_location = node_loc,
                     .node_idx = node_idx,
                 });
                 continue;
@@ -533,17 +533,17 @@ pub fn validateContent(
                 try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = sc,
+                            .loc = sc,
                             .reason = "button can only have one <selectedcontent> descendant",
                         },
                     },
-                    .main_location = node_span,
+                    .main_location = node_loc,
                     .node_idx = node_idx,
                 });
                 continue;
             }
 
-            seen_selectedcontent = node_span;
+            seen_selectedcontent = node_loc;
             // continue validation of extra
 
         }
@@ -552,18 +552,18 @@ pub fn validateContent(
             nodes,
             src,
             parent,
-            parent_span,
+            parent_loc,
             &Element.all.get(node.kind),
             node.model,
         )) |rejection| {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_nesting = .{
-                        .span = rejection.span,
+                        .loc = rejection.loc,
                         .reason = rejection.reason,
                     },
                 },
-                .main_location = node_span,
+                .main_location = node_loc,
                 .node_idx = node_idx,
             });
             continue;
@@ -647,14 +647,14 @@ fn validateName(
         .main_location = attr.name,
         .node_idx = node_idx,
     });
-    const value_slice = value.span.slice(src);
+    const value_slice = value.loc.slice(src);
     if (value_slice.len != 0 and !std.mem.eql(u8, value_slice, "isindex")) return;
 
     return errors.append(gpa, .{
         .tag = .{
             .invalid_attr_value = .{},
         },
-        .main_location = value.span,
+        .main_location = value.loc,
         .node_idx = node_idx,
     });
 }

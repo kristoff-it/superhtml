@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
 const Model = Element.Model;
@@ -55,8 +55,8 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -107,11 +107,11 @@ pub fn validateContent(
         if (text_only) try errors.append(gpa, .{
             .tag = .{
                 .invalid_nesting = .{
-                    .span = vait.name,
+                    .loc = vait.name,
                     .reason = "only text allowed when [datetime] is defined",
                 },
             },
-            .main_location = child.span(src),
+            .main_location = child.loc(src),
             .node_idx = child_idx,
         }) else if (time.modelRejects(
             nodes,
@@ -124,11 +124,11 @@ pub fn validateContent(
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_nesting = .{
-                        .span = rejection.span,
+                        .loc = rejection.loc,
                         .reason = rejection.reason,
                     },
                 },
-                .main_location = child.span(src),
+                .main_location = child.loc(src),
                 .node_idx = child_idx,
             });
         }

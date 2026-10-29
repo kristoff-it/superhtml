@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -205,7 +204,7 @@ fn validate(
         mime,
     } = if (attrs[attributes.comptimeIndex("type")]) |attr| blk: {
         const value = attr.value orelse break :blk .js;
-        const value_slice = value.span.slice(src);
+        const value_slice = value.loc.slice(src);
         if (std.ascii.eqlIgnoreCase(value_slice, "module")) {
             break :blk .module;
         }

@@ -4,7 +4,7 @@ const Allocator = std.mem.Allocator;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Language = root.Language;
 const Element = @import("../Element.zig");
 const Categories = Element.Categories;
@@ -167,12 +167,12 @@ fn validateAttrs(
         });
     }
 
-    var seen_attrs: [attributes.list.len]?Span = undefined;
+    var seen_attrs: [attributes.list.len]?Loc = undefined;
     @memset(&seen_attrs, null);
 
     // If the itemprop attribute is specified on an area element, then the href
     // attribute must also be specified.
-    var has_itemprop: ?Span = null;
+    var has_itemprop: ?Loc = null;
     var shape: ?usize = null;
     var coords_attr: ?Tokenizer.Attr = null;
     while (try vait.next(gpa, src)) |attr| {
@@ -196,8 +196,8 @@ fn validateAttrs(
                             gpa,
                             errors,
                             node_idx,
-                            value.span.start,
-                            value.span.slice(src),
+                            value.loc.start,
+                            value.loc.slice(src),
                         )) {
                             .list => |list_idx| shape = list_idx,
                             .none => {},
@@ -266,7 +266,7 @@ fn validateAttrs(
             });
             break :blk;
         };
-        const value_slice = value.span.slice(src);
+        const value_slice = value.loc.slice(src);
 
         var it = std.mem.splitScalar(u8, value_slice, ',');
         switch (sh_idx) {
@@ -289,10 +289,10 @@ fn validateAttrs(
                                 },
                                 .main_location = .{
                                     .start = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr),
+                                        value.loc.start + (digits.ptr - value_slice.ptr),
                                     ),
                                     .end = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr) + digits.len,
+                                        value.loc.start + (digits.ptr - value_slice.ptr) + digits.len,
                                     ),
                                 },
                                 .node_idx = node_idx,
@@ -310,7 +310,7 @@ fn validateAttrs(
                                 .reason = "should contain at least 6 numbers when [shape] is 'poly'",
                             },
                         },
-                        .main_location = value.span,
+                        .main_location = value.loc,
                         .node_idx = node_idx,
                     });
                 } else if (idx % 2 != 0) {
@@ -320,7 +320,7 @@ fn validateAttrs(
                                 .reason = "should contain an even number of entries when [shape] is 'poly'",
                             },
                         },
-                        .main_location = value.span,
+                        .main_location = value.loc,
                         .node_idx = node_idx,
                     });
                 }
@@ -346,9 +346,9 @@ fn validateAttrs(
                                 },
                                 .main_location = .{
                                     .start = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr),
+                                        value.loc.start + (digits.ptr - value_slice.ptr),
                                     ),
-                                    .end = value.span.end,
+                                    .end = value.loc.end,
                                 },
                                 .node_idx = node_idx,
                             });
@@ -364,10 +364,10 @@ fn validateAttrs(
                                 },
                                 .main_location = .{
                                     .start = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr),
+                                        value.loc.start + (digits.ptr - value_slice.ptr),
                                     ),
                                     .end = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr) + digits.len,
+                                        value.loc.start + (digits.ptr - value_slice.ptr) + digits.len,
                                     ),
                                 },
                                 .node_idx = node_idx,
@@ -394,10 +394,10 @@ fn validateAttrs(
                                         },
                                         .main_location = .{
                                             .start = @intCast(
-                                                value.span.start + (digits.ptr - value_slice.ptr),
+                                                value.loc.start + (digits.ptr - value_slice.ptr),
                                             ),
                                             .end = @intCast(
-                                                value.span.start + (digits.ptr - value_slice.ptr) + digits.len,
+                                                value.loc.start + (digits.ptr - value_slice.ptr) + digits.len,
                                             ),
                                         },
                                         .node_idx = node_idx,
@@ -414,10 +414,10 @@ fn validateAttrs(
                                         },
                                         .main_location = .{
                                             .start = @intCast(
-                                                value.span.start + (digits.ptr - value_slice.ptr),
+                                                value.loc.start + (digits.ptr - value_slice.ptr),
                                             ),
                                             .end = @intCast(
-                                                value.span.start + (digits.ptr - value_slice.ptr) + digits.len,
+                                                value.loc.start + (digits.ptr - value_slice.ptr) + digits.len,
                                             ),
                                         },
                                         .node_idx = node_idx,
@@ -435,7 +435,7 @@ fn validateAttrs(
                                 .reason = "should contain 4 numbers when [shape] is 'rect'",
                             },
                         },
-                        .main_location = value.span,
+                        .main_location = value.loc,
                         .node_idx = node_idx,
                     });
                 }
@@ -457,9 +457,9 @@ fn validateAttrs(
                                 },
                                 .main_location = .{
                                     .start = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr),
+                                        value.loc.start + (digits.ptr - value_slice.ptr),
                                     ),
-                                    .end = value.span.end,
+                                    .end = value.loc.end,
                                 },
                                 .node_idx = node_idx,
                             });
@@ -474,10 +474,10 @@ fn validateAttrs(
                                 },
                                 .main_location = .{
                                     .start = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr),
+                                        value.loc.start + (digits.ptr - value_slice.ptr),
                                     ),
                                     .end = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr) + digits.len,
+                                        value.loc.start + (digits.ptr - value_slice.ptr) + digits.len,
                                     ),
                                 },
                                 .node_idx = node_idx,
@@ -494,10 +494,10 @@ fn validateAttrs(
                                 },
                                 .main_location = .{
                                     .start = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr),
+                                        value.loc.start + (digits.ptr - value_slice.ptr),
                                     ),
                                     .end = @intCast(
-                                        value.span.start + (digits.ptr - value_slice.ptr) + digits.len,
+                                        value.loc.start + (digits.ptr - value_slice.ptr) + digits.len,
                                     ),
                                 },
                                 .node_idx = node_idx,
@@ -513,7 +513,7 @@ fn validateAttrs(
                                 .reason = "should contain 3 numbers when [shape] is 'circle'",
                             },
                         },
-                        .main_location = value.span,
+                        .main_location = value.loc,
                         .node_idx = node_idx,
                     });
                 }
@@ -523,22 +523,22 @@ fn validateAttrs(
 
     const has_href = seen_attrs[attributes.comptimeIndex("href")] != null;
     if (!has_href) {
-        for (seen_attrs[attributes.comptimeIndex("href") + 1 ..]) |maybe_span| if (maybe_span) |span| {
+        for (seen_attrs[attributes.comptimeIndex("href") + 1 ..]) |maybe_loc| if (maybe_loc) |loc| {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_combination = "missing [href]",
                 },
-                .main_location = span,
+                .main_location = loc,
                 .node_idx = node_idx,
             });
         };
 
-        if (has_itemprop) |span| {
+        if (has_itemprop) |loc| {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_combination = "missing [href]",
                 },
-                .main_location = span,
+                .main_location = loc,
                 .node_idx = node_idx,
             });
         }

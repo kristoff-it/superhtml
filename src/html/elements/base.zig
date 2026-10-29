@@ -124,7 +124,7 @@ fn validate(
             try errors.append(gpa, .{
                 .tag = .{
                     .duplicate_child = .{
-                        .span = node.span(src),
+                        .loc = node.loc(src),
                         .reason = "there must be no more than one <base> per document",
                     },
                 },
@@ -144,7 +144,7 @@ fn validate(
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = node.span(src),
+                            .loc = node.loc(src),
                             .reason = "if <base> has [target], it must come before any elements that represent hyperlinks",
                         },
                     },
@@ -166,7 +166,7 @@ fn validate(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = node.span(src),
+                                .loc = node.loc(src),
                                 .reason = "if <base> has [href], it must come before any elements that have attributes defined as taking URLs",
                             },
                         },
@@ -195,7 +195,7 @@ fn validateHref(
         .node_idx = node_idx,
     });
 
-    const value_slice = std.mem.trim(u8, value.span.slice(src), &std.ascii.whitespace);
+    const value_slice = std.mem.trim(u8, value.loc.slice(src), &std.ascii.whitespace);
 
     const url = Attribute.parseUri(value_slice) catch return errors.append(gpa, .{
         .tag = .{ .invalid_attr_value = .{ .reason = "invalid URL" } },

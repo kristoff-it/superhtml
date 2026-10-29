@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
 
@@ -35,8 +35,8 @@ pub const table: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -51,7 +51,7 @@ pub fn validateContent(
     // script-supporting elements.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
     var state: enum {
         caption,
@@ -103,26 +103,26 @@ pub fn validateContent(
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <caption>, <colgroup>, <thead>, <tbody>, <tr>, <tfoot>, <script>, and <template> are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
             .colgroup => switch (child.kind) {
                 .caption => if (has_caption == 0) try errors.append(gpa, .{
                     .tag = .{ .wrong_position = .first },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_caption].span(src),
+                            .loc = nodes[has_caption].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .colgroup => {},
@@ -145,26 +145,26 @@ pub fn validateContent(
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <colgroup>, <thead>, <tbody>, <tr>, <tfoot>, <script>, and <template> are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
             .thead => switch (child.kind) {
                 .caption => if (has_caption == 0) try errors.append(gpa, .{
                     .tag = .{ .wrong_position = .first },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_caption].span(src),
+                            .loc = nodes[has_caption].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .colgroup => try errors.append(gpa, .{
@@ -173,7 +173,7 @@ pub fn validateContent(
                             .reason = "must be above <thead>",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .thead => {
@@ -195,26 +195,26 @@ pub fn validateContent(
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <thead>, <tbody>, <tr>, <tfoot>, <script>, and <template> are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
             .tbody_tr => switch (child.kind) {
                 .caption => if (has_caption == 0) try errors.append(gpa, .{
                     .tag = .{ .wrong_position = .first },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_caption].span(src),
+                            .loc = nodes[has_caption].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .colgroup => try errors.append(gpa, .{
@@ -223,7 +223,7 @@ pub fn validateContent(
                             .reason = "must be above <thead> (and below <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .thead => {
@@ -231,10 +231,10 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .duplicate_child = .{
-                                .span = nodes[has_thead].span(src),
+                                .loc = nodes[has_thead].loc(src),
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                 },
@@ -253,26 +253,26 @@ pub fn validateContent(
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <tbody>, <tr>, <tfoot>, <script>, and <template> are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
             .tbody => switch (child.kind) {
                 .caption => if (has_caption == 0) try errors.append(gpa, .{
                     .tag = .{ .wrong_position = .first },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_caption].span(src),
+                            .loc = nodes[has_caption].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .colgroup => try errors.append(gpa, .{
@@ -281,7 +281,7 @@ pub fn validateContent(
                             .reason = "must be above <tbody> (and <thead>, and below <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .thead => if (has_thead == 0) try errors.append(gpa, .{
@@ -290,26 +290,26 @@ pub fn validateContent(
                             .reason = "must be above <tbody> (and below <colgroup> and <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_thead].span(src),
+                            .loc = nodes[has_thead].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .tbody => {},
                 .tr => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "cannot mix <tbody> and <tr>",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .tfoot => {
@@ -319,26 +319,26 @@ pub fn validateContent(
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only  <tbody>, <tfoot>, <script>, and <template> are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
             .tr => switch (child.kind) {
                 .caption => if (has_caption == 0) try errors.append(gpa, .{
                     .tag = .{ .wrong_position = .first },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_caption].span(src),
+                            .loc = nodes[has_caption].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .colgroup => try errors.append(gpa, .{
@@ -347,7 +347,7 @@ pub fn validateContent(
                             .reason = "must be above <tr> (and <thead>, and below <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .thead => if (has_thead == 0) try errors.append(gpa, .{
@@ -356,25 +356,25 @@ pub fn validateContent(
                             .reason = "must be above <tr> (and below <colgroup> and <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_thead].span(src),
+                            .loc = nodes[has_thead].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .tbody => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "cannot mix <tbody> and <tr>",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .tr => {},
@@ -385,26 +385,26 @@ pub fn validateContent(
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <tr>, <tfoot>, <script>, and <template> are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
             .tfoot => switch (child.kind) {
                 .caption => if (has_caption == 0) try errors.append(gpa, .{
                     .tag = .{ .wrong_position = .first },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_caption].span(src),
+                            .loc = nodes[has_caption].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .colgroup => try errors.append(gpa, .{
@@ -413,7 +413,7 @@ pub fn validateContent(
                             .reason = "must be above <tfoot> (and <tbody>, <tr>, and <thead>, and below <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .thead => if (has_thead == 0) try errors.append(gpa, .{
@@ -422,15 +422,15 @@ pub fn validateContent(
                             .reason = "must be above <tfoot> (and <tbody>, <tr>, and below <colgroup> and <caption> if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_thead].span(src),
+                            .loc = nodes[has_thead].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .tbody, .tr => try errors.append(gpa, .{
@@ -439,7 +439,7 @@ pub fn validateContent(
                             .reason = "must be above <tfoot> (and below <thead>, <colgroup>, and <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .tfoot => {
@@ -449,26 +449,26 @@ pub fn validateContent(
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <tfoot>, <script>, and <template> are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
             .done => switch (child.kind) {
                 .caption => if (has_caption == 0) try errors.append(gpa, .{
                     .tag = .{ .wrong_position = .first },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_caption].span(src),
+                            .loc = nodes[has_caption].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .colgroup => try errors.append(gpa, .{
@@ -477,7 +477,7 @@ pub fn validateContent(
                             .reason = "must be above <tfoot> (and <tbody>, <tr>, <thead>, and below <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .thead => if (has_thead == 0) try errors.append(gpa, .{
@@ -486,15 +486,15 @@ pub fn validateContent(
                             .reason = "must be above <tfoot> (and <tbody>, <tr>, and below <colgroup> and <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = nodes[has_thead].span(src),
+                            .loc = nodes[has_thead].loc(src),
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .tbody, .tr => try errors.append(gpa, .{
@@ -503,7 +503,7 @@ pub fn validateContent(
                             .reason = "must be above <tfoot> (and below <thead>, <colgroup>, and <caption>, if present)",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .tfoot => {
@@ -511,21 +511,21 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .duplicate_child = .{
-                                .span = nodes[has_tfoot].span(src),
+                                .loc = nodes[has_tfoot].loc(src),
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                 },
                 else => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only <script> and <template> are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },

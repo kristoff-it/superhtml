@@ -8,7 +8,7 @@ const builtin = @import("builtin");
 const scripty = @import("scripty");
 const html = @import("html.zig");
 const HtmlNode = html.Ast.Node;
-const Span = @import("root.zig").Span;
+const Loc = @import("root.zig").Loc;
 
 const log = std.log.scoped(.ast);
 
@@ -47,7 +47,7 @@ const Error = struct {
         no_ifs_after_loop,
         text_and_html_are_mutually_exclusive,
         text_and_html_require_an_empty_element,
-        duplicate_block: Span,
+        duplicate_block: Loc,
         scripty: scripty.Parser.Node.Tag,
 
         pub fn message(k: @This()) []const u8 {
@@ -62,7 +62,7 @@ const Error = struct {
         }
     },
 
-    main_location: Span,
+    main_location: Loc,
 };
 
 pub const SpecialAttr = enum {
@@ -129,7 +129,7 @@ pub const Node = struct {
     }
 
     pub const Block = struct {
-        parent_tag_name: Span,
+        parent_tag_name: Loc,
         id_value: html.Tokenizer.Attr.Value,
     };
 
@@ -142,7 +142,7 @@ pub const Node = struct {
         const it = par.startTagIterator(src, html_ast.language);
 
         return .{
-            .parent_tag_name = it.name_span,
+            .parent_tag_name = it.name_loc,
             .id_value = id_value,
         };
     }
@@ -195,12 +195,12 @@ pub const Node = struct {
         try w.print("({t} {}", .{ node.kind, node.depth });
 
         if (node.hasId()) |id| {
-            try w.print(" #{s}", .{id.value.?.span.slice(src)});
+            try w.print(" #{s}", .{id.value.?.loc.slice(src)});
         } else if (node.kind == .extend) {
-            try w.print(" {s}", .{node.templateAttr().span().slice(src)});
+            try w.print(" {s}", .{node.templateAttr().loc().slice(src)});
         } else if (node.kind == .super) {
             try w.print(" ->#{s}", .{
-                node.superBlock(src, html_ast).id_value.span.slice(src),
+                node.superBlock(src, html_ast).id_value.loc.slice(src),
             });
         }
 
@@ -324,13 +324,13 @@ pub fn init(
                 const id_value = new_node.blockId();
                 const gop = try p.blocks.getOrPut(
                     gpa,
-                    id_value.span.slice(src),
+                    id_value.loc.slice(src),
                 );
                 if (gop.found_existing) {
-                    const other = p.at(gop.value_ptr.*).?.blockId().span;
+                    const other = p.at(gop.value_ptr.*).?.blockId().loc;
                     try p.errors.append(gpa, .{
                         .kind = .{ .duplicate_block = other },
-                        .main_location = id_value.span,
+                        .main_location = id_value.loc,
                     });
                     // self.reportError(
                     //     id_value.span,
@@ -460,7 +460,7 @@ const Parser = struct {
         if (block_context) tmp_result.kind = .block;
 
         var start_it = elem.startTagIterator(p.src, p.html.language);
-        const tag_name = start_it.name_span;
+        const tag_name = start_it.name_loc;
 
         // is it a special tag
         {
@@ -569,7 +569,7 @@ const Parser = struct {
                 while (start_it.next(p.src)) |a| {
                     try p.errors.append(gpa, .{
                         .kind = .super_wants_no_attributes,
-                        .main_location = a.span(),
+                        .main_location = a.loc(),
                     });
                 }
 
@@ -588,12 +588,12 @@ const Parser = struct {
                         const value = attr.value orelse return null;
                         const gop = try p.interface.getOrPut(
                             gpa,
-                            value.span.slice(p.src),
+                            value.loc.slice(p.src),
                         );
                         if (gop.found_existing) {
                             try p.errors.append(gpa, .{
                                 .kind = .template_interface_id_collision,
-                                .main_location = value.span,
+                                .main_location = value.loc,
                             });
                         }
 
@@ -607,7 +607,7 @@ const Parser = struct {
                 } else {
                     try p.errors.append(gpa, .{
                         .kind = .super_parent_element_missing_id,
-                        .main_location = parent_start_it.name_span,
+                        .main_location = parent_start_it.name_loc,
                     });
                     return null;
                     // p.reportError(
@@ -642,7 +642,7 @@ const Parser = struct {
         var has_attr_id = false;
         var last_attr_end = tag_name.end;
 
-        while (start_it.next(p.src)) |attr| : (last_attr_end = attr.span().end) {
+        while (start_it.next(p.src)) |attr| : (last_attr_end = attr.loc().end) {
             const name = attr.name;
             const name_string = name.slice(p.src);
 
@@ -657,18 +657,18 @@ const Parser = struct {
                 if (attr.value) |value| {
                     // TODO: implement unescape
                     // const code = try value.unescape(gpa, p.src);
-                    const code = value.span.slice(p.src);
+                    const code = value.loc.slice(p.src);
 
                     if (std.mem.startsWith(u8, code, "$")) {
                         has_attr_scripted = true;
                         if (is_id and tmp_result.kind == .block) {
                             try p.errors.append(gpa, .{
                                 .kind = .block_with_scripted_id,
-                                .main_location = value.span,
+                                .main_location = value.loc,
                             });
                         }
 
-                        try p.validateScripty(gpa, value.span);
+                        try p.validateScripty(gpa, value.loc);
                     } else {
                         if (tmp_result.kind == .ctx) {
                             try p.errors.append(gpa, .{
@@ -723,7 +723,7 @@ const Parser = struct {
             }
 
             if (attr.value) |v| {
-                try p.validateScripty(gpa, v.span);
+                try p.validateScripty(gpa, v.loc);
             } else {
                 try p.errors.append(gpa, .{
                     .kind = .missing_attribute_value,
@@ -835,7 +835,7 @@ const Parser = struct {
                     // $loop.first)
                     if (node.idAttr()) |id| blk: {
                         const value = id.value orelse break :blk;
-                        if (std.mem.startsWith(u8, value.span.slice(p.src), "$")) {
+                        if (std.mem.startsWith(u8, value.loc.slice(p.src), "$")) {
                             break :blk;
                         }
 
@@ -1004,7 +1004,7 @@ const Parser = struct {
         // }
     }
 
-    fn validateScripty(p: *Parser, gpa: Allocator, attr_value: Span) error{OutOfMemory}!void {
+    fn validateScripty(p: *Parser, gpa: Allocator, attr_value: Loc) error{OutOfMemory}!void {
         const code = attr_value.slice(p.src);
         var scripty_parser: scripty.Parser = .{};
 

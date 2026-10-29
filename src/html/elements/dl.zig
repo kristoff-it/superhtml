@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Element = @import("../Element.zig");
 const Model = Element.Model;
 const Ast = @import("../Ast.zig");
@@ -38,8 +38,8 @@ pub const dl: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -50,10 +50,10 @@ pub fn validateContent(
     // Or: One or more div elements, optionally intermixed with script-supporting elements.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
     var state: enum { searching, dt, dd, div } = .searching;
-    var last_dt: Span = undefined;
+    var last_dt: Loc = undefined;
     var last_dt_idx: u32 = undefined;
     var child_idx = parent.first_child_idx;
     while (child_idx != 0) {
@@ -72,11 +72,11 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                                 .reason = "first non-script child must be <dt> or <div>",
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                     state = .dd;
@@ -86,11 +86,11 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                                 .reason = "first non-script child must be <dt> or <div>",
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                 },
@@ -98,7 +98,7 @@ pub fn validateContent(
             .dt => switch (child.kind) {
                 .dt => {
                     state = .dt;
-                    last_dt = child.span(src);
+                    last_dt = child.loc(src);
                     last_dt_idx = child_idx;
                 },
                 .dd => state = .dd,
@@ -106,11 +106,11 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                                 .reason = "(in <dd>/<dt> mode) only <dt>, <dd>, <script> or <template> children allowed",
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                 },
@@ -122,11 +122,11 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                                 .reason = "(in <dd>/<dt> mode) only <dt>, <dd>, <script> or <template> children allowed",
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                 },
@@ -135,11 +135,11 @@ pub fn validateContent(
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "(in <div> mode) only <div>, <script> or <template> children allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 });
             },
@@ -149,7 +149,7 @@ pub fn validateContent(
     if (state == .dt) try errors.append(gpa, .{
         .tag = .{
             .invalid_nesting = .{
-                .span = parent_span,
+                .loc = parent_loc,
                 .reason = " (in <dd>/<dt> mode) last non-script child must be <dd>",
             },
         },

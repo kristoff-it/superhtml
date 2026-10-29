@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -128,7 +127,7 @@ fn validate(
             return meter.model;
         };
 
-        const digits = value.span.slice(src);
+        const digits = value.loc.slice(src);
         break :blk std.fmt.parseFloat(f64, digits) catch {
             try errors.append(gpa, .{
                 .tag = .{
@@ -153,7 +152,7 @@ fn validate(
             return meter.model;
         };
 
-        const digits = value.span.slice(src);
+        const digits = value.loc.slice(src);
         break :blk std.fmt.parseFloat(f64, digits) catch {
             try errors.append(gpa, .{
                 .tag = .{
@@ -179,7 +178,7 @@ fn validate(
 
     const low: ?f64 = if (attrs[attributes.comptimeIndex("low")]) |attr| blk: {
         const value = attr.value orelse break :blk null;
-        const digits = value.span.slice(src);
+        const digits = value.loc.slice(src);
         break :blk std.fmt.parseFloat(f64, digits) catch {
             try errors.append(gpa, .{
                 .tag = .{
@@ -196,7 +195,7 @@ fn validate(
 
     const high: ?f64 = if (attrs[attributes.comptimeIndex("high")]) |attr| blk: {
         const value = attr.value orelse break :blk null;
-        const digits = value.span.slice(src);
+        const digits = value.loc.slice(src);
         break :blk std.fmt.parseFloat(f64, digits) catch {
             try errors.append(gpa, .{
                 .tag = .{
@@ -267,7 +266,7 @@ fn validate(
             break :blk;
         };
 
-        const digits = value.span.slice(src);
+        const digits = value.loc.slice(src);
         const number = std.fmt.parseFloat(f64, digits) catch {
             try errors.append(gpa, .{
                 .tag = .{
@@ -304,7 +303,7 @@ fn validate(
 
     if (attrs[attributes.comptimeIndex("optimum")]) |attr| blk: {
         const value = attr.value orelse break :blk;
-        const digits = value.span.slice(src);
+        const digits = value.loc.slice(src);
         const number = std.fmt.parseFloat(f64, digits) catch {
             try errors.append(gpa, .{
                 .tag = .{

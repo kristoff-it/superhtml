@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -59,16 +59,16 @@ fn validate(
     var map_model = map.model;
     map_model.content = nodes[parent_idx].model.content;
 
-    var name_value: ?Span = null;
-    var id_value: ?Span = null;
+    var name_value: ?Loc = null;
+    var id_value: ?Loc = null;
     while (try vait.next(gpa, src)) |attr| {
         const name = attr.name.slice(src);
         const model = if (attributes.has(name)) blk: {
-            if (attr.value) |v| name_value = v.span;
+            if (attr.value) |v| name_value = v.loc;
             break :blk attributes.list[0].model;
         } else if (Attribute.global.index(name)) |idx| blk: {
             if (idx == Attribute.global.comptimeIndex("id")) {
-                if (attr.value) |v| id_value = v.span;
+                if (attr.value) |v| id_value = v.loc;
             }
             break :blk Attribute.global.list[idx].model;
         } else {
@@ -95,17 +95,17 @@ fn validate(
         return map_model;
     }
 
-    if (id_value) |span| {
-        const name_span = name_value orelse return map_model;
-        const name_slice = name_span.slice(src);
-        if (!std.mem.eql(u8, name_slice, span.slice(src))) {
+    if (id_value) |loc| {
+        const name_loc = name_value orelse return map_model;
+        const name_slice = name_loc.slice(src);
+        if (!std.mem.eql(u8, name_slice, loc.slice(src))) {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_value = .{
                         .reason = "must be equal to the value of [name]",
                     },
                 },
-                .main_location = span,
+                .main_location = loc,
                 .node_idx = node_idx,
             });
         }

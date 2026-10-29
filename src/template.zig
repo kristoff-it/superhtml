@@ -8,7 +8,7 @@ const errors = @import("errors.zig");
 const html = @import("html.zig");
 const Ast = @import("Ast.zig");
 const HtmlSafe = root.HtmlSafe;
-const Span = root.Span;
+const Loc = root.Loc;
 const Node = Ast.Node;
 
 const log = std.log.scoped(.supertemplate);
@@ -49,13 +49,13 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
             return tpl.ast.nodes[idx].superBlock(tpl.src, tpl.html);
         }
 
-        pub fn startTag(tpl: Template, idx: u32) Span {
+        pub fn startTag(tpl: Template, idx: u32) Loc {
             return tpl.ast.nodes[idx].elem(tpl.html).open;
         }
 
-        pub fn getName(tpl: Template, idx: u32) Span {
-            const span = tpl.startTag(idx);
-            return span.getName(tpl.src, tpl.html.language);
+        pub fn getName(tpl: Template, idx: u32) Loc {
+            const loc = tpl.startTag(idx);
+            return loc.getName(tpl.src, tpl.html.language);
         }
 
         pub fn init(
@@ -307,7 +307,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                             scripty_vm,
                                             scripty_ctx,
                                             name,
-                                            expr.span,
+                                            expr.loc,
                                         ),
                                     };
                                 },
@@ -318,7 +318,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                             scripty_vm,
                                             scripty_ctx,
                                             name,
-                                            expr.span,
+                                            expr.loc,
                                         ),
                                     };
                                 },
@@ -328,7 +328,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                         scripty_vm,
                                         scripty_ctx,
                                         name,
-                                        expr.span,
+                                        expr.loc,
                                     );
 
                                     switch (value) {
@@ -352,7 +352,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                         scripty_vm,
                                         scripty_ctx,
                                         name,
-                                        expr.span,
+                                        expr.loc,
                                     );
                                     loop_iterator._superhtml_context = .{
                                         .tpl = tpl,
@@ -507,7 +507,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                     scripty_vm,
                                     scripty_ctx,
                                     name,
-                                    expr.span,
+                                    expr.loc,
                                 );
                                 gop.value_ptr.* = result.value;
                                 continue;
@@ -522,7 +522,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                             scripty_vm,
                                             scripty_ctx,
                                             name,
-                                            expr.span,
+                                            expr.loc,
                                         ),
                                     };
                                 },
@@ -533,7 +533,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                             scripty_vm,
                                             scripty_ctx,
                                             name,
-                                            expr.span,
+                                            expr.loc,
                                         ),
                                     };
                                 },
@@ -543,7 +543,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                         scripty_vm,
                                         scripty_ctx,
                                         name,
-                                        expr.span,
+                                        expr.loc,
                                     );
 
                                     switch (value) {
@@ -567,7 +567,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                         scripty_vm,
                                         scripty_ctx,
                                         name,
-                                        expr.span,
+                                        expr.loc,
                                     );
                                     loop_iterator._superhtml_context = .{
                                         .tpl = tpl,
@@ -692,7 +692,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
 
                         // Print up to the tag name (inclusive)
                         {
-                            const end = it.name_span.end;
+                            const end = it.name_loc.end;
                             const up_to_attr = tpl.src[tpl.print_cursor..end];
                             writer.writeAll(up_to_attr) catch return error.OutIO;
                             tpl.print_cursor = end;
@@ -716,9 +716,9 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                 }) catch return error.OutIO;
                                 tpl.print_cursor = name.end;
                                 const expr = attr.value orelse continue;
-                                tpl.print_cursor = expr.span.end;
+                                tpl.print_cursor = expr.loc.end;
 
-                                const src = expr.span.slice(tpl.src);
+                                const src = expr.loc.slice(tpl.src);
                                 if (!std.mem.startsWith(u8, src, "$")) {
                                     writer.print(
                                         "=\"{s}\"",
@@ -732,7 +732,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                     scripty_vm,
                                     scripty_ctx,
                                     name,
-                                    expr.span,
+                                    expr.loc,
                                 );
 
                                 switch (value) {
@@ -757,7 +757,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                             };
 
                             const expr = attr.value.?;
-                            tpl.print_cursor = expr.span.end;
+                            tpl.print_cursor = expr.loc.end;
 
                             switch (special_attr) {
                                 else => {},
@@ -768,7 +768,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                             scripty_vm,
                                             scripty_ctx,
                                             name,
-                                            expr.span,
+                                            expr.loc,
                                         ),
                                     };
                                 },
@@ -779,7 +779,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                             scripty_vm,
                                             scripty_ctx,
                                             name,
-                                            expr.span,
+                                            expr.loc,
                                         ),
                                     };
                                 },
@@ -789,7 +789,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                         scripty_vm,
                                         scripty_ctx,
                                         name,
-                                        expr.span,
+                                        expr.loc,
                                     );
 
                                     switch (value) {
@@ -813,7 +813,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                                         scripty_vm,
                                         scripty_ctx,
                                         name,
-                                        expr.span,
+                                        expr.loc,
                                     );
                                     loop_iterator._superhtml_context = .{
                                         .tpl = tpl,
@@ -935,19 +935,19 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
             err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: RootRef,
-            script_attr_name: Span,
-            code_span: Span,
+            script_attr_name: Loc,
+            code_loc: Loc,
         ) errors.Fatal!Value {
             const zone = tracy.trace(@src());
             defer zone.end();
-            tracy.messageCopy(code_span.slice(tpl.src));
+            tracy.messageCopy(code_loc.slice(tpl.src));
 
             tpl.setContext(script_ctx);
 
             const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
-                code_span.slice(tpl.src),
+                code_loc.slice(tpl.src),
                 .{},
             ) catch return error.Fatal;
 
@@ -973,8 +973,8 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                         false,
                         "note: value was generated from this sub-expression:",
                         .{
-                            .start = code_span.start + result.loc.start,
-                            .end = code_span.start + result.loc.end,
+                            .start = code_loc.start + result.loc.start,
+                            .end = code_loc.start + result.loc.end,
                         },
                     );
                     try result.value.renderForError(tpl.arena, err_writer);
@@ -989,19 +989,19 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
             err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: RootRef,
-            script_attr_name: Span,
-            code_span: Span,
+            script_attr_name: Loc,
+            code_loc: Loc,
         ) errors.Fatal!Value {
             const zone = tracy.trace(@src());
             defer zone.end();
-            tracy.messageCopy(code_span.slice(tpl.src));
+            tracy.messageCopy(code_loc.slice(tpl.src));
 
             tpl.setContext(script_ctx);
 
             const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
-                code_span.slice(tpl.src),
+                code_loc.slice(tpl.src),
                 .{},
             ) catch return error.Fatal;
 
@@ -1025,8 +1025,8 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                         false,
                         "note: value was generated from this sub-expression:",
                         .{
-                            .start = code_span.start + result.loc.start,
-                            .end = code_span.start + result.loc.end,
+                            .start = code_loc.start + result.loc.start,
+                            .end = code_loc.start + result.loc.end,
                         },
                     );
                     try result.value.renderForError(tpl.arena, err_writer);
@@ -1041,18 +1041,18 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
             err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: RootRef,
-            script_attr_name: Span,
-            code_span: Span,
+            script_attr_name: Loc,
+            code_loc: Loc,
         ) errors.Fatal!ScriptyVM.Result {
             const zone = tracy.trace(@src());
             defer zone.end();
-            tracy.messageCopy(code_span.slice(tpl.src));
+            tracy.messageCopy(code_loc.slice(tpl.src));
 
             tpl.setContext(script_ctx);
             const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
-                code_span.slice(tpl.src),
+                code_loc.slice(tpl.src),
                 .{},
             ) catch return error.Fatal;
 
@@ -1074,8 +1074,8 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                         false,
                         "note: value was generated from this sub-expression:",
                         .{
-                            .start = code_span.start + result.loc.start,
-                            .end = code_span.start + result.loc.end,
+                            .start = code_loc.start + result.loc.start,
+                            .end = code_loc.start + result.loc.end,
                         },
                     );
                     try result.value.renderForError(tpl.arena, err_writer);
@@ -1090,18 +1090,18 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
             err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: RootRef,
-            script_attr_name: Span,
-            code_span: Span,
+            script_attr_name: Loc,
+            code_loc: Loc,
         ) errors.Fatal!Value {
             const zone = tracy.trace(@src());
             defer zone.end();
-            tracy.messageCopy(code_span.slice(tpl.src));
+            tracy.messageCopy(code_loc.slice(tpl.src));
 
             tpl.setContext(script_ctx);
             const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
-                code_span.slice(tpl.src),
+                code_loc.slice(tpl.src),
                 .{},
             ) catch return error.Fatal;
 
@@ -1126,8 +1126,8 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                         false,
                         "note: value was generated from this sub-expression:",
                         .{
-                            .start = code_span.start + result.loc.start,
-                            .end = code_span.start + result.loc.end,
+                            .start = code_loc.start + result.loc.start,
+                            .end = code_loc.start + result.loc.end,
                         },
                     );
 
@@ -1143,19 +1143,19 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
             err_writer: *Writer,
             script_vm: *ScriptyVM,
             script_ctx: RootRef,
-            script_attr_name: Span,
-            code_span: Span,
+            script_attr_name: Loc,
+            code_loc: Loc,
         ) errors.Fatal!*Value.Iterator {
             const zone = tracy.trace(@src());
             defer zone.end();
-            tracy.messageCopy(code_span.slice(tpl.src));
+            tracy.messageCopy(code_loc.slice(tpl.src));
 
             tpl.setContext(script_ctx);
 
             const result = script_vm.run(
                 tpl.arena,
                 script_ctx,
-                code_span.slice(tpl.src),
+                code_loc.slice(tpl.src),
                 .{},
             ) catch return error.Fatal;
 
@@ -1181,8 +1181,8 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
                         false,
                         "note: value was generated from this sub-expression:",
                         .{
-                            .start = code_span.start + result.loc.start,
-                            .end = code_span.start + result.loc.end,
+                            .start = code_loc.start + result.loc.start,
+                            .end = code_loc.start + result.loc.end,
                         },
                     );
                     try result.value.renderForError(tpl.arena, err_writer);
@@ -1194,7 +1194,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
         pub fn reportError(
             self: Template,
             err_writer: *Writer,
-            bad_node: Span,
+            bad_node: Loc,
             error_code: []const u8,
             comptime title: []const u8,
             comptime msg: []const u8,
@@ -1216,7 +1216,7 @@ pub fn SuperTemplate(comptime ScriptyVM: type) type {
             err_writer: *Writer,
             bracket: bool,
             note_line: []const u8,
-            bad_node: Span,
+            bad_node: Loc,
         ) error{ErrIO}!void {
             try errors.diagnostic(
                 err_writer,

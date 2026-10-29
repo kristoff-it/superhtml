@@ -113,8 +113,8 @@ fn eqlIgnoreWhitespace(a: []const u8, b: []const u8) void {
 
             if (std.ascii.toUpper(a_byte) != std.ascii.toUpper(b_byte)) {
                 std.debug.print("---- orig ---\n{s}\n---- round1 ----\n{s}\n", .{ a, b });
-                const a_span: super.Span = .{ .start = i, .end = i + 1 };
-                const b_span: super.Span = .{ .start = j, .end = j + 1 };
+                const a_span: super.Loc = .{ .start = i, .end = i + 1 };
+                const b_span: super.Loc = .{ .start = j, .end = j + 1 };
                 std.debug.panic("mismatch! {c} != {c} \na = {any}\nb={any}\n", .{
                     a_byte,
                     b_byte,
@@ -197,7 +197,7 @@ pub const astgen = struct {
 
     const Element = struct {
         // a span of Ops that describes a list of attrs
-        attrs: super.Span = .{ .start = 0, .end = 0 },
+        attrs: super.Loc = .{ .start = 0, .end = 0 },
         kind: Tag = .none,
         whitespace: bool = false,
 
@@ -251,7 +251,7 @@ pub const astgen = struct {
             var idx = e.attrs.start;
             while (idx < e.attrs.end) : (idx += 1) {
                 var attribute_was_added = true;
-                const op: Op = @enumFromInt(src[idx]);
+                const op: Op = @fromBackingInt(@intCast(src[idx]));
                 switch (op) {
                     .N => {
                         try w.writeAll(" template='x'");
@@ -302,7 +302,7 @@ pub const astgen = struct {
 
                 if (attribute_was_added and idx < e.attrs.end - 1) {
                     idx += 1;
-                    const op_next: Op = @enumFromInt(src[idx]);
+                    const op_next: Op = @fromBackingInt(@intCast(src[idx]));
                     switch (op_next) {
                         .x => try w.writeAll("=''"),
                         .X => try w.writeAll("='x'"),
@@ -345,7 +345,7 @@ pub const astgen = struct {
     ) !void {
         for (src, 0..) |c, i| {
             const idx: u32 = @intCast(i);
-            const op: Op = @enumFromInt(c);
+            const op: Op = @fromBackingInt(@intCast(c));
             switch (op) {
                 // add <extend> attribute
                 .n => {

@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -86,7 +85,7 @@ pub fn validateDatetime(
         .main_location = attr.name,
         .node_idx = node_idx,
     });
-    const date = value.span.slice(src);
+    const date = value.loc.slice(src);
     var pos: u32 = 0;
 
     {
@@ -105,7 +104,7 @@ pub fn validateDatetime(
                     .reason = "missing '-' after year",
                 },
             },
-            .main_location = value.span,
+            .main_location = value.loc,
             .node_idx = node_idx,
         });
 
@@ -116,8 +115,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start,
-                .end = value.span.end - 1,
+                .start = value.loc.start,
+                .end = value.loc.end - 1,
             },
             .node_idx = node_idx,
         });
@@ -129,8 +128,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start,
-                .end = value.span.start + pos,
+                .start = value.loc.start,
+                .end = value.loc.start + pos,
             },
             .node_idx = node_idx,
         });
@@ -144,8 +143,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start + pos,
-                .end = value.span.end,
+                .start = value.loc.start + pos,
+                .end = value.loc.end,
             },
             .node_idx = node_idx,
         });
@@ -157,8 +156,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start,
-                .end = value.span.start + pos,
+                .start = value.loc.start,
+                .end = value.loc.start + pos,
             },
             .node_idx = node_idx,
         });
@@ -170,8 +169,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start + pos,
-                .end = value.span.start + pos + 2,
+                .start = value.loc.start + pos,
+                .end = value.loc.start + pos + 2,
             },
             .node_idx = node_idx,
         });
@@ -187,7 +186,7 @@ pub fn validateDatetime(
                     .reason = "missing '-' after month",
                 },
             },
-            .main_location = value.span,
+            .main_location = value.loc,
             .node_idx = node_idx,
         });
 
@@ -200,8 +199,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start + pos,
-                .end = value.span.end,
+                .start = value.loc.start + pos,
+                .end = value.loc.end,
             },
             .node_idx = node_idx,
         });
@@ -213,8 +212,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start,
-                .end = value.span.start + pos,
+                .start = value.loc.start,
+                .end = value.loc.start + pos,
             },
             .node_idx = node_idx,
         });
@@ -226,8 +225,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start + pos,
-                .end = value.span.start + pos + 2,
+                .start = value.loc.start + pos,
+                .end = value.loc.start + pos + 2,
             },
             .node_idx = node_idx,
         });
@@ -245,8 +244,8 @@ pub fn validateDatetime(
             },
         },
         .main_location = .{
-            .start = value.span.start + pos,
-            .end = value.span.start + pos + 1,
+            .start = value.loc.start + pos,
+            .end = value.loc.start + pos + 1,
         },
         .node_idx = node_idx,
     });
@@ -275,8 +274,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start + pos,
-                .end = value.span.end,
+                .start = value.loc.start + pos,
+                .end = value.loc.end,
             },
             .node_idx = node_idx,
         });
@@ -292,8 +291,8 @@ pub fn validateDatetime(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + pos,
-                    .end = value.span.start + pos + 2,
+                    .start = value.loc.start + pos,
+                    .end = value.loc.start + pos + 2,
                 },
                 .node_idx = node_idx,
             });
@@ -312,8 +311,8 @@ pub fn validateDatetime(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + pos,
-                    .end = value.span.start + pos + 2,
+                    .start = value.loc.start + pos,
+                    .end = value.loc.start + pos + 2,
                 },
                 .node_idx = node_idx,
             });
@@ -332,8 +331,8 @@ pub fn validateDatetime(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + pos,
-                    .end = value.span.start + pos + 2,
+                    .start = value.loc.start + pos,
+                    .end = value.loc.start + pos + 2,
                 },
                 .node_idx = node_idx,
             });
@@ -357,8 +356,8 @@ pub fn validateDatetime(
                             },
                         },
                         .main_location = .{
-                            .start = value.span.start + pos,
-                            .end = value.span.start + pos + 1,
+                            .start = value.loc.start + pos,
+                            .end = value.loc.start + pos + 1,
                         },
                         .node_idx = node_idx,
                     }),
@@ -375,8 +374,8 @@ pub fn validateDatetime(
                 },
             },
             .main_location = .{
-                .start = value.span.start + pos,
-                .end = value.span.start + pos + 1,
+                .start = value.loc.start + pos,
+                .end = value.loc.start + pos + 1,
             },
             .node_idx = node_idx,
         }),
@@ -388,8 +387,8 @@ pub fn validateDatetime(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + pos + 1,
-                    .end = value.span.end,
+                    .start = value.loc.start + pos + 1,
+                    .end = value.loc.end,
                 },
                 .node_idx = node_idx,
             });
@@ -405,8 +404,8 @@ pub fn validateDatetime(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + pos,
-                    .end = value.span.end,
+                    .start = value.loc.start + pos,
+                    .end = value.loc.end,
                 },
                 .node_idx = node_idx,
             });
@@ -422,8 +421,8 @@ pub fn validateDatetime(
                         },
                     },
                     .main_location = .{
-                        .start = value.span.start + pos,
-                        .end = value.span.start + pos + 2,
+                        .start = value.loc.start + pos,
+                        .end = value.loc.start + pos + 2,
                     },
                     .node_idx = node_idx,
                 });
@@ -441,8 +440,8 @@ pub fn validateDatetime(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + pos,
-                    .end = value.span.end,
+                    .start = value.loc.start + pos,
+                    .end = value.loc.end,
                 },
                 .node_idx = node_idx,
             });
@@ -458,8 +457,8 @@ pub fn validateDatetime(
                         },
                     },
                     .main_location = .{
-                        .start = value.span.start + pos,
-                        .end = value.span.start + pos + 2,
+                        .start = value.loc.start + pos,
+                        .end = value.loc.start + pos + 2,
                     },
                     .node_idx = node_idx,
                 });
@@ -474,8 +473,8 @@ pub fn validateDatetime(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + pos,
-                    .end = value.span.end,
+                    .start = value.loc.start + pos,
+                    .end = value.loc.end,
                 },
                 .node_idx = node_idx,
             });

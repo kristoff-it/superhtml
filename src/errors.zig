@@ -2,7 +2,7 @@ const std = @import("std");
 const Writer = std.Io.Writer;
 const builtin = @import("builtin");
 const html = @import("html.zig");
-const Span = @import("root.zig").Span;
+const Loc = @import("root.zig").Loc;
 
 /// Used to catch programming errors where a function fails to report
 /// correctly that an error has occurred.
@@ -31,7 +31,7 @@ pub fn report(
     writer: *Writer,
     template_name: []const u8,
     template_path: []const u8,
-    bad_node: Span,
+    bad_node: Loc,
     src: []const u8,
     error_code: []const u8,
     comptime title: []const u8,
@@ -56,18 +56,18 @@ pub fn diagnostic(
     template_path: []const u8,
     bracket_line: bool,
     note_line: []const u8,
-    span: Span,
+    loc: Loc,
     src: []const u8,
 ) error{ErrIO}!void {
-    const pos = span.range(src);
-    const line_off = span.line(src);
+    const pos = loc.range(src);
+    const line_off = loc.line(src);
 
     // trim spaces
     const line_trim_left = std.mem.trimStart(u8, line_off.line, &std.ascii.whitespace);
     const start_trim_left = line_off.start + line_off.line.len - line_trim_left.len;
 
-    const caret_len = span.end - span.start;
-    const caret_spaces_len = span.start -| start_trim_left;
+    const caret_len = loc.end - loc.start;
+    const caret_spaces_len = loc.start -| start_trim_left;
 
     const line_trim = std.mem.trimEnd(u8, line_trim_left, &std.ascii.whitespace);
 

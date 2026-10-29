@@ -5,7 +5,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../root.zig");
 const Language = root.Language;
-const Span = root.Span;
+const Loc = root.Loc;
 const Ast = @import("Ast.zig");
 const Error = Ast.Error;
 const Kind = Ast.Kind;
@@ -67,8 +67,8 @@ content: union(enum) {
         validate: *const fn (
             gpa: Allocator,
             nodes: []const Ast.Node,
-            seen_attrs: *std.StringHashMapUnmanaged(Span),
-            seen_ids: *std.StringHashMapUnmanaged(Span),
+            seen_attrs: *std.StringHashMapUnmanaged(Loc),
+            seen_ids: *std.StringHashMapUnmanaged(Loc),
             errors: *std.ArrayListUnmanaged(Ast.Error),
             src: []const u8,
             parent_idx: u32,
@@ -216,14 +216,14 @@ pub const Categories = packed struct {
 
 pub const Rejection = struct {
     reason: []const u8,
-    span: Span,
+    loc: Loc,
 };
 pub inline fn modelRejects(
     parent_element: *const Element,
     nodes: []const Ast.Node,
     src: []const u8,
     parent_node: Ast.Node,
-    parent_span: Span,
+    parent_loc: Loc,
     descendant_element: *const Element,
     descendant_rt_model: Model,
 ) ?Rejection {
@@ -254,13 +254,13 @@ pub inline fn modelRejects(
                     if (!@field(descendant_element.model.categories, f_name)) {
                         return .{
                             .reason = @field(descendant_element.reasons.categories, f_name).accept,
-                            .span = parent_span,
+                            .loc = parent_loc,
                         };
                     }
                 }
             }
 
-            return .{ .reason = "", .span = parent_span };
+            return .{ .reason = "", .loc = parent_loc };
         }
 
         // Check if the content model of the parent was changed because it's
@@ -281,7 +281,7 @@ pub inline fn modelRejects(
             if (!element.model.content.overlaps(descendant_rt_model.categories)) {
                 return .{
                     .reason = "",
-                    .span = ancestor.span(src),
+                    .loc = ancestor.loc(src),
                 };
             }
         }
@@ -290,7 +290,7 @@ pub inline fn modelRejects(
         // top level of our tree.
         return .{
             .reason = "",
-            .span = parent_span,
+            .loc = parent_loc,
         };
     }
 
@@ -305,18 +305,18 @@ pub inline fn modelRejects(
                 if (!@field(descendant_element.model.categories, f_name)) {
                     return .{
                         .reason = @field(descendant_element.reasons.categories, f_name).reject,
-                        .span = parent_span,
+                        .loc = parent_loc,
                     };
                 }
             }
         }
 
-        return .{ .reason = "", .span = parent_span };
+        return .{ .reason = "", .loc = parent_loc };
     }
 
     if (parent_element.meta.extra_reject.tabindex and descendant_rt_model.extra.tabindex) {
         return .{
-            .span = parent_span,
+            .loc = parent_loc,
             .reason = "presence of tabindex attribute",
         };
     }
@@ -328,8 +328,8 @@ pub inline fn validateContent(
     parent_element: *const Element,
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -348,7 +348,7 @@ pub inline fn validateContent(
         .model => continue :content .{ .simple = .{} },
         .simple => |simple| {
             const parent = nodes[parent_idx];
-            const parent_span = parent.startTagIterator(src, .html).name_span;
+            const parent_loc = parent.startTagIterator(src, .html).name_loc;
             assert(parent.kind.isElement());
             assert(parent.kind != .___);
             const first_child_idx = nodes[parent_idx].first_child_idx;
@@ -371,7 +371,7 @@ pub inline fn validateContent(
                             try errors.append(gpa, .{
                                 .tag = .{
                                     .invalid_nesting = .{
-                                        .span = parent_span,
+                                        .loc = parent_loc,
                                     },
                                 },
                                 .main_location = child.open,
@@ -394,10 +394,10 @@ pub inline fn validateContent(
                         try errors.append(gpa, .{
                             .tag = .{
                                 .invalid_nesting = .{
-                                    .span = parent_span,
+                                    .loc = parent_loc,
                                 },
                             },
-                            .main_location = child.span(src),
+                            .main_location = child.loc(src),
                             .node_idx = child_idx,
                         });
                         continue :outer;
@@ -408,18 +408,18 @@ pub inline fn validateContent(
                     nodes,
                     src,
                     parent,
-                    parent_span,
+                    parent_loc,
                     &Element.all.get(child.kind),
                     child.model,
                 )) |rejection| {
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = rejection.span,
+                                .loc = rejection.loc,
                                 .reason = rejection.reason,
                             },
                         },
-                        .main_location = child.span(src),
+                        .main_location = child.loc(src),
                         .node_idx = child_idx,
                     });
                 }
@@ -459,10 +459,10 @@ pub inline fn validateContent(
                         try errors.append(gpa, .{
                             .tag = .{
                                 .invalid_nesting = .{
-                                    .span = parent_span,
+                                    .loc = parent_loc,
                                 },
                             },
-                            .main_location = node.span(src),
+                            .main_location = node.loc(src),
                             .node_idx = node_idx,
                         });
                         continue :outer;
@@ -475,11 +475,11 @@ pub inline fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                                 .reason = "presence of [tabindex]",
                             },
                         },
-                        .main_location = node.span(src),
+                        .main_location = node.loc(src),
                         .node_idx = node_idx,
                     });
                     continue :outer;
@@ -494,12 +494,12 @@ pub inline fn validateAttrs(
     gpa: Allocator,
     lang: Language,
     errors: *std.ArrayListUnmanaged(Error),
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     nodes: []const Ast.Node,
     parent_idx: u32,
     src: []const u8,
-    tag: Span,
+    tag: Loc,
     node_idx: u32,
 ) error{OutOfMemory}!Model {
     var vait: Attribute.ValidatingIterator = .init(
@@ -536,8 +536,8 @@ pub inline fn validateAttrs(
             var tabindex = false;
 
             while (try vait.next(gpa, src)) |attr| {
-                const span = attr.name;
-                const name = span.slice(src);
+                const loc = attr.name;
+                const name = loc.slice(src);
 
                 const attr_model = model: {
                     if (attrs_set.index(name)) |idx| {
@@ -550,7 +550,7 @@ pub inline fn validateAttrs(
                         if (Attribute.isData(name)) continue;
                         try errors.append(gpa, .{
                             .tag = .invalid_attr,
-                            .main_location = span,
+                            .main_location = loc,
                             .node_idx = node_idx,
                         });
                     }
@@ -631,7 +631,7 @@ pub inline fn completions(
             while (ancestor_idx != 0) {
                 const ancestor = ast.nodes[ancestor_idx];
                 if (!ancestor.isClosed()) {
-                    const name = ancestor.span(src).slice(src);
+                    const name = ancestor.loc(src).slice(src);
                     log.debug("open ancestor = {any}, open = '{s}'\n", .{ ancestor, name });
                     const slashed = try std.fmt.allocPrint(arena, "/{s}>", .{name});
                     var idx = offset;
@@ -671,14 +671,14 @@ pub fn simpleCompletions(
     var list: std.ArrayListUnmanaged(Ast.Completion) = .empty;
     try list.ensureTotalCapacity(
         arena,
-        all.values.len - @intFromEnum(Kind.___),
+        all.values.len - @backingInt(Kind.___),
     );
 
     for (prefix) |p| list.appendAssumeCapacity(all_completions.get(p));
 
-    const start: usize = @intFromEnum(Kind.___) + 1;
+    const start: usize = @backingInt(Kind.___) + 1;
     outer: for (all.values[start..], start..) |e, idx| {
-        const child_kind: Kind = @enumFromInt(idx);
+        const child_kind: Kind = @fromBackingInt(@intCast(idx));
 
         for (prefix) |p| {
             if (p == child_kind) continue :outer;

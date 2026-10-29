@@ -61,36 +61,36 @@ pub fn loadFile(
                 .source = if (err.tag == .token) "html tokenizer" else "html parser",
                 .relatedInformation = switch (err.tag) {
                     else => null,
-                    .duplicate_id => |span| try arena.dupe(
+                    .duplicate_id => |loc| try arena.dupe(
                         lsp.types.Diagnostic.RelatedInformation,
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
-                                    span,
+                                    loc,
                                     doc.src,
                                 ) },
                                 .message = "original",
                             },
                         },
                     ),
-                    .duplicate_class => |span| try arena.dupe(
+                    .duplicate_class => |loc| try arena.dupe(
                         lsp.types.Diagnostic.RelatedInformation,
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
-                                    span,
+                                    loc,
                                     doc.src,
                                 ) },
                                 .message = "original",
                             },
                         },
                     ),
-                    .duplicate_attribute_name => |span| try arena.dupe(
+                    .duplicate_attribute_name => |loc| try arena.dupe(
                         lsp.types.Diagnostic.RelatedInformation,
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
-                                    span,
+                                    loc,
                                     doc.src,
                                 ) },
                                 .message = "original",
@@ -102,7 +102,7 @@ pub fn loadFile(
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
-                                    dc.span,
+                                    dc.loc,
                                     doc.src,
                                 ) },
                                 .message = "original",
@@ -114,7 +114,7 @@ pub fn loadFile(
                         &.{
                             .{
                                 .location = .{ .uri = uri, .range = getRange(
-                                    in.span,
+                                    in.loc,
                                     doc.src,
                                 ) },
                                 .message = in.reason,

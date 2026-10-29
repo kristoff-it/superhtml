@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -388,14 +388,14 @@ fn validate(
             return link.model;
         };
 
-        const value_slice = value.span.slice(src);
+        const value_slice = value.loc.slice(src);
         var it = std.mem.tokenizeAny(u8, value_slice, &std.ascii.whitespace);
         while (it.next()) |token| {
             const match = try rel_rule.match(
                 gpa,
                 errors,
                 node_idx,
-                @intCast(value.span.start + it.index - token.len),
+                @intCast(value.loc.start + it.index - token.len),
                 token,
             );
 
@@ -439,8 +439,8 @@ fn validate(
                 gpa,
                 errors,
                 node_idx,
-                value.span.start,
-                value.span.slice(src),
+                value.loc.start,
+                value.loc.slice(src),
             );
 
             switch (match) {
@@ -550,7 +550,7 @@ fn validate(
     }
     if (attrs[attributes.comptimeIndex("imagesrcset")]) |attr| {
         if (rel_values[rel_rule.comptimeIndex("preload")] and as_is_image) {
-            var seen_descriptors: std.StringArrayHashMapUnmanaged(Span) = .{};
+            var seen_descriptors: std.StringArrayHashMapUnmanaged(Loc) = .{};
             defer seen_descriptors.deinit(gpa);
 
             var seen_any_w = false;

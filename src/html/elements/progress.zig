@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -100,7 +99,7 @@ fn validate(
             return progress.model;
         };
 
-        const number = std.fmt.parseFloat(f64, value.span.slice(src)) catch {
+        const number = std.fmt.parseFloat(f64, value.loc.slice(src)) catch {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_value = .{
@@ -141,7 +140,7 @@ fn validate(
             return progress.model;
         };
 
-        const number = std.fmt.parseFloat(f64, value.span.slice(src)) catch {
+        const number = std.fmt.parseFloat(f64, value.loc.slice(src)) catch {
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_attr_value = .{

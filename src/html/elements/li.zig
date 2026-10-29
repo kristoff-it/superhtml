@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -68,13 +67,13 @@ fn validate(
                     continue;
                 };
 
-                const value_span = std.mem.trim(
+                const value_loc = std.mem.trim(
                     u8,
-                    value.span.slice(src),
+                    value.loc.slice(src),
                     &std.ascii.whitespace,
                 );
 
-                _ = std.fmt.parseInt(i64, value_span, 10) catch {
+                _ = std.fmt.parseInt(i64, value_loc, 10) catch {
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_attr_value = .{

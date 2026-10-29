@@ -5,7 +5,7 @@ const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const root = @import("../../root.zig");
 const Language = root.Language;
-const Span = root.Span;
+const Loc = root.Loc;
 
 pub const html: Element = .{
     .tag = .html,
@@ -36,19 +36,19 @@ pub const html: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) !void {
     _ = seen_attrs;
     _ = seen_ids;
-    var has_head: ?Span = null;
-    var has_body: ?Span = null;
+    var has_head: ?Loc = null;
+    var has_body: ?Loc = null;
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
     var child_idx = parent.first_child_idx;
     while (child_idx != 0) {
@@ -56,14 +56,14 @@ pub fn validateContent(
         defer child_idx = child.next_idx;
         if (child.kind == .comment) continue;
 
-        const child_span = child.span(src);
+        const child_loc = child.loc(src);
 
         if (child.kind != .head and child.kind != .body) {
             try errors.append(gpa, .{
                 .tag = .{
-                    .invalid_nesting = .{ .span = parent_span },
+                    .invalid_nesting = .{ .loc = parent_loc },
                 },
-                .main_location = child_span,
+                .main_location = child_loc,
                 .node_idx = child_idx,
             });
             continue;
@@ -73,19 +73,19 @@ pub fn validateContent(
             if (has_head) |h| {
                 try errors.append(gpa, .{
                     .tag = .{
-                        .duplicate_child = .{ .span = h },
+                        .duplicate_child = .{ .loc = h },
                     },
-                    .main_location = child_span,
+                    .main_location = child_loc,
                     .node_idx = child_idx,
                 });
             } else {
-                has_head = child_span;
+                has_head = child_loc;
                 if (has_body != null) {
                     try errors.append(gpa, .{
                         .tag = .{
                             .wrong_position = .first,
                         },
-                        .main_location = child_span,
+                        .main_location = child_loc,
                         .node_idx = child_idx,
                     });
                 }
@@ -94,19 +94,19 @@ pub fn validateContent(
             if (has_body) |b| {
                 try errors.append(gpa, .{
                     .tag = .{
-                        .duplicate_child = .{ .span = b },
+                        .duplicate_child = .{ .loc = b },
                     },
-                    .main_location = child_span,
+                    .main_location = child_loc,
                     .node_idx = child_idx,
                 });
             } else {
-                has_body = child_span;
+                has_body = child_loc;
                 if (has_head == null) {
                     try errors.append(gpa, .{
                         .tag = .{
                             .wrong_position = .second,
                         },
-                        .main_location = child_span,
+                        .main_location = child_loc,
                         .node_idx = child_idx,
                     });
                 }
@@ -118,7 +118,7 @@ pub fn validateContent(
         .tag = .{
             .missing_child = .head,
         },
-        .main_location = parent_span,
+        .main_location = parent_loc,
         .node_idx = parent_idx,
     });
 
@@ -126,7 +126,7 @@ pub fn validateContent(
         .tag = .{
             .missing_child = .body,
         },
-        .main_location = parent_span,
+        .main_location = parent_loc,
         .node_idx = parent_idx,
     });
 }

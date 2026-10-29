@@ -14,7 +14,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const root = @import("../root.zig");
 const Language = root.Language;
-const Span = root.Span;
+const Loc = root.Loc;
 
 const log = std.log.scoped(.@"html/tokenizer");
 const form_feed = std.ascii.control_code.ff;
@@ -104,15 +104,15 @@ pub const TokenError = enum {
 };
 
 pub const Attr = struct {
-    name: Span,
+    name: Loc,
     value: ?Value,
 
-    pub fn span(attr: Attr) Span {
+    pub fn loc(attr: Attr) Loc {
         if (attr.value) |v| {
             const quote: u32 = if (v.quote == .none) 0 else 1;
             return .{
                 .start = attr.name.start,
-                .end = v.span.end + quote,
+                .end = v.loc.end + quote,
             };
         }
 
@@ -121,7 +121,7 @@ pub const Attr = struct {
 
     pub const Value = struct {
         quote: enum { none, single, double },
-        span: Span,
+        loc: Loc,
 
         pub const UnescapedSlice = struct {
             must_free: bool = false,
@@ -142,37 +142,37 @@ pub const Attr = struct {
         ) !UnescapedSlice {
             _ = gpa;
             // TODO: ask squeek to please implement this for real
-            return .{ .slice = value.span.slice(src) };
+            return .{ .slice = value.loc.slice(src) };
         }
     };
 };
 
 pub const Token = union(enum) {
     // Only returned when return_attrs == true
-    tag_name: Span,
+    tag_name: Loc,
     attr: Attr,
 
     // Returned during normal operation
     doctype: Doctype,
     tag: Tag,
 
-    comment: Span,
-    text: Span,
+    comment: Loc,
+    text: Loc,
     parse_error: struct {
         tag: TokenError,
-        span: Span,
+        loc: Loc,
     },
 
     pub const Doctype = struct {
-        span: Span,
-        name: ?Span,
-        extra: Span = .{ .start = 0, .end = 0 },
+        loc: Loc,
+        name: ?Loc,
+        extra: Loc = .{ .start = 0, .end = 0 },
         force_quirks: bool,
     };
 
     pub const Tag = struct {
-        span: Span,
-        name: Span,
+        loc: Loc,
+        name: Loc,
         attr_count: u32 = 0,
         kind: enum {
             start,
@@ -266,7 +266,7 @@ const State = union(enum) {
     },
     after_doctype_name: struct {
         lbracket: u32,
-        name: Span,
+        name: Loc,
     },
 
     after_doctype_public_kw: Token.Doctype,
@@ -301,11 +301,11 @@ const State = union(enum) {
     },
     after_attribute_name: struct {
         tag: Token.Tag,
-        attribute_name: Span,
+        attribute_name: Loc,
     },
     before_attribute_value: struct {
         tag: Token.Tag,
-        attribute_name: Span,
+        attribute_name: Loc,
         equal_sign: u32,
     },
     attribute_value: AttributeValueState,
@@ -326,13 +326,13 @@ const State = union(enum) {
     const AttributeValueState = struct {
         tag: Token.Tag,
         quote: enum { double, single },
-        name: Span,
+        name: Loc,
         value_start: u32,
     };
 
     const AttributeValueUnquotedState = struct {
         tag: Token.Tag,
-        name: Span,
+        name: Loc,
         value_start: u32,
     };
 
@@ -385,7 +385,7 @@ fn consume(self: *Tokenizer, src: []const u8) bool {
     return true;
 }
 
-pub fn getName(tokenizer: *Tokenizer, tag_src: []const u8) ?Span {
+pub fn getName(tokenizer: *Tokenizer, tag_src: []const u8) ?Loc {
     std.debug.assert(tokenizer.return_attrs);
     return while (tokenizer.next(tag_src)) |maybe_name| {
         switch (maybe_name) {
@@ -461,7 +461,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -518,7 +518,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -572,7 +572,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -611,7 +611,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -657,7 +657,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -727,7 +727,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_before_tag_name,
-                                .span = .{
+                                .loc = .{
                                     .start = lbracket,
                                     .end = self.idx,
                                 },
@@ -769,7 +769,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .start = self.idx - 1,
                                     .end = 0,
                                 },
-                                .span = .{
+                                .loc = .{
                                     .start = lbracket,
                                     .end = 0,
                                 },
@@ -784,7 +784,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .invalid_first_character_of_tag_name,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx,
                                         .end = self.idx + 1,
                                     },
@@ -812,7 +812,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_before_tag_name,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx,
                                     .end = self.idx + 1,
                                 },
@@ -836,7 +836,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_end_tag_name,
-                                    .span = .{
+                                    .loc = .{
                                         .start = lbracket,
                                         .end = self.idx,
                                     },
@@ -855,7 +855,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                     .start = self.idx - 1,
                                     .end = 0,
                                 },
-                                .span = .{
+                                .loc = .{
                                     .start = lbracket,
                                     .end = 0,
                                 },
@@ -869,7 +869,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .invalid_first_character_of_tag_name,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -890,8 +890,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_tag,
-                                .span = .{
-                                    .start = state.span.start,
+                                .loc = .{
+                                    .start = state.loc.start,
                                     .end = self.idx,
                                 },
                             },
@@ -932,7 +932,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state;
                         tag.name.end = self.idx - 1;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
 
                         assert(tag.name.len() > 0);
                         self.state = .data;
@@ -948,7 +948,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_null_character,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -1014,7 +1014,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '\t', '\n', '\r', form_feed, ' ' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = 0, // not yet known
                             },
@@ -1046,7 +1046,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '/' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = 0, // not yet known
                             },
@@ -1065,7 +1065,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             const err: Token = .{
                                 .parse_error = .{
                                     .tag = .end_tag_with_trailing_solidus,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -1094,7 +1094,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = self.idx,
                             },
@@ -1195,7 +1195,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '\t', '\n', '\r', form_feed, ' ' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = 0, // not yet known
                             },
@@ -1235,7 +1235,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         // we're also going to change state to before_attribute_name
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = 0, // not yet known
                             },
@@ -1254,7 +1254,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             const err: Token = .{
                                 .parse_error = .{
                                     .tag = .end_tag_with_trailing_solidus,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -1283,7 +1283,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = self.idx,
                             },
@@ -1384,7 +1384,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '\t', '\n', '\r', form_feed, ' ' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = 0, // not yet known
                             },
@@ -1423,7 +1423,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         // we're also going to change state to before_attribute_name
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = 0, // not yet known
                             },
@@ -1442,7 +1442,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             const err: Token = .{
                                 .parse_error = .{
                                     .tag = .end_tag_with_trailing_solidus,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -1472,7 +1472,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = self.idx,
                             },
@@ -1564,7 +1564,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_script_html_comment_like_text,
-                                .span = .{
+                                .loc = .{
                                     .start = state.tag_start,
                                     .end = self.idx,
                                 },
@@ -1593,7 +1593,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -1616,7 +1616,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_script_html_comment_like_text,
-                                .span = .{
+                                .loc = .{
                                     .start = state.tag_start,
                                     .end = self.idx,
                                 },
@@ -1646,7 +1646,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -1670,7 +1670,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_script_html_comment_like_text,
-                                .span = .{
+                                .loc = .{
                                     .start = state.tag_start,
                                     .end = self.idx,
                                 },
@@ -1701,7 +1701,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -1782,7 +1782,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '\t', '\n', '\r', form_feed, ' ' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = 0, // not yet known
                             },
@@ -1814,7 +1814,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '/' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = 0, // not yet known
                             },
@@ -1833,7 +1833,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             const err: Token = .{
                                 .parse_error = .{
                                     .tag = .end_tag_with_trailing_solidus,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -1865,7 +1865,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         const tag: Token.Tag = .{
                             .kind = .end,
-                            .span = .{
+                            .loc = .{
                                 .start = state.tag_start,
                                 .end = self.idx,
                             },
@@ -1882,7 +1882,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             self.state = .data;
                             log.debug("zzzzzz {any} '{s}'", .{
                                 tag,
-                                tag.span.slice(src),
+                                tag.loc.slice(src),
                             });
                             if (trimmedText(
                                 state.data_start,
@@ -1931,7 +1931,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+003E GREATER-THAN SIGN (>)
                     // If the temporary buffer is the string "script", then switch to the script data double escaped state. Otherwise, switch to the script data escaped state. Emit the current input character as a character token.
                     '\t', '\n', '\r', form_feed, ' ', '/', '>' => {
-                        const name: Span = .{
+                        const name: Loc = .{
                             .start = state.name_start,
                             .end = self.idx - 1,
                         };
@@ -1974,7 +1974,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_script_html_comment_like_text,
-                                .span = .{
+                                .loc = .{
                                     .start = state.tag_start,
                                     .end = self.idx,
                                 },
@@ -2003,7 +2003,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -2026,7 +2026,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_script_html_comment_like_text,
-                                .span = .{
+                                .loc = .{
                                     .start = state.tag_start,
                                     .end = self.idx,
                                 },
@@ -2056,7 +2056,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -2081,7 +2081,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_script_html_comment_like_text,
-                                .span = .{
+                                .loc = .{
                                     .start = state.tag_start,
                                     .end = self.idx,
                                 },
@@ -2112,7 +2112,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -2158,7 +2158,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // U+003E GREATER-THAN SIGN (>)
                     // If the temporary buffer is the string "script", then switch to the script data escaped state. Otherwise, switch to the script data double escaped state. Emit the current input character as a character token.
                     '\t', '\n', '\r', form_feed, ' ', '/', '>' => {
-                        const name: Span = .{
+                        const name: Loc = .{
                             .start = state.name_start,
                             .end = self.idx - 1,
                         };
@@ -2250,7 +2250,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_equals_sign_before_attribute_name,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -2325,7 +2325,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_null_character,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -2340,7 +2340,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_character_in_attribute_name,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -2367,8 +2367,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_tag,
-                                .span = .{
-                                    .start = state.tag.span.start,
+                                .loc = .{
+                                    .start = state.tag.loc.start,
                                     .end = self.idx,
                                 },
                             },
@@ -2422,7 +2422,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         std.debug.assert(state.tag.name.end != 0);
 
                         var tag = state.tag;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
 
                         // here, in / and in EOF there could be no attr name
                         // to return.
@@ -2515,12 +2515,12 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is a missing-attribute-value parse error. Switch to the data state. Emit the current tag token.
                     '>' => {
                         var tag = state.tag;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
 
                         const t: Token = .{
                             .parse_error = .{
                                 .tag = .missing_attribute_value,
-                                .span = .{
+                                .loc = .{
                                     .start = state.equal_sign,
                                     .end = state.equal_sign + 1,
                                 },
@@ -2576,7 +2576,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_attribute_value,
-                                .span = .{
+                                .loc = .{
                                     .start = state.value_start,
                                     .end = self.idx,
                                 },
@@ -2607,7 +2607,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                             .name = state.name,
                                             .value = .{
                                                 .quote = .double,
-                                                .span = .{
+                                                .loc = .{
                                                     .start = state.value_start,
                                                     .end = self.idx - 1,
                                                 },
@@ -2642,7 +2642,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                             .name = state.name,
                                             .value = .{
                                                 .quote = .single,
-                                                .span = .{
+                                                .loc = .{
                                                     .start = state.value_start,
                                                     .end = self.idx - 1,
                                                 },
@@ -2668,7 +2668,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_null_character,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -2691,7 +2691,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_tag,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -2716,7 +2716,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                         .name = state.name,
                                         .value = .{
                                             .quote = .none,
-                                            .span = .{
+                                            .loc = .{
                                                 .start = state.value_start,
                                                 .end = self.idx - 1,
                                             },
@@ -2730,7 +2730,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Switch to the data state. Emit the current tag token.
                     '>' => {
                         var tag = state.tag;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.attr_count += 1;
 
                         self.state = .data;
@@ -2742,7 +2742,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                         .name = state.name,
                                         .value = .{
                                             .quote = .none,
-                                            .span = .{
+                                            .loc = .{
                                                 .start = state.value_start,
                                                 .end = self.idx - 1,
                                             },
@@ -2772,7 +2772,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_null_character,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -2790,7 +2790,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_character_in_unquoted_attribute_value,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -2814,7 +2814,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_tag,
-                                .span = .{
+                                .loc = .{
                                     .start = state.attr_value_end,
                                     .end = self.idx,
                                 },
@@ -2834,7 +2834,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Switch to the data state. Emit the current tag token.
                     '>' => {
                         var tag = state.tag;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
 
                         self.state = .data;
                         return .{ .token = .{ .tag = tag } };
@@ -2855,7 +2855,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_whitespace_between_attributes,
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.attr_value_end,
                                         .end = self.idx,
                                     },
@@ -2876,8 +2876,8 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_tag,
-                                .span = .{
-                                    .start = state.span.start,
+                                .loc = .{
+                                    .start = state.loc.start,
                                     .end = self.idx,
                                 },
                             },
@@ -2890,7 +2890,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .data;
 
                         var tag = state;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.kind = switch (tag.kind) {
                             .start => .start_self,
                             .end => .end_self,
@@ -2902,7 +2902,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 .token = if (tag.kind == .end_self) .{
                                     .parse_error = .{
                                         .tag = .end_tag_with_trailing_solidus,
-                                        .span = tag.span,
+                                        .loc = tag.loc,
                                     },
                                 } else .{ .tag = tag },
                             };
@@ -2912,7 +2912,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .end_tag_with_trailing_solidus,
-                                    .span = tag.span,
+                                    .loc = tag.loc,
                                 },
                             },
                             .deferred = .{ .tag = tag },
@@ -2927,7 +2927,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_solidus_in_tag,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -2960,7 +2960,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_null_character,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -3014,7 +3014,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .incorrectly_opened_comment,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -3100,7 +3100,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_semicolon_after_character_reference,
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.ampersand,
                                         .end = self.idx,
                                     },
@@ -3132,7 +3132,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unknown_named_character_reference,
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.ampersand,
                                         .end = self.idx,
                                     },
@@ -3182,7 +3182,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .absence_of_digits_in_numeric_character_reference,
-                                .span = .{
+                                .loc = .{
                                     .start = state.ref.ampersand,
                                     .end = self.idx,
                                 },
@@ -3205,7 +3205,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .absence_of_digits_in_numeric_character_reference,
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.ref.ampersand,
                                         .end = self.idx,
                                     },
@@ -3225,7 +3225,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .absence_of_digits_in_numeric_character_reference,
-                                .span = .{
+                                .loc = .{
                                     .start = state.ref.ampersand,
                                     .end = self.idx,
                                 },
@@ -3248,7 +3248,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .absence_of_digits_in_numeric_character_reference,
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.ref.ampersand,
                                         .end = self.idx,
                                     },
@@ -3268,7 +3268,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .missing_semicolon_after_character_reference,
-                                .span = .{
+                                .loc = .{
                                     .start = state.ref.ampersand,
                                     .end = self.idx,
                                 },
@@ -3296,7 +3296,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_semicolon_after_character_reference,
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.ref.ampersand,
                                         .end = self.idx,
                                     },
@@ -3316,7 +3316,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .missing_semicolon_after_character_reference,
-                                .span = .{
+                                .loc = .{
                                     .start = state.ref.ampersand,
                                     .end = self.idx,
                                 },
@@ -3344,7 +3344,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_semicolon_after_character_reference,
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.ref.ampersand,
                                         .end = self.idx,
                                     },
@@ -3388,7 +3388,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = tag,
-                                .span = .{
+                                .loc = .{
                                     .start = state.ref.ampersand,
                                     .end = self.idx,
                                 },
@@ -3416,7 +3416,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .abrupt_closing_of_empty_comment,
-                                    .span = .{
+                                    .loc = .{
                                         .start = comment_start,
                                         .end = self.idx,
                                     },
@@ -3448,7 +3448,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_comment,
-                                .span = .{
+                                .loc = .{
                                     .start = comment_start,
                                     .end = self.idx,
                                 },
@@ -3474,7 +3474,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .abrupt_closing_of_empty_comment,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -3506,7 +3506,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_comment,
-                                .span = .{
+                                .loc = .{
                                     .start = comment_start,
                                     .end = self.idx,
                                 },
@@ -3538,7 +3538,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -3635,7 +3635,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .nested_comment,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx,
                                         .end = self.idx + 1,
                                     },
@@ -3655,7 +3655,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_comment,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -3691,7 +3691,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_comment,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -3744,7 +3744,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_comment,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -3770,7 +3770,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .incorrectly_closed_comment,
-                                    .span = .{
+                                    .loc = .{
                                         .start = comment_start,
                                         .end = self.idx,
                                     },
@@ -3800,7 +3800,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -3810,7 +3810,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .doctype = .{
                                 .force_quirks = true,
                                 .name = null,
-                                .span = .{
+                                .loc = .{
                                     .start = lbracket,
                                     .end = self.idx,
                                 },
@@ -3846,7 +3846,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_whitespace_before_doctype_name,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -3867,7 +3867,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -3875,7 +3875,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         },
                         .deferred = .{
                             .doctype = .{
-                                .span = .{
+                                .loc = .{
                                     .start = lbracket,
                                     .end = self.idx,
                                 },
@@ -3905,7 +3905,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -3922,7 +3922,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_doctype_name,
-                                    .span = .{
+                                    .loc = .{
                                         .start = lbracket,
                                         .end = self.idx + 1,
                                     },
@@ -3930,7 +3930,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             },
                             .deferred = .{
                                 .doctype = .{
-                                    .span = .{
+                                    .loc = .{
                                         .start = lbracket,
                                         .end = self.idx + 1,
                                     },
@@ -3965,7 +3965,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -3973,7 +3973,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         },
                         .deferred = .{
                             .doctype = .{
-                                .span = .{
+                                .loc = .{
                                     .start = state.lbracket,
                                     .end = self.idx + 1,
                                 },
@@ -4007,7 +4007,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         return .{
                             .token = .{
                                 .doctype = .{
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.lbracket,
                                         .end = self.idx,
                                     },
@@ -4026,7 +4026,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_null_character,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4051,7 +4051,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4059,7 +4059,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         },
                         .deferred = .{
                             .doctype = .{
-                                .span = .{
+                                .loc = .{
                                     .start = state.lbracket,
                                     .end = self.idx,
                                 },
@@ -4083,7 +4083,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         return .{
                             .token = .{
                                 .doctype = .{
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.lbracket,
                                         .end = self.idx,
                                     },
@@ -4101,7 +4101,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             // If the six characters starting from the current input character are an ASCII case-insensitive match for the word "PUBLIC", then consume those characters and switch to the after DOCTYPE public keyword state.
                             self.state = .{
                                 .after_doctype_public_kw = .{
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.lbracket,
                                         .end = 0,
                                     },
@@ -4119,7 +4119,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             // Otherwise, if the six characters starting from the current input character are an ASCII case-insensitive match for the word "SYSTEM", then consume those characters and switch to the after DOCTYPE system keyword state.
                             self.state = .{
                                 .after_doctype_system_kw = .{
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.lbracket,
                                         .end = 0,
                                     },
@@ -4137,7 +4137,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             self.idx -= 1;
                             self.state = .{
                                 .bogus_doctype = .{
-                                    .span = .{
+                                    .loc = .{
                                         .start = state.lbracket,
                                         .end = 0,
                                     },
@@ -4162,7 +4162,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                                 .token = .{
                                     .parse_error = .{
                                         .tag = .invalid_character_sequence_after_doctype_name,
-                                        .span = .{
+                                        .loc = .{
                                             .start = self.idx + 1,
                                             .end = end,
                                         },
@@ -4182,13 +4182,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     self.state = .eof;
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
                     return .{
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4214,13 +4214,13 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         self.state = .data;
                         var tag = state;
                         tag.force_quirks = true;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
                         return .{
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_doctype_public_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4239,7 +4239,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_whitespace_after_doctype_public_keyword,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4257,7 +4257,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_whitespace_after_doctype_public_keyword,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4277,7 +4277,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_quote_before_doctype_public_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx,
                                         .end = self.idx + 1,
                                     },
@@ -4295,7 +4295,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
 
                     self.state = .eof;
@@ -4303,7 +4303,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4339,7 +4339,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state;
                         tag.force_quirks = true;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
 
                         self.state = .data;
@@ -4347,7 +4347,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_doctype_public_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4368,7 +4368,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_quote_before_doctype_public_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx,
                                         .end = self.idx + 1,
                                     },
@@ -4388,7 +4388,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
 
                     self.state = .eof;
@@ -4396,7 +4396,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4425,7 +4425,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_null_character,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4437,7 +4437,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state;
                         tag.force_quirks = true;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
 
                         self.state = .data;
@@ -4445,7 +4445,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .abrupt_doctype_public_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4468,7 +4468,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
 
                     self.state = .eof;
@@ -4476,7 +4476,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4506,7 +4506,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_whitespace_between_doctype_public_and_system_identifiers,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4524,7 +4524,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_whitespace_between_doctype_public_and_system_identifiers,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4538,7 +4538,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         self.state = .data;
                         var tag = state;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
                         return .{ .token = .{ .doctype = tag } };
                     },
@@ -4555,7 +4555,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_quote_before_doctype_system_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4572,7 +4572,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
 
                     self.state = .eof;
@@ -4580,7 +4580,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4601,7 +4601,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         self.state = .data;
                         var tag = state;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
                         return .{ .token = .{ .doctype = tag } };
                     },
@@ -4631,7 +4631,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_quote_before_doctype_system_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx,
                                         .end = self.idx + 1,
                                     },
@@ -4649,7 +4649,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
 
                     self.state = .eof;
@@ -4657,7 +4657,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4687,7 +4687,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_whitespace_after_doctype_system_keyword,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4705,7 +4705,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_whitespace_after_doctype_system_keyword,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4718,7 +4718,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state;
                         tag.force_quirks = true;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
 
                         self.state = .data;
@@ -4726,7 +4726,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_doctype_system_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4747,7 +4747,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_quote_before_doctype_system_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx,
                                         .end = self.idx + 1,
                                     },
@@ -4765,7 +4765,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
 
                     self.state = .eof;
@@ -4773,7 +4773,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4810,7 +4810,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state;
                         tag.force_quirks = true;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
 
                         self.state = .data;
@@ -4818,7 +4818,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_doctype_system_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4841,7 +4841,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .missing_quote_before_doctype_system_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx,
                                         .end = self.idx + 1,
                                     },
@@ -4861,7 +4861,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
 
                     self.state = .eof;
@@ -4869,7 +4869,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4898,7 +4898,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .unexpected_null_character,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4910,7 +4910,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         var tag = state;
                         tag.force_quirks = true;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
 
                         self.state = .data;
@@ -4918,7 +4918,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .abrupt_doctype_system_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -4941,7 +4941,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
                     var tag = state;
                     tag.force_quirks = true;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
 
                     self.state = .eof;
@@ -4949,7 +4949,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_doctype,
-                                .span = .{
+                                .loc = .{
                                     .start = self.idx - 1,
                                     .end = self.idx,
                                 },
@@ -4970,7 +4970,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Switch to the data state. Emit the current DOCTYPE token.
                     '>' => {
                         var tag = state;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
 
                         self.state = .data;
@@ -4985,7 +4985,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_character_after_doctype_system_identifier,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx,
                                         .end = self.idx + 1,
                                     },
@@ -5003,7 +5003,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     // Emit the DOCTYPE token. Emit an end-of-file token.
                     self.state = .eof;
                     var tag = state;
-                    tag.span.end = self.idx;
+                    tag.loc.end = self.idx;
                     tag.extra.end = self.idx;
                     return .{
                         .token = .{ .doctype = tag },
@@ -5015,7 +5015,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                     '>' => {
                         self.state = .data;
                         var tag = state;
-                        tag.span.end = self.idx;
+                        tag.loc.end = self.idx;
                         tag.extra.end = self.idx - 1;
                         return .{
                             .token = .{ .doctype = tag },
@@ -5028,7 +5028,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                             .token = .{
                                 .parse_error = .{
                                     .tag = .unexpected_null_character,
-                                    .span = .{
+                                    .loc = .{
                                         .start = self.idx - 1,
                                         .end = self.idx,
                                     },
@@ -5052,7 +5052,7 @@ fn next2(self: *Tokenizer, src: []const u8) ?struct {
                         .token = .{
                             .parse_error = .{
                                 .tag = .eof_in_cdata,
-                                .span = .{
+                                .loc = .{
                                     .start = lbracket,
                                     .end = self.idx,
                                 },
@@ -5193,36 +5193,36 @@ fn isAsciiWhitespace(c: u8) bool {
 
 const tl = std.log.scoped(.trim);
 
-fn trimmedText(start: u32, end: u32, src: []const u8) ?Span {
-    var text_span: Span = .{ .start = start, .end = end };
+fn trimmedText(start: u32, end: u32, src: []const u8) ?Loc {
+    var text_loc: Loc = .{ .start = start, .end = end };
 
-    tl.debug("span: {any}, txt: '{s}'", .{
-        text_span,
-        text_span.slice(src),
+    tl.debug("loc: {any}, txt: '{s}'", .{
+        text_loc,
+        text_loc.slice(src),
     });
 
-    while (text_span.start < end and
-        std.ascii.isWhitespace(src[text_span.start]))
+    while (text_loc.start < end and
+        std.ascii.isWhitespace(src[text_loc.start]))
     {
-        text_span.start += 1;
+        text_loc.start += 1;
     }
 
-    while (text_span.end > text_span.start and
-        std.ascii.isWhitespace(src[text_span.end - 1]))
+    while (text_loc.end > text_loc.start and
+        std.ascii.isWhitespace(src[text_loc.end - 1]))
     {
-        text_span.end -= 1;
+        text_loc.end -= 1;
     }
 
-    tl.debug("end span: {any}, txt: '{s}'", .{
-        text_span,
-        text_span.slice(src),
+    tl.debug("end loc: {any}, txt: '{s}'", .{
+        text_loc,
+        text_loc.slice(src),
     });
 
-    if (text_span.start == text_span.end) {
+    if (text_loc.start == text_loc.end) {
         return null;
     }
 
-    return text_span;
+    return text_loc;
 }
 
 test "script single/double escape weirdness" {
@@ -5283,21 +5283,21 @@ test "character references" {
     try testTokenize("&foo;", &.{
         .{ .parse_error = .{
             .tag = .unknown_named_character_reference,
-            .span = .{ .start = 0, .end = 4 },
+            .loc = .{ .start = 0, .end = 4 },
         } },
         .{ .text = .{ .start = 0, .end = 5 } },
     });
     try testTokenize("&foofoofoofoofoofoofoofoofoo;", &.{
         .{ .parse_error = .{
             .tag = .unknown_named_character_reference,
-            .span = .{ .start = 0, .end = 28 },
+            .loc = .{ .start = 0, .end = 28 },
         } },
         .{ .text = .{ .start = 0, .end = 29 } },
     });
     try testTokenize("&noti", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 0, .end = 4 },
+            .loc = .{ .start = 0, .end = 4 },
         } },
         .{ .text = .{ .start = 0, .end = 5 } },
     });
@@ -5308,7 +5308,7 @@ test "character references" {
     try testTokenize("&notit;", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 0, .end = 4 },
+            .loc = .{ .start = 0, .end = 4 },
         } },
         .{ .text = .{ .start = 0, .end = 7 } },
     });
@@ -5332,71 +5332,71 @@ test "character references" {
     try testTokenize("&#", &.{
         .{ .parse_error = .{
             .tag = .absence_of_digits_in_numeric_character_reference,
-            .span = .{ .start = 0, .end = 2 },
+            .loc = .{ .start = 0, .end = 2 },
         } },
         .{ .text = .{ .start = 0, .end = 2 } },
     });
     try testTokenize("&#x10FFFF", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 0, .end = 9 },
+            .loc = .{ .start = 0, .end = 9 },
         } },
         .{ .parse_error = .{
             .tag = .noncharacter_character_reference,
-            .span = .{ .start = 0, .end = 9 },
+            .loc = .{ .start = 0, .end = 9 },
         } },
         .{ .text = .{ .start = 0, .end = 9 } },
     });
     try testTokenize("&#x110000", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 0, .end = 9 },
+            .loc = .{ .start = 0, .end = 9 },
         } },
         .{ .parse_error = .{
             .tag = .character_reference_outside_unicode_range,
-            .span = .{ .start = 0, .end = 9 },
+            .loc = .{ .start = 0, .end = 9 },
         } },
         .{ .text = .{ .start = 0, .end = 9 } },
     });
     try testTokenize("&#xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;", &.{
         .{ .parse_error = .{
             .tag = .character_reference_outside_unicode_range,
-            .span = .{ .start = 0, .end = 37 },
+            .loc = .{ .start = 0, .end = 37 },
         } },
         .{ .text = .{ .start = 0, .end = 37 } },
     });
     try testTokenize("&#0;", &.{
         .{ .parse_error = .{
             .tag = .null_character_reference,
-            .span = .{ .start = 0, .end = 4 },
+            .loc = .{ .start = 0, .end = 4 },
         } },
         .{ .text = .{ .start = 0, .end = 4 } },
     });
     try testTokenize("&#x0D;", &.{
         .{ .parse_error = .{
             .tag = .control_character_reference,
-            .span = .{ .start = 0, .end = 6 },
+            .loc = .{ .start = 0, .end = 6 },
         } },
         .{ .text = .{ .start = 0, .end = 6 } },
     });
     try testTokenize("&#x9F;", &.{
         .{ .parse_error = .{
             .tag = .control_character_reference,
-            .span = .{ .start = 0, .end = 6 },
+            .loc = .{ .start = 0, .end = 6 },
         } },
         .{ .text = .{ .start = 0, .end = 6 } },
     });
     try testTokenize("&#xDF00;", &.{
         .{ .parse_error = .{
             .tag = .surrogate_character_reference,
-            .span = .{ .start = 0, .end = 8 },
+            .loc = .{ .start = 0, .end = 8 },
         } },
         .{ .text = .{ .start = 0, .end = 8 } },
     });
     try testTokenize("&#xFFFF;", &.{
         .{ .parse_error = .{
             .tag = .noncharacter_character_reference,
-            .span = .{ .start = 0, .end = 8 },
+            .loc = .{ .start = 0, .end = 8 },
         } },
         .{ .text = .{ .start = 0, .end = 8 } },
     });
@@ -5405,10 +5405,10 @@ test "character references" {
     try testTokenize("<span foo=\"&not\">", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 11, .end = 15 },
+            .loc = .{ .start = 11, .end = 15 },
         } },
         .{ .tag = .{
-            .span = .{ .start = 0, .end = 17 },
+            .loc = .{ .start = 0, .end = 17 },
             .name = .{ .start = 1, .end = 5 },
             .attr_count = 1,
             .kind = .start,
@@ -5417,10 +5417,10 @@ test "character references" {
     try testTokenize("<span foo=\"&notit;\">", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 11, .end = 15 },
+            .loc = .{ .start = 11, .end = 15 },
         } },
         .{ .tag = .{
-            .span = .{ .start = 0, .end = 20 },
+            .loc = .{ .start = 0, .end = 20 },
             .name = .{ .start = 1, .end = 5 },
             .attr_count = 1,
             .kind = .start,
@@ -5431,10 +5431,10 @@ test "character references" {
     try testTokenize("<span foo='&not'>", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 11, .end = 15 },
+            .loc = .{ .start = 11, .end = 15 },
         } },
         .{ .tag = .{
-            .span = .{ .start = 0, .end = 17 },
+            .loc = .{ .start = 0, .end = 17 },
             .name = .{ .start = 1, .end = 5 },
             .attr_count = 1,
             .kind = .start,
@@ -5443,10 +5443,10 @@ test "character references" {
     try testTokenize("<span foo='&notit;'>", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 11, .end = 15 },
+            .loc = .{ .start = 11, .end = 15 },
         } },
         .{ .tag = .{
-            .span = .{ .start = 0, .end = 20 },
+            .loc = .{ .start = 0, .end = 20 },
             .name = .{ .start = 1, .end = 5 },
             .attr_count = 1,
             .kind = .start,
@@ -5457,10 +5457,10 @@ test "character references" {
     try testTokenize("<span foo=&not>", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 10, .end = 14 },
+            .loc = .{ .start = 10, .end = 14 },
         } },
         .{ .tag = .{
-            .span = .{ .start = 0, .end = 15 },
+            .loc = .{ .start = 0, .end = 15 },
             .name = .{ .start = 1, .end = 5 },
             .attr_count = 1,
             .kind = .start,
@@ -5469,10 +5469,10 @@ test "character references" {
     try testTokenize("<span foo=&notit;>", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 10, .end = 14 },
+            .loc = .{ .start = 10, .end = 14 },
         } },
         .{ .tag = .{
-            .span = .{ .start = 0, .end = 18 },
+            .loc = .{ .start = 0, .end = 18 },
             .name = .{ .start = 1, .end = 5 },
             .attr_count = 1,
             .kind = .start,
@@ -5487,11 +5487,11 @@ test "rcdata character references" {
     try testTokenizeWithState(&tokenizer, "&notit;</title>", &.{
         .{ .parse_error = .{
             .tag = .missing_semicolon_after_character_reference,
-            .span = .{ .start = 0, .end = 4 },
+            .loc = .{ .start = 0, .end = 4 },
         } },
         .{ .text = .{ .start = 0, .end = 7 } },
         .{ .tag = .{
-            .span = .{ .start = 7, .end = 15 },
+            .loc = .{ .start = 7, .end = 15 },
             .name = .{ .start = 9, .end = 14 },
             .kind = .end,
         } },

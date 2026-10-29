@@ -6,7 +6,7 @@ const errors = @import("errors.zig");
 const template = @import("template.zig");
 const root = @import("root.zig");
 const utils = root.utils;
-const Span = root.Span;
+const Loc = root.Loc;
 const html = @import("html.zig");
 const Ast = @import("Ast.zig");
 const Node = Ast.Node;
@@ -58,7 +58,7 @@ pub fn VM(comptime Value: type) type {
             fatal,
             want_template: struct {
                 name: []const u8,
-                span: Span,
+                loc: Loc,
             },
             loaded_template: TemplateCartridge,
             want_snippet: []const u8, // snippet name
@@ -148,7 +148,7 @@ pub fn VM(comptime Value: type) type {
 
             t.reportError(
                 vm.err,
-                wanted.span,
+                wanted.loc,
                 error_code,
                 "ERROR FETCHING TEMPLATE",
                 \\There was an error while fetching a template,
@@ -234,7 +234,7 @@ pub fn VM(comptime Value: type) type {
                             &vm.scripty_vm,
                             vm.ctx,
                             // TODO: unescape
-                            t.superBlock(s).id_value.span.slice(t.src),
+                            t.superBlock(s).id_value.loc.slice(t.src),
                             vm.out,
                             vm.err,
                         ) catch {
@@ -291,13 +291,13 @@ pub fn VM(comptime Value: type) type {
                 current.cursor.cur = null;
                 const template_value = ext.templateValue();
                 //TODO: unescape
-                const template_name = template_value.span.slice(current.src);
+                const template_name = template_value.loc.slice(current.src);
 
                 const gop = try vm.seen_templates.getOrPut(vm.arena, template_name);
                 if (gop.found_existing) {
                     current.reportError(
                         vm.err,
-                        template_value.span,
+                        template_value.loc,
                         "infinite_loop",
                         "EXTENSION LOOP DETECTED",
                         "We were trying to load the same template twice!",
@@ -308,7 +308,7 @@ pub fn VM(comptime Value: type) type {
                         vm.err,
                         false,
                         "note: the template was previously found here:",
-                        ctx.extend.templateValue().span,
+                        ctx.extend.templateValue().loc,
                     );
 
                     return fatalTrace(
@@ -326,7 +326,7 @@ pub fn VM(comptime Value: type) type {
                 vm.state = .{
                     .want_template = .{
                         .name = template_name,
-                        .span = template_value.span,
+                        .loc = template_value.loc,
                     },
                 };
                 return error.WantTemplate;
@@ -464,7 +464,7 @@ pub fn VM(comptime Value: type) type {
                             vm.err,
                             false,
                             "note: extended block defined here:",
-                            super_parent_id.span,
+                            super_parent_id.loc,
                         );
 
                         const super_tag_name = extended.getName(

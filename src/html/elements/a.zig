@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Ast = @import("../Ast.zig");
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Language = root.Language;
 const Element = @import("../Element.zig");
 const Categories = Element.Categories;
@@ -125,10 +125,10 @@ pub fn validateAttrs(
     node_idx: u32,
     vait: *Attribute.ValidatingIterator,
 ) !Model {
-    var seen_attrs: [attributes.list.len]?Span = undefined;
+    var seen_attrs: [attributes.list.len]?Loc = undefined;
     @memset(&seen_attrs, null);
 
-    var has_itemprop: ?Span = null;
+    var has_itemprop: ?Loc = null;
     while (try vait.next(gpa, src)) |attr| {
         const name = attr.name.slice(src);
         const attr_model = blk: {

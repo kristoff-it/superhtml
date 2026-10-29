@@ -74,10 +74,10 @@ fn validateStart(
         .node_idx = node_idx,
     });
 
-    const digits = std.mem.trim(u8, value.span.slice(src), &std.ascii.whitespace);
+    const digits = std.mem.trim(u8, value.loc.slice(src), &std.ascii.whitespace);
     _ = std.fmt.parseInt(i64, digits, 10) catch return errors.append(gpa, .{
         .tag = .{ .invalid_attr_value = .{ .reason = "invalid integer" } },
-        .main_location = value.span,
+        .main_location = value.loc,
         .node_idx = node_idx,
     });
 }

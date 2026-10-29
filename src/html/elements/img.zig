@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
 const Categories = Element.Categories;
@@ -284,7 +284,7 @@ fn validate(
     node_idx: u32,
     vait: *Attribute.ValidatingIterator,
 ) error{OutOfMemory}!Model {
-    var seen_descriptors: std.StringArrayHashMapUnmanaged(Span) = .empty;
+    var seen_descriptors: std.StringArrayHashMapUnmanaged(Loc) = .empty;
     defer seen_descriptors.deinit(gpa);
 
     // An img element allows auto-sizes if:
@@ -294,7 +294,7 @@ fn validate(
     var loading_lazy = false;
     var seen_sizes = false;
     var sizes_auto = false;
-    var sizes_value: ?Span = null;
+    var sizes_value: ?Loc = null;
 
     // At least one of the src and srcset attributes must be present.
     var seen_src = false;
@@ -302,7 +302,7 @@ fn validate(
 
     // If the element has a usemap attribute: Interactive content.
     var seen_usemap = false;
-    var seen_ismap: ?Span = null;
+    var seen_ismap: ?Loc = null;
 
     var seen_alt = false;
     var seen_any_w = false;
@@ -339,7 +339,7 @@ fn validate(
                 },
                 attributes.comptimeIndex("loading") => {
                     const value = attr.value orelse continue;
-                    const value_slice = value.span.slice(src);
+                    const value_slice = value.loc.slice(src);
                     if (std.ascii.eqlIgnoreCase(value_slice, "lazy")) {
                         loading_lazy = true;
                     } else if (std.ascii.eqlIgnoreCase(value_slice, "eager")) {
@@ -348,7 +348,7 @@ fn validate(
                         .tag = .{
                             .invalid_attr_value = .{},
                         },
-                        .main_location = value.span,
+                        .main_location = value.loc,
                         .node_idx = node_idx,
                     });
                     continue;
@@ -356,9 +356,9 @@ fn validate(
                 attributes.comptimeIndex("sizes") => {
                     // TODO: validate this
                     const value = attr.value orelse continue;
-                    const value_slice = value.span.slice(src);
+                    const value_slice = value.loc.slice(src);
                     seen_sizes = true;
-                    sizes_value = value.span;
+                    sizes_value = value.loc;
                     sizes_auto = std.ascii.startsWithIgnoreCase(value_slice, "auto");
                     continue;
                 },
@@ -412,7 +412,7 @@ fn validate(
     // specified on an element that does not have an ancestor a element with an
     // href attribute.
     const parent = nodes[parent_idx];
-    if (seen_ismap) |span| {
+    if (seen_ismap) |loc| {
         if (parent.kind != .a or !parent.model.categories.interactive) {
             try errors.append(gpa, .{
                 .tag = .{
@@ -421,7 +421,7 @@ fn validate(
                         .reason = "with 'href' defined",
                     },
                 },
-                .main_location = span,
+                .main_location = loc,
                 .node_idx = node_idx,
             });
         }

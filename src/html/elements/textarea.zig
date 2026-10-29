@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
 const Model = Element.Model;
@@ -186,7 +186,7 @@ pub fn validateAttrs(
     // If the element's wrap attribute is in the Hard state, the cols attribute must be specified.
 
     // If an element has both a maximum allowed value length and a minimum allowed value length, the minimum allowed value length must be smaller than or equal to the maximum allowed value length.
-    var has_minlength: ?struct { Span, usize } = null;
+    var has_minlength: ?struct { Loc, usize } = null;
     var has_maxlength: ?usize = null;
     while (try vait.next(gpa, src)) |attr| {
         const name = attr.name.slice(src);
@@ -207,7 +207,7 @@ pub fn validateAttrs(
 
                         const value_slice = std.mem.trim(
                             u8,
-                            value.span.slice(src),
+                            value.loc.slice(src),
                             &std.ascii.whitespace,
                         );
 
@@ -218,14 +218,14 @@ pub fn validateAttrs(
                                         .reason = "not a valid non-negative integer",
                                     },
                                 },
-                                .main_location = value.span,
+                                .main_location = value.loc,
                                 .node_idx = node_idx,
                             });
                             continue;
                         };
 
                         if (idx == attributes.comptimeIndex("minlength"))
-                            has_minlength = .{ value.span, number }
+                            has_minlength = .{ value.loc, number }
                         else
                             has_maxlength = number;
 
@@ -270,7 +270,7 @@ pub fn validateAttrs(
 //     parent_idx: u32,
 // ) error{OutOfMemory}!void {
 //     const parent = nodes[parent_idx];
-//     const parent_span = parent.span(src);
+//     const parent_ = parent.span(src);
 //     var child_idx = parent.first_child_idx;
 //     while (child_idx != 0) {
 //         const child = nodes[child_idx];

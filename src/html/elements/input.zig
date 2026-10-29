@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -507,18 +506,18 @@ fn validate(
             break :blk .text;
         };
 
-        const value_slice = value.span.slice(src);
+        const value_slice = value.loc.slice(src);
         const match = try attributes.list[type_idx].model.rule.list.match(
             gpa,
             errors,
             node_idx,
-            value.span.start,
+            value.loc.start,
             value_slice,
         );
 
         switch (match) {
             .none => return input.model, // error has already been reported
-            .list => |list_idx| break :blk @enumFromInt(list_idx),
+            .list => |list_idx| break :blk @fromBackingInt(@intCast(list_idx)),
             else => unreachable,
         }
     } else .text;
@@ -780,7 +779,7 @@ fn validatePlaceholder(
         .main_location = attr.name,
         .node_idx = node_idx,
     });
-    const value_slice = value.span.slice(src);
+    const value_slice = value.loc.slice(src);
 
     const cr_lf = std.mem.indexOfAny(u8, value_slice, "\r\n") orelse return;
     return errors.append(gpa, .{
@@ -790,8 +789,8 @@ fn validatePlaceholder(
             },
         },
         .main_location = .{
-            .start = @intCast(value.span.start + cr_lf),
-            .end = @intCast(value.span.start + cr_lf + 1),
+            .start = @intCast(value.loc.start + cr_lf),
+            .end = @intCast(value.loc.start + cr_lf + 1),
         },
         .node_idx = node_idx,
     });

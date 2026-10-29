@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -54,7 +53,7 @@ pub fn validateSpan(
         .node_idx = node_idx,
     });
 
-    const value_slice = value.span.slice(src);
+    const value_slice = value.loc.slice(src);
     const digits = std.mem.trim(u8, value_slice, &std.ascii.whitespace);
     if (std.fmt.parseInt(i64, digits, 10)) |num| {
         if (num <= 0) {
@@ -64,7 +63,7 @@ pub fn validateSpan(
                         .reason = "integer must be positive",
                     },
                 },
-                .main_location = value.span,
+                .main_location = value.loc,
                 .node_idx = node_idx,
             });
         } else if (num > 1000) {
@@ -74,7 +73,7 @@ pub fn validateSpan(
                         .reason = "integer must be <= 1000",
                     },
                 },
-                .main_location = value.span,
+                .main_location = value.loc,
                 .node_idx = node_idx,
             });
         }
@@ -84,7 +83,7 @@ pub fn validateSpan(
                 .reason = "invalid positive integer",
             },
         },
-        .main_location = value.span,
+        .main_location = value.loc,
         .node_idx = node_idx,
     });
 }

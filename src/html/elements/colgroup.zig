@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -45,8 +45,8 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -57,7 +57,7 @@ pub fn validateContent(
     // If the span attribute is absent: Zero or more col and template elements.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
     const has_span = blk: {
         var it = parent.startTagIterator(src, .html);
         break :blk while (it.next(src)) |attr| {
@@ -76,14 +76,14 @@ pub fn validateContent(
             try errors.append(gpa, .{
                 .tag = .{
                     .invalid_nesting = .{
-                        .span = parent_span,
+                        .loc = parent_loc,
                         .reason = if (has_span)
                             "when [span] is defined, no children are allowed"
                         else
                             "only <col> and <template> children are allowed",
                     },
                 },
-                .main_location = child.span(src),
+                .main_location = child.loc(src),
                 .node_idx = child_idx,
             });
         }

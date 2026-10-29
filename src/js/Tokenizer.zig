@@ -1,6 +1,6 @@
 const std = @import("std");
 const root = @import("../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 
 /// Minimal JavaScript tokenizer for formatting purposes.
 /// Only tracks tokens relevant to indentation: braces, brackets, parens,
@@ -18,30 +18,30 @@ pub const Token = union(enum) {
     close_bracket: u32,
     open_paren: u32,
     close_paren: u32,
-    string: Span,
-    template_literal: Span,
-    line_comment: Span,
-    block_comment: Span,
-    regex: Span,
+    string: Loc,
+    template_literal: Loc,
+    line_comment: Loc,
+    block_comment: Loc,
+    regex: Loc,
     semicolon: u32,
     comma: u32,
     colon: u32,
     // Keywords that affect case statement indentation
-    kw_case: Span,
-    kw_default: Span,
-    kw_break: Span,
-    kw_continue: Span,
-    kw_return: Span,
-    kw_throw: Span,
+    kw_case: Loc,
+    kw_default: Loc,
+    kw_break: Loc,
+    kw_continue: Loc,
+    kw_return: Loc,
+    kw_throw: Loc,
     // Control flow keywords that can have single-line bodies
-    kw_if: Span,
-    kw_else: Span,
-    kw_for: Span,
-    kw_while: Span,
-    kw_do: Span,
-    other: Span,
+    kw_if: Loc,
+    kw_else: Loc,
+    kw_for: Loc,
+    kw_while: Loc,
+    kw_do: Loc,
+    other: Loc,
 
-    pub fn span(self: Token) Span {
+    pub fn loc(self: Token) Loc {
         return switch (self) {
             .string,
             .template_literal,
@@ -448,54 +448,54 @@ fn identifier(self: *Tokenizer, src: []const u8) Token {
     }
 
     const ident = src[start..self.idx];
-    const ident_span: Span = .{ .start = start, .end = self.idx };
+    const ident_loc: Loc = .{ .start = start, .end = self.idx };
 
     // Check for case-related keywords first (these also set regex context)
     if (std.mem.eql(u8, ident, "case")) {
         self.last_was_operator_context = true;
-        return .{ .kw_case = ident_span };
+        return .{ .kw_case = ident_loc };
     }
     if (std.mem.eql(u8, ident, "default")) {
         self.last_was_operator_context = true;
-        return .{ .kw_default = ident_span };
+        return .{ .kw_default = ident_loc };
     }
     if (std.mem.eql(u8, ident, "break")) {
         self.last_was_operator_context = true;
-        return .{ .kw_break = ident_span };
+        return .{ .kw_break = ident_loc };
     }
     if (std.mem.eql(u8, ident, "continue")) {
         self.last_was_operator_context = true;
-        return .{ .kw_continue = ident_span };
+        return .{ .kw_continue = ident_loc };
     }
     if (std.mem.eql(u8, ident, "return")) {
         self.last_was_operator_context = true;
-        return .{ .kw_return = ident_span };
+        return .{ .kw_return = ident_loc };
     }
     if (std.mem.eql(u8, ident, "throw")) {
         self.last_was_operator_context = true;
-        return .{ .kw_throw = ident_span };
+        return .{ .kw_throw = ident_loc };
     }
 
     // Control flow keywords
     if (std.mem.eql(u8, ident, "if")) {
         self.last_was_operator_context = true;
-        return .{ .kw_if = ident_span };
+        return .{ .kw_if = ident_loc };
     }
     if (std.mem.eql(u8, ident, "else")) {
         self.last_was_operator_context = true;
-        return .{ .kw_else = ident_span };
+        return .{ .kw_else = ident_loc };
     }
     if (std.mem.eql(u8, ident, "for")) {
         self.last_was_operator_context = true;
-        return .{ .kw_for = ident_span };
+        return .{ .kw_for = ident_loc };
     }
     if (std.mem.eql(u8, ident, "while")) {
         self.last_was_operator_context = true;
-        return .{ .kw_while = ident_span };
+        return .{ .kw_while = ident_loc };
     }
     if (std.mem.eql(u8, ident, "do")) {
         self.last_was_operator_context = true;
-        return .{ .kw_do = ident_span };
+        return .{ .kw_do = ident_loc };
     }
 
     // Other keywords that are followed by regex context
@@ -507,12 +507,12 @@ fn identifier(self: *Tokenizer, src: []const u8) Token {
     for (regex_context_keywords) |kw| {
         if (std.mem.eql(u8, ident, kw)) {
             self.last_was_operator_context = true;
-            return .{ .other = ident_span };
+            return .{ .other = ident_loc };
         }
     }
 
     self.last_was_operator_context = false;
-    return .{ .other = ident_span };
+    return .{ .other = ident_loc };
 }
 
 fn number(self: *Tokenizer, src: []const u8) Token {

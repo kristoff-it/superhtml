@@ -7,7 +7,7 @@ const Element = @import("../Element.zig");
 const Attribute = @import("../Attribute.zig");
 const ValidatingIterator = Attribute.ValidatingIterator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const log = std.log.scoped(.srcset);
 
 pub const picture: Element = .{
@@ -48,20 +48,20 @@ pub const picture: Element = .{
 fn validate(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
     const first_child_idx = parent.first_child_idx;
 
     const source_attrs = comptime Attribute.element_attrs.get(.source);
 
     // Used to catch duplicate descriptors in image candidate strings
-    var seen_descriptors: std.StringArrayHashMapUnmanaged(Span) = .empty;
+    var seen_descriptors: std.StringArrayHashMapUnmanaged(Loc) = .empty;
     defer seen_descriptors.deinit(gpa);
 
     var state: enum { source, img, done } = .source;
@@ -74,7 +74,7 @@ fn validate(
     } else blk: {
         try errors.append(gpa, .{
             .tag = .{ .missing_child = .img },
-            .main_location = parent_span,
+            .main_location = parent_loc,
             .node_idx = parent_idx,
         });
         break :blk true;
@@ -92,18 +92,18 @@ fn validate(
                 try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only 'source', 'img', 'script', and 'template' are allowed",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 });
                 continue;
             },
         }
 
-        var img_span: Span = undefined;
+        var imp_loc: Loc = undefined;
         state: switch (state) {
             .source => switch (child.kind) {
                 else => unreachable,
@@ -118,8 +118,8 @@ fn validate(
                         child_idx,
                     );
 
-                    var sizes: ?Span = null;
-                    var srcset: ?Span = null;
+                    var sizes: ?Loc = null;
+                    var srcset: ?Loc = null;
                     var seen_any_w = false;
                     while (try vait.next(gpa, src)) |attr| {
                         const name = attr.name.slice(src);
@@ -176,7 +176,7 @@ fn validate(
                             .tag = .{
                                 .missing_required_attr = "srcset is mandatory for this element",
                             },
-                            .main_location = child.span(src),
+                            .main_location = child.loc(src),
                             .node_idx = child_idx,
                         });
                         continue;
@@ -223,7 +223,7 @@ fn validate(
                 else => unreachable,
                 .source => continue :state .done,
                 .img => {
-                    img_span = child.span(src);
+                    imp_loc = child.loc(src);
                     state = .done;
                 },
             },
@@ -232,21 +232,21 @@ fn validate(
                 .source => try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "source elements must go above the img element",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
                 .img => try errors.append(gpa, .{
                     .tag = .{
                         .duplicate_child = .{
-                            .span = img_span,
+                            .loc = imp_loc,
                             .reason = "source elements must go above the img element",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }),
             },
@@ -259,7 +259,7 @@ const DescriptorKinds = struct { w: bool, x: bool, h: bool };
 pub fn validateSrcset(
     gpa: Allocator,
     errors: *std.ArrayListUnmanaged(Ast.Error),
-    seen_descriptors: *std.StringArrayHashMapUnmanaged(Span),
+    seen_descriptors: *std.StringArrayHashMapUnmanaged(Loc),
     attr: Tokenizer.Attr,
     src: []const u8,
     node_idx: u32,
@@ -275,7 +275,7 @@ pub fn validateSrcset(
     });
 
     // 1. Let input be the value passed to this algorithm.
-    const input = value.span.slice(src);
+    const input = value.loc.slice(src);
 
     // 2. Let position be a pointer into input, initially pointing at the start of the string.
     var position: u32 = 0;
@@ -289,8 +289,8 @@ pub fn validateSrcset(
                     .invalid_attr_value = .{ .reason = "invalid comma" },
                 },
                 .main_location = .{
-                    .start = value.span.start + position - 1,
-                    .end = value.span.start + position,
+                    .start = value.loc.start + position - 1,
+                    .end = value.loc.start + position,
                 },
                 .node_idx = node_idx,
             });
@@ -312,8 +312,8 @@ pub fn validateSrcset(
                     .invalid_attr_value = .{ .reason = "invalid comma" },
                 },
                 .main_location = .{
-                    .start = value.span.start + position,
-                    .end = value.span.start + position + 1,
+                    .start = value.loc.start + position,
+                    .end = value.loc.start + position + 1,
                 },
                 .node_idx = node_idx,
             });
@@ -322,7 +322,7 @@ pub fn validateSrcset(
             log.debug("url-with-comma: '{s}'", .{url});
             if (validateUrl(
                 node_idx,
-                value.span.start + url_start,
+                value.loc.start + url_start,
                 url,
             )) |err| try errors.append(gpa, err);
 
@@ -335,14 +335,14 @@ pub fn validateSrcset(
                     },
                 },
                 .main_location = .{
-                    .start = value.span.start + url_start,
-                    .end = value.span.start + position,
+                    .start = value.loc.start + url_start,
+                    .end = value.loc.start + position,
                 },
                 .node_idx = node_idx,
             });
             gop.value_ptr.* = .{
-                .start = value.span.start + url_start,
-                .end = value.span.start + position,
+                .start = value.loc.start + url_start,
+                .end = value.loc.start + position,
             };
             continue;
         }
@@ -351,7 +351,7 @@ pub fn validateSrcset(
         log.debug("url-no-comma: '{s}'", .{url});
         if (validateUrl(
             node_idx,
-            value.span.start + url_start,
+            value.loc.start + url_start,
             url,
         )) |err| try errors.append(gpa, err);
 
@@ -393,7 +393,7 @@ pub fn validateSrcset(
                                 seen_descriptors,
                                 &present,
                                 node_idx,
-                                value.span.start + descriptor_start,
+                                value.loc.start + descriptor_start,
                                 descriptor,
                             )) |err| return errors.append(gpa, err);
 
@@ -412,7 +412,7 @@ pub fn validateSrcset(
                                 seen_descriptors,
                                 &present,
                                 node_idx,
-                                value.span.start + descriptor_start,
+                                value.loc.start + descriptor_start,
                                 descriptor,
                             )) |err| return errors.append(gpa, err);
                         }
@@ -436,7 +436,7 @@ pub fn validateSrcset(
                                 seen_descriptors,
                                 &present,
                                 node_idx,
-                                value.span.start + descriptor_start,
+                                value.loc.start + descriptor_start,
                                 descriptor,
                             )) |err| return errors.append(gpa, err);
                         }
@@ -499,14 +499,14 @@ pub fn validateSrcset(
                 },
             },
             .main_location = .{
-                .start = value.span.start + url_start,
-                .end = value.span.start + position,
+                .start = value.loc.start + url_start,
+                .end = value.loc.start + position,
             },
             .node_idx = node_idx,
         });
         gop.value_ptr.* = .{
-            .start = value.span.start + url_start,
-            .end = value.span.start + position,
+            .start = value.loc.start + url_start,
+            .end = value.loc.start + position,
         };
         // Return to the step labeled splitting loop.
     }
@@ -566,7 +566,7 @@ fn validateUrl(node_idx: u32, offset: u32, url: []const u8) ?Ast.Error {
 
 fn validateDescriptor(
     gpa: Allocator,
-    seen_descriptors: *std.StringArrayHashMapUnmanaged(Span),
+    seen_descriptors: *std.StringArrayHashMapUnmanaged(Loc),
     present: *DescriptorKinds,
     node_idx: u32,
     offset: u32,

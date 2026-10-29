@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -87,8 +87,8 @@ pub const attributes: AttributeSet = .init(&.{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -97,9 +97,9 @@ pub fn validateContent(
     _ = seen_ids;
     // One summary element followed by flow content.
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
 
-    var summary_span: ?Span = null;
+    var summary_loc: ?Loc = null;
     var seen_flow_element = false;
 
     var child_idx = parent.first_child_idx;
@@ -112,26 +112,26 @@ pub fn validateContent(
         }
 
         if (child.kind == .summary) {
-            if (summary_span) |ss| {
+            if (summary_loc) |ss| {
                 try errors.append(gpa, .{
-                    .tag = .{ .duplicate_child = .{ .span = ss } },
-                    .main_location = child.span(src),
+                    .tag = .{ .duplicate_child = .{ .loc = ss } },
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 });
             } else {
-                summary_span = child.span(src);
+                summary_loc = child.loc(src);
                 if (seen_flow_element) {
                     try errors.append(gpa, .{
                         .tag = .{ .wrong_position = .first },
-                        .main_location = summary_span.?,
+                        .main_location = summary_loc.?,
                         .node_idx = child_idx,
                     });
                 }
             }
         } else if (!child.model.categories.flow) {
             try errors.append(gpa, .{
-                .tag = .{ .invalid_nesting = .{ .span = parent_span } },
-                .main_location = child.span(src),
+                .tag = .{ .invalid_nesting = .{ .loc = parent_loc } },
+                .main_location = child.loc(src),
                 .node_idx = child_idx,
             });
         } else {
@@ -139,11 +139,11 @@ pub fn validateContent(
         }
     }
 
-    log.debug("summary = {any}", .{summary_span});
-    if (summary_span == null) {
+    log.debug("summary = {any}", .{summary_loc});
+    if (summary_loc == null) {
         try errors.append(gpa, .{
             .tag = .{ .missing_child = .summary },
-            .main_location = parent_span,
+            .main_location = parent_loc,
             .node_idx = parent_idx,
         });
     }

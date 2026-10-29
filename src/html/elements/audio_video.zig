@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Ast = @import("../Ast.zig");
 const Element = @import("../Element.zig");
 const Model = Element.Model;
@@ -232,35 +232,35 @@ pub fn validateAttrs(
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) !void {
     const parent = nodes[parent_idx];
-    const parent_span, const has_src = blk: {
+    const parent_loc, const has_src = blk: {
         var it = parent.startTagIterator(src, .html);
 
         while (it.next(src)) |attr| {
             if (attributes.index(attr.name.slice(src))) |idx| {
                 if (attributes.comptimeIndex("src") == idx) {
-                    break :blk .{ it.name_span, true };
+                    break :blk .{ it.name_loc, true };
                 }
             }
         }
 
-        break :blk .{ it.name_span, false };
+        break :blk .{ it.name_loc, false };
     };
 
     var state: enum { source, track, rest } = if (has_src) .track else .source;
-    var first_default: ?Span = null;
+    var first_default: ?Loc = null;
     var child_idx = parent.first_child_idx;
     while (child_idx != 0) {
         const child = nodes[child_idx];
         defer child_idx = child.next_idx;
 
-        const child_name = child.span(src);
+        const child_name = child.loc(src);
 
         state: switch (state) {
             .source => {
@@ -285,7 +285,7 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                                 .reason = if (has_src)
                                     \\with [src] present, no <source> elements are allowed
                                 else
@@ -321,7 +321,7 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                                 .reason = if (has_src)
                                     \\with [src] present, no <source> elements are allowed
                                 else
@@ -339,7 +339,7 @@ pub fn validateContent(
                     try errors.append(gpa, .{
                         .tag = .{
                             .invalid_nesting = .{
-                                .span = parent_span,
+                                .loc = parent_loc,
                                 .reason =
                                 \\<track> elements must go before all non-<source> elements
                                 ,
@@ -354,7 +354,7 @@ pub fn validateContent(
                 if (child.kind == .audio or child.kind == .video) {
                     try errors.append(gpa, .{
                         .tag = .{
-                            .invalid_nesting = .{ .span = parent_span },
+                            .invalid_nesting = .{ .loc = parent_loc },
                         },
                         .main_location = child_name,
                         .node_idx = child_idx,
@@ -369,11 +369,11 @@ pub fn validateContent(
 fn validateSource(
     gpa: Allocator,
     errors: *std.ArrayList(Ast.Error),
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     src: []const u8,
     parent_kind: Ast.Kind,
-    node_span: Span,
+    node_loc: Loc,
     node_idx: u32,
 ) !void {
     assert(parent_kind == .audio or parent_kind == .video);
@@ -384,7 +384,7 @@ fn validateSource(
         seen_attrs,
         seen_ids,
         .html,
-        node_span,
+        node_loc,
         src,
         node_idx,
     );
@@ -440,13 +440,13 @@ fn validateSource(
 fn validateTrack(
     gpa: Allocator,
     errors: *std.ArrayList(Ast.Error),
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     src: []const u8,
     parent_kind: Ast.Kind,
-    node_span: Span,
+    node_loc: Loc,
     node_idx: u32,
-    first_default: *?Span,
+    first_default: *?Loc,
 ) !void {
     assert(parent_kind == .audio or parent_kind == .video);
     const track_attrs = comptime Attribute.element_attrs.get(.track);
@@ -473,14 +473,14 @@ fn validateTrack(
         seen_attrs,
         seen_ids,
         .html,
-        node_span,
+        node_loc,
         src,
         node_idx,
     );
 
     var seen_src = false;
     var seen_srclang = false;
-    var seen_default: ?Span = null;
+    var seen_default: ?Loc = null;
     var kind_state: enum {
         missing,
         subtitles,
@@ -519,8 +519,8 @@ fn validateTrack(
                         gpa,
                         errors,
                         node_idx,
-                        value.span.start,
-                        value.span.slice(src),
+                        value.loc.start,
+                        value.loc.slice(src),
                     )) {
                         else => {},
                         .list => |lidx| kind_state = switch (lidx) {

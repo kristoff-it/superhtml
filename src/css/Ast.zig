@@ -4,7 +4,7 @@ const std = @import("std");
 const Writer = std.Io.Writer;
 const Tokenizer = @import("Tokenizer.zig");
 const root = @import("../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 
 const at_rules = &.{
     .{ .name = "media", .func = parseMediaRule },
@@ -18,8 +18,8 @@ pub const Rule = struct {
     next: ?u32,
 
     pub const Style = struct {
-        selectors: Span,
-        declarations: Span,
+        selectors: Loc,
+        declarations: Loc,
         multiline_decl: bool,
 
         pub const Selector = union(enum) {
@@ -27,19 +27,19 @@ pub const Rule = struct {
 
             pub const Simple = struct {
                 element_name: ?ElementName,
-                specifiers: Span,
+                specifiers: Loc,
 
                 pub const ElementName = union(enum) {
-                    name: Span,
+                    name: Loc,
                     all,
                 };
 
                 pub const Specifier = union(enum) {
-                    hash: Span,
-                    class: Span,
+                    hash: Loc,
+                    class: Loc,
                     attrib, // TODO
-                    pseudo_class: Span,
-                    pseudo_element: Span,
+                    pseudo_class: Loc,
+                    pseudo_element: Loc,
                 };
 
                 pub fn render(
@@ -80,8 +80,8 @@ pub const Rule = struct {
         };
 
         pub const Declaration = struct {
-            property: Span,
-            value: Span,
+            property: Loc,
+            value: Loc,
 
             pub fn render(
                 declaration: Declaration,
@@ -136,7 +136,7 @@ pub const Rule = struct {
     };
 
     pub const Media = struct {
-        queries: Span,
+        queries: Loc,
         first_rule: ?u32,
 
         fn renderMediaQuery(
@@ -155,21 +155,21 @@ pub const Rule = struct {
                             .colon => {
                                 _ = try w.write(": ");
 
-                                var span: ?Span = null;
+                                var loc: ?Loc = null;
                                 while (true) {
                                     const t = query_tokenizer.next(query).?;
                                     if (t == .close_paren) break;
 
-                                    if (span == null) {
-                                        span = t.span();
+                                    if (loc == null) {
+                                        loc = t.loc();
                                     } else {
-                                        span.?.end = t.span().end;
+                                        loc.?.end = t.loc().end;
                                     }
                                 }
 
-                                std.debug.assert(span != null);
+                                std.debug.assert(loc != null);
 
-                                try renderValue(span.?.slice(query), w);
+                                try renderValue(loc.?.slice(query), w);
                             },
                             .close_paren => {},
                             else => unreachable,
@@ -241,7 +241,7 @@ pub const Rule = struct {
 
 pub const Error = struct {
     tag: Tag,
-    loc: Span,
+    loc: Loc,
 
     pub const Tag = union(enum) {
         token: Tokenizer.Error,
@@ -260,7 +260,7 @@ rules: []const Rule,
 selectors: []const Rule.Style.Selector,
 declarations: []const Rule.Style.Declaration,
 specifiers: []const Rule.Style.Selector.Simple.Specifier,
-media_queries: []const Span,
+media_queries: []const Loc,
 
 const State = struct {
     allocator: std.mem.Allocator,
@@ -272,7 +272,7 @@ const State = struct {
     selectors: std.ArrayList(Rule.Style.Selector),
     declarations: std.ArrayList(Rule.Style.Declaration),
     specifiers: std.ArrayList(Rule.Style.Selector.Simple.Specifier),
-    media_queries: std.ArrayList(Span),
+    media_queries: std.ArrayList(Loc),
 
     fn consume(self: *State) error{OutOfMemory}!?Tokenizer.Token {
         if (self.reconsumed) |tok| {
@@ -285,7 +285,7 @@ const State = struct {
             .err => |err| {
                 try self.errors.append(self.allocator, .{
                     .tag = .{ .token = err.tag },
-                    .loc = err.span,
+                    .loc = err.loc,
                 });
                 return self.consume();
             },
@@ -352,7 +352,7 @@ fn renderValue(value: []const u8, w: *Writer) !void {
         } else false) {
             _ = try w.write(" ");
         }
-        _ = try w.write(token.span().slice(value));
+        _ = try w.write(token.loc().slice(value));
     }
 }
 
@@ -500,7 +500,7 @@ fn parseMediaRule(s: *State) !Rule.Media {
     std.debug.assert(std.ascii.eqlIgnoreCase(keyword.?.at_keyword.slice(s.src), "@media"));
 
     var first_query: ?u32 = null;
-    var current_query: ?Span = null;
+    var current_query: ?Loc = null;
     var paren_depth: usize = 0;
     while (true) {
         if (try s.consume()) |token| {
@@ -514,7 +514,7 @@ fn parseMediaRule(s: *State) !Rule.Media {
                 } else {
                     try s.errors.append(s.allocator, .{
                         .tag = .{ .ast = .expected_media_query },
-                        .loc = token.span(),
+                        .loc = token.loc(),
                     });
                 }
 
@@ -528,9 +528,9 @@ fn parseMediaRule(s: *State) !Rule.Media {
                 if (token == .close_paren and paren_depth > 0) paren_depth -= 1;
 
                 if (current_query == null) {
-                    current_query = token.span();
+                    current_query = token.loc();
                 } else {
-                    current_query.?.end = token.span().end;
+                    current_query.?.end = token.loc().end;
                 }
             }
         } else {
@@ -546,7 +546,7 @@ fn parseMediaRule(s: *State) !Rule.Media {
             else => {
                 try s.errors.append(s.allocator, .{
                     .tag = .{ .ast = .expected_close_curly },
-                    .loc = token.span(),
+                    .loc = token.loc(),
                 });
             },
         }
@@ -588,7 +588,7 @@ fn parseStyleRule(s: *State) !Rule.Style {
             else => {
                 try s.errors.append(s.allocator, .{
                     .tag = .{ .ast = .expected_open_curly },
-                    .loc = token.span(),
+                    .loc = token.loc(),
                 });
             },
         }
@@ -625,7 +625,7 @@ fn parseStyleRule(s: *State) !Rule.Style {
             else => {
                 try s.errors.append(s.allocator, .{
                     .tag = .{ .ast = .expected_close_curly },
-                    .loc = token.span(),
+                    .loc = token.loc(),
                 });
             },
         }
@@ -689,9 +689,9 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
         if (try s.consume()) |token| {
             switch (token) {
                 .hash => |hash| {
-                    var span = hash;
-                    span.start += 1;
-                    try s.specifiers.append(s.allocator, .{ .hash = span });
+                    var loc = hash;
+                    loc.start += 1;
+                    try s.specifiers.append(s.allocator, .{ .hash = loc });
                 },
                 .delim => |delim| switch (s.src[delim]) {
                     '.' => {
@@ -751,7 +751,7 @@ fn parseSimpleSelector(s: *State) !Rule.Style.Selector.Simple {
     };
 }
 
-fn parseDeclarationValue(s: *State) !Span {
+fn parseDeclarationValue(s: *State) !Loc {
     var start: ?u32 = null;
     var end: u32 = undefined;
 
@@ -761,9 +761,9 @@ fn parseDeclarationValue(s: *State) !Span {
             else => {
                 std.debug.assert(try s.consume() != null);
                 if (start == null) {
-                    start = token.span().start;
+                    start = token.loc().start;
                 }
-                end = token.span().end;
+                end = token.loc().end;
             },
         }
     }

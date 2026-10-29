@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Tokenizer = @import("Tokenizer.zig");
 const root = @import("../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 
 idx: u32 = 0,
 current: u8 = undefined,
@@ -13,17 +13,17 @@ pub const Error = enum {
 };
 
 pub const Token = union(enum) {
-    ident: Span,
-    function: Span,
-    at_keyword: Span,
-    hash: Span,
-    string: Span,
-    bad_string: Span,
-    url: Span,
-    bad_url: Span,
+    ident: Loc,
+    function: Loc,
+    at_keyword: Loc,
+    hash: Loc,
+    string: Loc,
+    bad_string: Loc,
+    url: Loc,
+    bad_url: Loc,
     delim: u32,
-    number: Span,
-    percentage: Span,
+    number: Loc,
+    percentage: Loc,
     dimension: Dimension,
     cdo: u32,
     cdc: u32,
@@ -38,15 +38,15 @@ pub const Token = union(enum) {
     close_curly: u32,
     err: struct {
         tag: Error,
-        span: Span,
+        loc: Loc,
     },
 
     pub const Dimension = struct {
-        number: Span,
-        unit: Span,
+        number: Loc,
+        unit: Loc,
     };
 
-    pub fn span(self: Token) Span {
+    pub fn loc(self: Token) Loc {
         return switch (self) {
             .ident,
             .function,
@@ -77,7 +77,7 @@ pub const Token = union(enum) {
             .close_curly,
             => |i| .{ .start = i, .end = i + 1 },
             .err,
-            => |e| e.span,
+            => |e| e.loc,
         };
     }
 };
@@ -283,7 +283,7 @@ pub fn next(self: *Tokenizer, src: []const u8) ?Token {
 }
 
 // https://www.w3.org/TR/css-syntax-3/#consume-an-ident-sequence
-fn identSequence(self: *Tokenizer, src: []const u8) Span {
+fn identSequence(self: *Tokenizer, src: []const u8) Loc {
     const start = self.idx;
 
     while (true) {
@@ -300,17 +300,17 @@ fn identSequence(self: *Tokenizer, src: []const u8) Span {
 
 // https://www.w3.org/TR/css-syntax-3/#consume-an-ident-like-token
 fn identLike(self: *Tokenizer, src: []const u8) Token {
-    const span = self.identSequence(src);
+    const loc = self.identSequence(src);
 
-    if (std.ascii.eqlIgnoreCase(span.slice(src), "url") and
+    if (std.ascii.eqlIgnoreCase(loc.slice(src), "url") and
         self.peek(src) != null and self.peek(src).? == '(')
     {
         return self.url(src);
     } else if (self.peek(src) != null and self.peek(src).? == '(') {
         std.debug.assert(self.consume(src));
-        return .{ .function = .{ .start = span.start, .end = self.idx } };
+        return .{ .function = .{ .start = loc.start, .end = self.idx } };
     } else {
-        return .{ .ident = span };
+        return .{ .ident = loc };
     }
 }
 
@@ -388,7 +388,7 @@ fn string(self: *Tokenizer, src: []const u8) Token {
                     return .{
                         .err = .{
                             .tag = .truncated_string,
-                            .span = .{ .start = start, .end = self.idx - 1 },
+                            .loc = .{ .start = start, .end = self.idx - 1 },
                         },
                     };
                 },
@@ -404,7 +404,7 @@ fn string(self: *Tokenizer, src: []const u8) Token {
             return .{
                 .err = .{
                     .tag = .truncated_string,
-                    .span = .{ .start = start, .end = self.idx },
+                    .loc = .{ .start = start, .end = self.idx },
                 },
             };
         }
@@ -441,7 +441,7 @@ fn url(self: *Tokenizer, src: []const u8) Token {
     return .{
         .err = .{
             .tag = .bad_url,
-            .span = .{ .start = start, .end = self.idx - 1 },
+            .loc = .{ .start = start, .end = self.idx - 1 },
         },
     };
 }
@@ -452,7 +452,7 @@ fn consumeBadUrl(self: *Tokenizer, src: []const u8, start: u32) Token {
     return .{
         .err = .{
             .tag = .bad_url,
-            .span = .{ .start = start, .end = self.idx - 1 },
+            .loc = .{ .start = start, .end = self.idx - 1 },
         },
     };
 }
@@ -501,13 +501,13 @@ test "url property" {
     try std.testing.expectEqual(Token{ .colon = 22 }, tokenizer.next(src).?);
     var url_tok = tokenizer.next(src).?;
     try std.testing.expectEqual(Token{ .url = .{ .start = 28, .end = 39 } }, url_tok);
-    try std.testing.expectEqualStrings("/img/bg.png", url_tok.span().slice(src));
+    try std.testing.expectEqualStrings("/img/bg.png", url_tok.loc().slice(src));
     try std.testing.expectEqual(Token{ .semicolon = 40 }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .ident = .{ .start = 45, .end = 60 } }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .colon = 60 }, tokenizer.next(src).?);
     url_tok = tokenizer.next(src).?;
     try std.testing.expectEqual(Token{ .url = .{ .start = 66, .end = 82 } }, url_tok);
-    try std.testing.expectEqualStrings("/img/bg-dark.png", url_tok.span().slice(src));
+    try std.testing.expectEqualStrings("/img/bg-dark.png", url_tok.loc().slice(src));
     try std.testing.expectEqual(Token{ .semicolon = 83 }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .close_curly = 86 }, tokenizer.next(src).?);
     try std.testing.expectEqual(null, tokenizer.next(src));
@@ -527,12 +527,12 @@ test "bad url property" {
     try std.testing.expectEqual(Token{ .ident = .{ .start = 12, .end = 22 } }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .colon = 22 }, tokenizer.next(src).?);
     var url_tok = tokenizer.next(src).?;
-    try std.testing.expectEqual(Token{ .err = .{ .tag = .bad_url, .span = .{ .start = 28, .end = 41 } } }, url_tok);
+    try std.testing.expectEqual(Token{ .err = .{ .tag = .bad_url, .loc = .{ .start = 28, .end = 41 } } }, url_tok);
     try std.testing.expectEqual(Token{ .semicolon = 42 }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .ident = .{ .start = 47, .end = 57 } }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .colon = 57 }, tokenizer.next(src).?);
     url_tok = tokenizer.next(src).?;
-    try std.testing.expectEqual(Token{ .err = .{ .tag = .bad_url, .span = .{ .start = 63, .end = 75 } } }, url_tok);
+    try std.testing.expectEqual(Token{ .err = .{ .tag = .bad_url, .loc = .{ .start = 63, .end = 75 } } }, url_tok);
     try std.testing.expectEqual(Token{ .semicolon = 76 }, tokenizer.next(src).?);
     try std.testing.expectEqual(Token{ .close_curly = 79 }, tokenizer.next(src).?);
     try std.testing.expectEqual(null, tokenizer.next(src));

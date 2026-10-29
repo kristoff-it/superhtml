@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const root = @import("../../root.zig");
-const Span = root.Span;
+const Loc = root.Loc;
 const Tokenizer = @import("../Tokenizer.zig");
 const Ast = @import("../Ast.zig");
 const Content = Ast.Node.Categories;
@@ -46,8 +46,8 @@ pub const datalist: Element = .{
 pub fn validateContent(
     gpa: Allocator,
     nodes: []const Ast.Node,
-    seen_attrs: *std.StringHashMapUnmanaged(Span),
-    seen_ids: *std.StringHashMapUnmanaged(Span),
+    seen_attrs: *std.StringHashMapUnmanaged(Loc),
+    seen_ids: *std.StringHashMapUnmanaged(Loc),
     errors: *std.ArrayListUnmanaged(Ast.Error),
     src: []const u8,
     parent_idx: u32,
@@ -58,7 +58,7 @@ pub fn validateContent(
     // Or: Zero or more option and script-supporting elements.
 
     const parent = nodes[parent_idx];
-    const parent_span = parent.span(src);
+    const parent_loc = parent.loc(src);
     var state: enum { searching, phrasing, option } = .searching;
 
     var child_idx = parent.first_child_idx;
@@ -77,26 +77,26 @@ pub fn validateContent(
             .option => if (child.kind != .option) try errors.append(gpa, .{
                 .tag = .{
                     .invalid_nesting = .{
-                        .span = parent_span,
+                        .loc = parent_loc,
                         .reason = "when an <option> child is present, only <option>, <script> and <template> are allowed",
                     },
                 },
-                .main_location = child.span(src),
+                .main_location = child.loc(src),
                 .node_idx = child_idx,
             }),
             .phrasing => {
                 if (child.kind == .option) try errors.append(gpa, .{
                     .tag = .{
                         .invalid_nesting = .{
-                            .span = parent_span,
+                            .loc = parent_loc,
                             .reason = "only allowed when the only children are <option>, <script> or <template>",
                         },
                     },
-                    .main_location = child.span(src),
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 }) else if (!child.model.categories.phrasing) try errors.append(gpa, .{
-                    .tag = .{ .invalid_nesting = .{ .span = parent_span } },
-                    .main_location = child.span(src),
+                    .tag = .{ .invalid_nesting = .{ .loc = parent_loc } },
+                    .main_location = child.loc(src),
                     .node_idx = child_idx,
                 });
             },
