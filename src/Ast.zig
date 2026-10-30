@@ -1075,8 +1075,8 @@ pub fn printErrors(
         const range = err.main_location.range(src);
         try w.print("{s}:{}:{}: {f}\n", .{
             path orelse "<stdin>",
-            range.start.row,
-            range.start.col,
+            range.start.row + 1,
+            range.start.col + 1,
             err.kind,
         });
     }
