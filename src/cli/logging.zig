@@ -24,7 +24,6 @@ pub fn logFn(
     args: anytype,
 ) void {
     if (builtin.mode == .debug) switch (scope) {
-        // if (true) switch (scope) {
         .root, .element, .super_lsp, .@"html/ast" => {},
         else => return,
     } else inline for (build_options.enabled_scopes) |es| {
