@@ -49,7 +49,7 @@ attributes: union(enum) {
     /// parent_idx directly.
     dynamic: *const fn (
         gpa: Allocator,
-        errors: *std.ArrayListUnmanaged(Error),
+        errors: *std.ArrayList(Error),
         src: []const u8,
         nodes: []const Ast.Node,
         parent_idx: u32,
@@ -69,7 +69,7 @@ content: union(enum) {
             nodes: []const Ast.Node,
             seen_attrs: *std.StringHashMapUnmanaged(Loc),
             seen_ids: *std.StringHashMapUnmanaged(Loc),
-            errors: *std.ArrayListUnmanaged(Ast.Error),
+            errors: *std.ArrayList(Ast.Error),
             src: []const u8,
             parent_idx: u32,
         ) error{OutOfMemory}!void,
@@ -330,7 +330,7 @@ pub inline fn validateContent(
     nodes: []const Ast.Node,
     seen_attrs: *std.StringHashMapUnmanaged(Loc),
     seen_ids: *std.StringHashMapUnmanaged(Loc),
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) !void {
@@ -493,7 +493,7 @@ pub inline fn validateAttrs(
     element: *const Element,
     gpa: Allocator,
     lang: Language,
-    errors: *std.ArrayListUnmanaged(Error),
+    errors: *std.ArrayList(Error),
     seen_attrs: *std.StringHashMapUnmanaged(Loc),
     seen_ids: *std.StringHashMapUnmanaged(Loc),
     nodes: []const Ast.Node,
@@ -668,7 +668,7 @@ pub fn simpleCompletions(
     parent_reject: Categories,
     simple: Simple,
 ) ![]const Ast.Completion {
-    var list: std.ArrayListUnmanaged(Ast.Completion) = .empty;
+    var list: std.ArrayList(Ast.Completion) = .empty;
     try list.ensureTotalCapacity(
         arena,
         all.values.len - @backingInt(Kind.___),

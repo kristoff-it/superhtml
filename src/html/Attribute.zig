@@ -96,7 +96,7 @@ pub const Rule = union(enum) {
     /// Custom validation
     custom: *const fn (
         gpa: Allocator,
-        errors: *std.ArrayListUnmanaged(Ast.Error),
+        errors: *std.ArrayList(Ast.Error),
         src: []const u8,
         node_idx: u32,
         attr: Tokenizer.Attr,
@@ -242,7 +242,7 @@ pub const Rule = union(enum) {
     pub fn validate(
         rule: Rule,
         gpa: Allocator,
-        errors: *std.ArrayListUnmanaged(Ast.Error),
+        errors: *std.ArrayList(Ast.Error),
         src: []const u8,
         node_idx: u32,
         attr: Tokenizer.Attr,
@@ -555,7 +555,7 @@ pub const Rule = union(enum) {
 
 pub fn validateMime(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,
@@ -842,7 +842,7 @@ pub fn validateMimeChars(bytes: []const u8) ?Rule.ValueRejection {
 
 pub const ValidatingIterator = struct {
     it: Tokenizer,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     seen_attrs: *std.StringHashMapUnmanaged(Loc),
     seen_ids: *std.StringHashMapUnmanaged(Loc),
     end: u32,
@@ -851,7 +851,7 @@ pub const ValidatingIterator = struct {
 
     /// On initalization will call seen_attrs.clearRetainingCapacity()
     pub fn init(
-        errors: *std.ArrayListUnmanaged(Ast.Error),
+        errors: *std.ArrayList(Ast.Error),
         seen_attrs: *std.StringHashMapUnmanaged(Loc),
         seen_ids: *std.StringHashMapUnmanaged(Loc),
         lang: Language,
@@ -2179,7 +2179,7 @@ pub const global: AttributeSet = .init(&.{
             .rule = .{ .custom = struct {
                 fn custom(
                     gpa: Allocator,
-                    errors: *std.ArrayListUnmanaged(Ast.Error),
+                    errors: *std.ArrayList(Ast.Error),
                     src: []const u8,
                     node_idx: u32,
                     attr: Tokenizer.Attr,
@@ -3543,7 +3543,7 @@ pub const global: AttributeSet = .init(&.{
 
 pub fn accesskey(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,
@@ -3611,7 +3611,7 @@ pub fn accesskey(
 
 fn minusOneOrInteger(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,
@@ -3641,7 +3641,7 @@ fn minusOneOrInteger(
 
 fn idReferenceList(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,

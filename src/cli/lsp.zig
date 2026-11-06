@@ -207,7 +207,7 @@ pub fn @"textDocument/didChange"(
         return error.InvalidParams;
     };
 
-    var buffer: std.ArrayListUnmanaged(u8) = .fromOwnedSlice(@constCast(file.src));
+    var buffer: std.ArrayList(u8) = .fromOwnedSlice(@constCast(file.src));
     errdefer buffer.deinit(self.gpa);
 
     for (notification.contentChanges) |content_change| {
@@ -478,7 +478,7 @@ pub fn @"textDocument/references"(
 
     log.debug("------ CLASS: '{s}' ------", .{class});
 
-    var locations: std.ArrayListUnmanaged(lsp.types.Location) = .empty;
+    var locations: std.ArrayList(lsp.types.Location) = .empty;
     for (doc.html.nodes) |n| {
         if (!n.kind.isElement()) continue;
 

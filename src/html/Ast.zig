@@ -468,7 +468,7 @@ pub fn init(
     var nodes = std.array_list.Managed(Node).init(gpa);
     errdefer nodes.deinit();
 
-    var errors: std.ArrayListUnmanaged(Error) = .empty;
+    var errors: std.ArrayList(Error) = .empty;
     errdefer errors.deinit(gpa);
 
     var seen_attrs: std.StringHashMapUnmanaged(Loc) = .empty;
@@ -1543,7 +1543,7 @@ pub fn validateNesting(
     nodes: []const Node,
     seen_attrs: *std.StringHashMapUnmanaged(Loc),
     seen_ids_stack: *std.ArrayList(std.StringHashMapUnmanaged(Loc)),
-    errors: *std.ArrayListUnmanaged(Error),
+    errors: *std.ArrayList(Error),
     src: []const u8,
     language: Language,
 ) !void {

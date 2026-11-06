@@ -50,7 +50,7 @@ fn validate(
     nodes: []const Ast.Node,
     seen_attrs: *std.StringHashMapUnmanaged(Loc),
     seen_ids: *std.StringHashMapUnmanaged(Loc),
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
@@ -258,7 +258,7 @@ const DescriptorKinds = struct { w: bool, x: bool, h: bool };
 
 pub fn validateSrcset(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     seen_descriptors: *std.StringArrayHashMapUnmanaged(Loc),
     attr: Tokenizer.Attr,
     src: []const u8,

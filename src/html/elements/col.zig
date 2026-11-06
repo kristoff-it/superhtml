@@ -42,7 +42,7 @@ pub const attributes: AttributeSet = .init(&.{
 
 pub fn validateSpan(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,
