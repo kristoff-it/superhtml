@@ -466,7 +466,7 @@ const Type = blk: {
 
 fn validate(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     nodes: []const Ast.Node,
     parent_idx: u32,
@@ -769,7 +769,7 @@ fn validate(
 
 fn validatePlaceholder(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,

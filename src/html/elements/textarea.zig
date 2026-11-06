@@ -174,7 +174,7 @@ pub const attributes: AttributeSet = .init(&.{
 
 pub fn validateAttrs(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     nodes: []const Ast.Node,
     parent_idx: u32,
@@ -265,7 +265,7 @@ pub fn validateAttrs(
 // pub fn validateContent(
 //     gpa: Allocator,
 //     nodes: []const Ast.Node,
-//     errors: *std.ArrayListUnmanaged(Ast.Error),
+//     errors: *std.ArrayList(Ast.Error),
 //     src: []const u8,
 //     parent_idx: u32,
 // ) error{OutOfMemory}!void {

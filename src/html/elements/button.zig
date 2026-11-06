@@ -350,7 +350,7 @@ pub const attributes: AttributeSet = .init(&.{
 
 fn validateAttrs(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     nodes: []const Ast.Node,
     parent_idx: u32,
@@ -474,7 +474,7 @@ pub fn validateContent(
     nodes: []const Ast.Node,
     seen_attrs: *std.StringHashMapUnmanaged(Loc),
     seen_ids: *std.StringHashMapUnmanaged(Loc),
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     parent_idx: u32,
 ) error{OutOfMemory}!void {
@@ -636,7 +636,7 @@ fn validateCommand(value: []const u8) ?Attribute.Rule.ValueRejection {
 
 fn validateName(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,

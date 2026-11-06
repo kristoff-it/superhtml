@@ -217,7 +217,7 @@ pub const attributes: AttributeSet = .init(&.{
 
 fn validate(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     nodes: []const Ast.Node,
     parent_idx: u32,
@@ -270,7 +270,7 @@ fn validate(
 
 pub fn validateAllow(
     gpa: Allocator,
-    errors: *std.ArrayListUnmanaged(Ast.Error),
+    errors: *std.ArrayList(Ast.Error),
     src: []const u8,
     node_idx: u32,
     attr: Tokenizer.Attr,
