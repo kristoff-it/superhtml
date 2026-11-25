@@ -97,6 +97,14 @@ pub const attributes: AttributeSet = .init(&.{
                         .desc = "An icon representing the current document.",
                     },
                     .{
+                        .label = "apple-touch-icon-precomposed",
+                        .desc = "An icon representing the current document, shown by iOS without adding visual effects to it.",
+                    },
+                    .{
+                        .label = "apple-touch-startup-image",
+                        .desc = "A splash screen shown by iOS Safari while a web app launched from the home screen is loading.",
+                    },
+                    .{
                         .label = "manifest",
                         .desc = "Web app manifest.",
                     },
@@ -608,13 +616,14 @@ fn validate(
 
     if (attrs[attributes.comptimeIndex("sizes")]) |attr| {
         if (rel_values[rel_rule.comptimeIndex("icon")] or
-            rel_values[rel_rule.comptimeIndex("apple-touch-icon")])
+            rel_values[rel_rule.comptimeIndex("apple-touch-icon")] or
+            rel_values[rel_rule.comptimeIndex("apple-touch-icon-precomposed")])
         {
             const model = comptime attributes.get("sizes").?;
             try model.rule.validate(gpa, errors, src, node_idx, attr);
         } else try errors.append(gpa, .{
             .tag = .{
-                .invalid_attr_combination = "requires [rel] to contain 'icon' or 'apple-touch-icon'",
+                .invalid_attr_combination = "requires [rel] to contain 'icon', 'apple-touch-icon' or 'apple-touch-icon-precomposed'",
             },
             .main_location = attr.name,
             .node_idx = node_idx,
@@ -634,6 +643,8 @@ fn validate(
             !rel_values[rel_rule.comptimeIndex("help")] and
             !rel_values[rel_rule.comptimeIndex("icon")] and
             !rel_values[rel_rule.comptimeIndex("apple-touch-icon")] and
+            !rel_values[rel_rule.comptimeIndex("apple-touch-icon-precomposed")] and
+            !rel_values[rel_rule.comptimeIndex("apple-touch-startup-image")] and
             !rel_values[rel_rule.comptimeIndex("manifest")] and
             !rel_values[rel_rule.comptimeIndex("license")] and
             !rel_values[rel_rule.comptimeIndex("next")] and
@@ -666,4 +677,35 @@ fn validateSizes(value: []const u8) ?Attribute.Rule.ValueRejection {
     };
 
     return null;
+}
+
+test "link: apple rel extensions" {
+    const case =
+        \\<link rel="apple-touch-startup-image" href="/splash.png">
+        \\<link rel="apple-touch-icon-precomposed" sizes="180x180" href="/icon.png">
+        \\
+    ;
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expectEqual(0, ast.errors.len);
+}
+
+test "link: unknown rel value" {
+    const case =
+        \\<link rel="apple-touch-unknown" href="/splash.png">
+        \\
+    ;
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expectEqual(1, ast.errors.len);
+}
+
+test "link: apple rel extensions are not allowed on <a>" {
+    const case =
+        \\<a rel="apple-touch-startup-image" href="/splash.png">splash</a>
+        \\
+    ;
+    const ast = try Ast.init(std.testing.allocator, case, .html, false);
+    defer ast.deinit(std.testing.allocator);
+    try std.testing.expectEqual(1, ast.errors.len);
 }
